@@ -1,0 +1,60 @@
+services:
+
+  db:
+    image: postgres:16
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend_app
+    command: >
+      sh -c "python manage.py makemigrations && python manage.py migrate && 
+             daphne -b 0.0.0.0 -p 8000 backend.asgi:application"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - db
+    environment:
+      - DJANGO_DEBUG=True
+      - PYTHONUNBUFFERED=1
+      - DJANGO_SETTINGS_MODULE=backend.settings
+
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend_app
+    working_dir: /app
+    command: >
+      sh -c "bun install || true && bun run dev -- --host 0.0.0.0"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - HOST=0.0.0.0
+      - BROWSER=none
+    depends_on:
+      - db
+      - backend
+
+volumes:
+  postgres_data_dev:
+    driver: local

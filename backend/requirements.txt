@@ -1,0 +1,12 @@
+Django>=5.0
+djangorestframework
+django-cors-headers
+psycopg2-binary>=2.9
+daphne
+channels
+djangorestframework-simplejwt
+django-redis
+channels_redis
+pytest
+pytest-django
+requests
