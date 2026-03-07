@@ -1,0 +1,80 @@
+@startuml Uniwell_Database_Model
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+entity "ProductType" as ProductType {
+    * ID : Pk
+    --
+    Name : String
+}
+
+entity "Style" as Style {
+    * ID : Pk
+    --
+    Name : String
+    Size : String
+    Color : String
+    Material : String
+}
+
+entity "BatchType" as BatchType {
+    * ID : Pk
+    --
+    Name : String
+}
+
+entity "Batch" as Batch {
+    * ID : Pk
+    --
+    Code : String
+    BatchType_Id : Fk
+    ProductType_Id : Fk
+    Style_Id : Fk
+    Quantity : Int
+}
+
+entity "Product" as Product {
+    * ID : Pk
+    --
+    Code : String
+    Name : String
+    Batch_Id : Fk
+}
+
+entity "Report" as Report {
+    * ID : Pk
+    --
+    Code : String
+    Date : DateTime
+    User_Id : Fk
+    Product_Id : Fk
+    Image : Img
+    Comment : String
+    DamageType : String
+    DamageCoordinate_X : Float
+    DamageCoordinate_Y : Float
+}
+
+entity "User" as User {
+    * ID : Pk
+    --
+    Code : String
+    Name : String
+    Email : String
+    Age : Int
+    Role : String
+    Shift : String
+    Status : String
+}
+
+' Relaciones
+ProductType ||--o{ Batch
+Style ||--o{ Batch
+BatchType ||--o{ Batch
+Batch ||--|{ Product
+Product ||--o{ Report
+User ||--o{ Report
+
+@enduml
