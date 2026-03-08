@@ -4,77 +4,128 @@
 top to bottom direction
 skinparam linetype ortho
 
-entity "ProductType" as ProductType {
-    * ID : Pk
-    --
-    Name : String
-}
-
-entity "Style" as Style {
-    * ID : Pk
-    --
-    Name : String
-    Size : String
-    Color : String
-    Material : String
-}
-
-entity "BatchType" as BatchType {
-    * ID : Pk
-    --
-    Name : String
-}
-
-entity "Batch" as Batch {
-    * ID : Pk
-    --
-    Code : String
-    BatchType_Id : Fk
-    ProductType_Id : Fk
-    Style_Id : Fk
-    Quantity : Int
-}
-
-entity "Product" as Product {
-    * ID : Pk
-    --
-    Code : String
-    Name : String
-    Batch_Id : Fk
-}
-
-entity "Report" as Report {
-    * ID : Pk
-    --
-    Code : String
-    Date : DateTime
-    User_Id : Fk
-    Product_Id : Fk
-    Image : Img
-    Comment : String
-    DamageType : String
-    DamageCoordinate_X : Float
-    DamageCoordinate_Y : Float
-}
-
 entity "User" as User {
     * ID : Pk
     --
     Code : String
     Name : String
     Email : String
-    Age : Int
     Role : String
     Shift : String
     Status : String
 }
 
+entity "Customer" as Customer {
+    * ID : Pk
+    --
+    Name : String
+}
+
+entity "ProductionLine" as ProductionLine {
+    * ID : Pk
+    --
+    Name : String
+}
+
+entity "PurchaseOrder" as PurchaseOrder {
+    * ID : Pk
+    --
+    PO_Number : String
+    Customer_Id : Fk
+}
+
+entity "Style" as Style {
+    * ID : Pk
+    --
+    Name : String
+    ArtCode : String
+    Size : String
+    Color : String
+    Material : String
+}
+
+entity "DefectCategory" as DefectCategory {
+    * ID : Pk
+    --
+    Name : String
+}
+
+entity "DefectType" as DefectType {
+    * ID : Pk
+    --
+    Name : String
+    DefectCategory_Id : Fk
+}
+
+entity "Inspection" as Inspection {
+    * ID : Pk
+    --
+    Date : DateTime
+    Week : Int
+    BatchCode : String
+    Inspector_Id : Fk
+    PurchaseOrder_Id : Fk
+    Style_Id : Fk
+    ProductionLine_Id : Fk
+    Quantity : Int
+    SampleSize : Int
+    Accepted : Int
+    Rejected : Int
+    Seconds : Int
+    AQL_Percentage : Float
+    FinalStatus : String
+    TotalFixed : Int
+    TotalDefinitive : Int
+}
+
+entity "InspectionDefect" as InspectionDefect {
+    * ID : Pk
+    --
+    Inspection_Id : Fk
+    DefectType_Id : Fk
+    DefectCount : Int
+    Coordinate_X : Float
+    Coordinate_Y : Float
+    Image : String
+    Comment : String
+}
+
+entity "ContainerAudit" as ContainerAudit {
+    * ID : Pk
+    --
+    Date : DateTime
+    ContainerNumber : String
+    TransferNumber : String
+    Customer_Id : Fk
+    TotalPalettes : Int
+    PalettesPass : Int
+    PalettesReject : Int
+    PassPercentage : Float
+    RejectPercentage : Float
+}
+
+entity "ContainerDefect" as ContainerDefect {
+    * ID : Pk
+    --
+    ContainerAudit_Id : Fk
+    DefectType_Id : Fk
+    DefectCount : Int
+}
+
 ' Relaciones
-ProductType ||--o{ Batch
-Style ||--o{ Batch
-BatchType ||--o{ Batch
-Batch ||--|{ Product
-Product ||--o{ Report
-User ||--o{ Report
+PurchaseOrder }o--|| Customer
+Inspection }o--|| PurchaseOrder
+Inspection }o--|| Style
+Inspection }o--|| ProductionLine
+Inspection }o--|| User
+
+DefectType }o--|| DefectCategory
+
+InspectionDefect }o--|| Inspection
+InspectionDefect }o--|| DefectType
+
+ContainerAudit }o--|| Customer
+ContainerDefect }o--|| ContainerAudit
+ContainerDefect }o--|| DefectType
 
 @enduml

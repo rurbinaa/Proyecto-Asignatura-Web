@@ -123,3 +123,7 @@ pytest_cache/
 *.bak
 *.tmp
 *.temp
+
+
+# archivos confidenciales
+.xlsx
