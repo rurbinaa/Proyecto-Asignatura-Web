@@ -126,4 +126,4 @@ pytest_cache/
 
 
 # archivos confidenciales
-.xlsx
+*.xlsx
