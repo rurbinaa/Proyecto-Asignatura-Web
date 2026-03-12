@@ -10,3 +10,5 @@ channels_redis
 pytest
 pytest-django
 requests
+pandas
+openpyxl
