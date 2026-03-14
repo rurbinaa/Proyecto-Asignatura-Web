@@ -1,90 +1,146 @@
 from django.db import models
 
 
-class AmountDefects(models.Model):
+QUALITY_QC_FA_TABLE_TYPE_CHOICES = [
+    ("QFA", "QC FA Plant"),
+    ("QFC", "QC FA Customer"),
+]
 
-    table_type_choices ={
-        "QFA": "AC FA Plant",
-        "QFC": "QC FA Customer",
-        "S4": "SecondsA4",
-        "SG": "Seconds General",
-        "C": "Container"
-    }
-    
-    table_type = models.CharField(max_length=20, choices=table_type_choices)
 
-    uneven = models.IntegerField()
-    broken_stitch = models.IntegerField()
-    open_seam = models.IntegerField()
-    tear = models.IntegerField()
-    hi_low = models.IntegerField()
-    run_off_stitch = models.IntegerField()
-    raw_edge = models.IntegerField()
-    neddle_holes = models.IntegerField()
-    loose_thread = models.IntegerField()
-    uncut_thread = models.IntegerField()
-    big_or_littler_neck = models.IntegerField()
-    uneven_neck_or_sleeve = models.IntegerField()
-    out_of_measurements = models.IntegerField()
-    incorrect_stitch = models.IntegerField()
-    variation_tension_sttich = models.IntegerField()
-    excess_fabric = models.IntegerField()
-    hitched = models.IntegerField()
-    po_midex = models.IntegerField()
-    transfer_peel_off_or_leave = models.IntegerField()
-    wrong_transfer = models.IntegerField()
-    wrong_label = models.IntegerField()
-    missing_transfer = models.IntegerField()
-    missing_label = models.IntegerField()
-    shine = models.IntegerField()
-    skip_stitch = models.IntegerField()
-    pleat = models.IntegerField()
-    dirt_marck = models.IntegerField()
-    missing_operation = models.IntegerField()
-    stain_oil_soil = models.IntegerField()
-    contamination = models.IntegerField()
-    construction_defect = models.IntegerField()
-    mill_flaw = models.IntegerField()
-    fabric_run = models.IntegerField()
-    misplaced = models.IntegerField()
-    pucketing = models.IntegerField()
-    slanted = models.IntegerField()
-    defect_sticker_inside = models.IntegerField()
-    roping = models.IntegerField()
-    label_slanted = models.IntegerField()
-    shadding = models.IntegerField()
-    missing_packing_trims = models.IntegerField()
-    missing_print_or_embroidery = models.IntegerField()
-    wrong_packing_trims = models.IntegerField()
-    wrong_po = models.IntegerField()
-    wrong_folding_method = models.IntegerField()
-    wrong_size_attached = models.IntegerField()
+class Color(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    is_active = models.BooleanField(default=True)
 
-    damaged_label = models.IntegerField()
-    pocket_label = models.IntegerField()
-    label_placement = models.IntegerField()
-    missing_information_label = models.IntegerField()
+    def __str__(self):
+        return self.name
 
+# tablas QC FA Plant y QC FA Customer
+
+class DefectType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
 
 class QualityQcFa(models.Model):
-    date_1 = models.CharField(max_length=50)
+    table_type = models.CharField(
+        max_length=3,
+        choices=QUALITY_QC_FA_TABLE_TYPE_CHOICES,
+    )
+    date_1 = models.CharField(max_length=10)
     week = models.IntegerField()
-    customer = models.CharField(max_length=100)
+    customer = models.CharField(max_length=50)
     team = models.IntegerField()
     coord = models.CharField(max_length=50)
-    date_2 = models.CharField(max_length=50)
+    date_2 = models.CharField(max_length=10, blank=True, default="")
     po = models.IntegerField()
-    style = models.CharField(max_length=100)
+    style = models.CharField(max_length=50)
     batch = models.IntegerField()
-    color = models.CharField(max_length=50)
+    color = models.ForeignKey(Color, on_delete=models.PROTECT, related_name="quality_qc_fa_records")
     qty = models.IntegerField()
     seconds = models.IntegerField()
     accepted = models.IntegerField()
     rejected = models.IntegerField()
     sample = models.IntegerField()
-    defeacts = models.IntegerField()
+    defects_total = models.IntegerField(default=0)
     aql = models.FloatField()
-    pass_or_fail = models.CharField(max_length=50)
+    pass_or_fail = models.CharField(max_length=10)
+    defects = models.ManyToManyField(
+        DefectType,
+        through="InspectionDefect",
+        related_name="quality_qc_fa_records",
+    )
 
-    defeacts = models.ForeignKey(AmountDefects, on_delete=models.CASCADE)
+class InspectionDefect(models.Model):
+    inspection = models.ForeignKey(QualityQcFa, on_delete=models.CASCADE, related_name="inspection_defects")
+    defect_type = models.ForeignKey(DefectType, on_delete=models.PROTECT, related_name="inspection_defects")
+    amount = models.IntegerField(default=0)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["inspection", "defect_type"],
+                name="unique_quality_qc_fa_defect",
+            )
+        ]
+
+
+
+# tabla SecondsA4
+
+class SecondsA4(models.Model):
+    year = models.IntegerField()
+    week = models.IntegerField()
+    date = models.CharField(max_length=10)
+    cut_num = models.IntegerField()
+    style = models.CharField(max_length=50)
+    cut_qty = models.IntegerField()
+    color = models.ForeignKey(Color, on_delete=models.PROTECT, related_name="seconds_a4_records")
+    first_quality_qty_sewing = models.IntegerField()
+    sample = models.IntegerField()
+    pass_field = models.IntegerField()
+    fail_field = models.IntegerField()
+    sew_def = models.IntegerField()
+    fab_def = models.IntegerField()
+    accepted = models.IntegerField()
+    rejected = models.IntegerField()
+    total_of_2ds = models.IntegerField()
+    percentage_of_2ds = models.FloatField()
+    line = models.CharField(max_length=20)
+    seconds_by_sew = models.IntegerField()
+    seconds_by_fab = models.IntegerField()
+    seconds_sew_a4 = models.IntegerField()
+    seconds_fab_a4 = models.IntegerField()
+
+
+# Tabla Seconds General
+
+class SecondsGeneral(models.Model):
+    date = models.CharField(max_length=10)
+    week = models.IntegerField()
+    corrido_2 = models.IntegerField()
+    barre = models.IntegerField()
+    otros_3 = models.IntegerField()
+    degradacion = models.IntegerField()
+    bordados = models.IntegerField()
+    total_de_tela = models.IntegerField()
+
+
+# Tabla Container
+
+class ContainerDefectType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+class Container(models.Model):
+    container_number = models.IntegerField()
+    customer = models.CharField(max_length=50)
+    transfer_of_container = models.IntegerField(default=0)
+    total_palette = models.IntegerField()
+    total_palette_pass = models.IntegerField()
+    total_palette_rejected = models.IntegerField()
+    percentage_pass = models.FloatField()
+    percentage_reject = models.FloatField()
+    defects = models.ManyToManyField(
+        ContainerDefectType,
+        through="ContainerInspectionDefect",
+        related_name="container_records",
+    )
+
+
+class ContainerInspectionDefect(models.Model):
+    container = models.ForeignKey(Container, on_delete=models.CASCADE, related_name="container_defects",)
+    defect_type = models.ForeignKey(ContainerDefectType, on_delete=models.PROTECT, related_name="container_defects",)
+    amount = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["container", "defect_type"],
+                name="unique_container_defect",
+            )
+        ]
