@@ -11,7 +11,7 @@ class AmountDefects(models.Model):
         "C": "Container"
     }
     
-    table_type = models.CharField(max_length=1, choices=table_type_choices)
+    table_type = models.CharField(max_length=20, choices=table_type_choices)
 
     uneven = models.IntegerField()
     broken_stitch = models.IntegerField()
@@ -76,15 +76,14 @@ class QualityQcFa(models.Model):
     style = models.CharField(max_length=100)
     batch = models.IntegerField()
     color = models.CharField(max_length=50)
-    qty = models.CharField(max_length=50)
+    qty = models.IntegerField()
     seconds = models.IntegerField()
     accepted = models.IntegerField()
     rejected = models.IntegerField()
     sample = models.IntegerField()
     defeacts = models.IntegerField()
-    aql = models.CharField(max_length=50)
+    aql = models.FloatField()
     pass_or_fail = models.CharField(max_length=50)
 
     defeacts = models.ForeignKey(AmountDefects, on_delete=models.CASCADE)
-
 
