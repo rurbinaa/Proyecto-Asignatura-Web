@@ -17,7 +17,7 @@ from excel_importer.sheet_configs import (
 
 
 def _get_incremental_rows(df, table_type):
-    db_rows = QualityQcFa.objects.filter(defeacts__table_type=table_type).count()
+    db_rows = QualityQcFa.objects.filter(table_type=table_type).count()
     df_rows = len(df)
     rows_to_insert = max(df_rows - db_rows, 0)
 

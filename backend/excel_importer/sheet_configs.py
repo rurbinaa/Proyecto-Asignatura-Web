@@ -22,7 +22,7 @@ QC_FA_PLANT_REMAP = {
     'Accepted': 'accepted',
     'Rejected': 'rejected',
     'Sample': 'sample',
-    'Defects': 'defeacts',
+    'Defects': 'defects_total',
     'AQL %': 'aql',
     'Pass/Fail': 'pass_or_fail',
     'Uneven': 'uneven',
@@ -78,7 +78,7 @@ QC_FA_PLANT_REMAP = {
 }
 
 QC_FA_PLANT_NUMERIC_COLUMNS = [
-    "week", "team", "po", "batch", "seconds", "accepted", "rejected", "sample", "aql", "qty"
+    "week", "team", "po", "batch", "seconds", "accepted", "rejected", "sample", "aql", "qty", "defects_total"
 ]
 
 QC_FA_PLANT_NOT_NUMERIC_COLUMNS = [
@@ -112,7 +112,7 @@ QC_FA_CUSTOMER_REMAP = {
     'Accepted': 'accepted',
     'Rejected': 'rejected',
     'Sample': 'sample',
-    'Defects': 'defeacts',
+    'Defects': 'defects_total',
     'AQL %': 'aql',
     'Pass/Fail': 'pass_or_fail',
     'Uneven': 'uneven',
@@ -165,7 +165,7 @@ QC_FA_CUSTOMER_REMAP = {
 }
 
 QC_FA_CUSTOMER_NUMERIC_COLUMNS = [
-    "week", "team", "po", "batch", "seconds", "accepted", "rejected", "sample", "aql", "qty"
+    "week", "team", "po", "batch", "seconds", "accepted", "rejected", "sample", "aql", "qty", "defects_total"
 ]
 
 QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS = [
