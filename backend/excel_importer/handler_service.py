@@ -1,12 +1,12 @@
 import pandas as pd
-from datetime import datetime
 from quality_data.models import QualityQcFa, AmountDefects
-import math
 
 
 
-def load_and_clean(file_obj, remap_columns, numeric_columns,defeacts_fields, sheet, header, cols):
+def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols):
+    file_obj.seek(0)
     df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)
     
@@ -15,23 +15,37 @@ def load_and_clean(file_obj, remap_columns, numeric_columns,defeacts_fields, she
     numeric_and_defects_cols = list(set(numeric_columns + defeacts_fields))
 
     for col in numeric_and_defects_cols:
+        if col not in df.columns:
+            df[col] = 0
+
+    for col in numeric_and_defects_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
+    if "po" in df.columns:
+        df = df[df["po"] != 0].copy()
+
     if "pass_or_fail" in df.columns:
-        mask = ~df["pass_or_fail"].isin(["Pass", "Fail"])
-        df.loc[mask, "pass_or_fail"] = "Pass"
+        normalized_pass_or_fail = df["pass_or_fail"].astype(str).str.strip().str.upper()
+        df["pass_or_fail"] = "Pass"
+        df.loc[normalized_pass_or_fail == "FAIL", "pass_or_fail"] = "Fail"
 
     text_cols = df.select_dtypes(include=['object']).columns
     df[text_cols] = df[text_cols].fillna("UNKNOWN")
     
     return df
 
-def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields):
+def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type):
+    if df.empty:
+        return
+
     quality_instances = []
 
     defect_data = [
-        AmountDefects (**{field: row.get(field, 0) for field in defeacts_fields})
+        AmountDefects(
+            table_type=table_type,
+            **{field: row.get(field, 0) for field in defeacts_fields},
+        )
         for _, row in df.iterrows()
     ]
 
