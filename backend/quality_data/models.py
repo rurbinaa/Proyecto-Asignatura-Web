@@ -33,6 +33,7 @@ class AmountDefects(models.Model):
     po_midex = models.IntegerField()
     transfer_peel_off_or_leave = models.IntegerField()
     wrong_transfer = models.IntegerField()
+    wrong_label = models.IntegerField()
     missing_transfer = models.IntegerField()
     missing_label = models.IntegerField()
     shine = models.IntegerField()
