@@ -28,12 +28,12 @@ class QualityQcFa(models.Model):
         max_length=3,
         choices=QUALITY_QC_FA_TABLE_TYPE_CHOICES,
     )
-    date_1 = models.CharField(max_length=10)
+    date_1 = models.CharField(max_length=20)
     week = models.IntegerField()
     customer = models.CharField(max_length=50)
     team = models.IntegerField()
     coord = models.CharField(max_length=50)
-    date_2 = models.CharField(max_length=10, blank=True, default="")
+    date_2 = models.CharField(max_length=20, blank=True, default="")
     po = models.IntegerField()
     style = models.CharField(max_length=50)
     batch = models.IntegerField()
@@ -72,7 +72,7 @@ class InspectionDefect(models.Model):
 class SecondsA4(models.Model):
     year = models.IntegerField()
     week = models.IntegerField()
-    date = models.CharField(max_length=10)
+    date = models.CharField(max_length=20)
     cut_num = models.IntegerField()
     style = models.CharField(max_length=50)
     cut_qty = models.IntegerField()
@@ -97,7 +97,7 @@ class SecondsA4(models.Model):
 # Tabla Seconds General
 
 class SecondsGeneral(models.Model):
-    date = models.CharField(max_length=10)
+    date = models.CharField(max_length=20)
     week = models.IntegerField()
     corrido_2 = models.IntegerField()
     barre = models.IntegerField()

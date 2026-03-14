@@ -183,3 +183,104 @@ QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS = [
     'wrong_po', 'wrong_folding_method', 'wrong_size_attached', 'damaged_label', 'pocket_label', 'label_placement',
     'missing_information_label'
 ]
+
+
+SECONDS_A4_REMAP = {
+    'year': 'year',
+    'week': 'week',
+    'DATE': 'date',
+    'CUT#': 'cut_num',
+    'STYLE': 'style',
+    'CUT QTY': 'cut_qty',
+    'COLOR': 'color',
+    'FIRST QUALITY QTY SEWING': 'first_quality_qty_sewing',
+    'Sample': 'sample',
+    'PASS': 'pass_field',
+    'FAIL': 'fail_field',
+    'SEW DEF.': 'sew_def',
+    'FAB. DEF.': 'fab_def',
+    '% ACEPTED': 'accepted',
+    '% REJECTED': 'rejected',
+    'TOTAL OF 2DS': 'total_of_2ds',
+    '% OF 2DS': 'percentage_of_2ds',
+    'LINE#': 'line',
+    '2DA BY SEW': 'seconds_by_sew',
+    '2DA BY\xa0 FAB': 'seconds_by_fab',
+    '%Seconds Sew A4': 'seconds_sew_a4',
+    '%Seconds Fab A4': 'seconds_fab_a4',
+}
+
+SECONDS_A4_NUMERIC_COLUMNS = [
+    'year', 'week', 'cut_num', 'cut_qty', 'first_quality_qty_sewing', 'sample',
+    'pass_field', 'fail_field', 'sew_def', 'fab_def', 'accepted', 'rejected',
+    'total_of_2ds', 'percentage_of_2ds', 'seconds_by_sew', 'seconds_by_fab',
+    'seconds_sew_a4', 'seconds_fab_a4'
+]
+
+SECONDS_A4_NOT_NUMERIC_COLUMNS = [
+    'date', 'style', 'color', 'line'
+]
+
+
+SECONDS_GENERAL_REMAP = {
+    'Date': 'date',
+    'Week': 'week',
+    'Picado de Aguja': 'corrido_2',
+    'Manchas/Sucio': 'barre',
+    'Grasa': 'otros_3',
+    'Tono Tela': 'degradacion',
+    'Fuera Medidas': 'bordados',
+    'Definitive': 'total_de_tela',
+}
+
+SECONDS_GENERAL_NUMERIC_COLUMNS = [
+    'week', 'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados', 'total_de_tela'
+]
+
+SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
+    'date'
+]
+
+
+CONTAINER_REMAP = {
+    '# Container': 'container_number',
+    'Customer': 'customer',
+    '# Transfert of Container': 'transfer_of_container',
+    'Total Palette': 'total_palette',
+    'Total Palette Pass': 'total_palette_pass',
+    'Total Palette reject': 'total_palette_rejected',
+    '% Pass': 'percentage_pass',
+    '% Reject': 'percentage_reject',
+    'Dirt label/ \n Salte nan Etikèt': 'dirt_label',
+    'dirt container/ \n Konntenè sal': 'dirt_container',
+    'Dirt Cartons/ Katon Sal': 'dirt_cartoons',
+    'Container Holes\nTwou nan Konntenè': 'container_holes',
+    'Written mark on Label\nEkriti sou Etikèt': 'writte_mark_on_label',
+    'Written mark on Carton\nEkriti sou Bwat yo': 'written_mark_on_cartoon',
+    'container poor close \nKontenè mal fèmen': 'container_poor_close',
+    'boxes pooor close\nBwat ki mal fèmen': 'boxes_poor_close',
+    'Printing Issues label/ \nProblem Enpresyon Etikèt': 'printing_issues_label',
+    'Misaligned label/ \nEtikèt kwochi': 'misaligned_label',
+    'Crushed corners Boxes / Bwat kraze': 'crushed_corners',
+    'Cartons Holes \nTwou nan Bwat2': 'cartoons_holes',
+    'Warped Boxes/  Bwat Defòme': 'warped_boxes',
+    'Defects label carton /Defo Etikèt katon': 'defects_label',
+    'Total defects': 'total_defects',
+}
+
+CONTAINER_NUMERIC_COLUMNS = [
+    'container_number', 'transfer_of_container', 'total_palette', 'total_palette_pass',
+    'total_palette_rejected', 'percentage_pass', 'percentage_reject'
+]
+
+CONTAINER_NOT_NUMERIC_COLUMNS = [
+    'customer'
+]
+
+CONTAINER_AMOUNT_DEFEACTS_FIELDS = [
+    'dirt_label', 'dirt_container', 'dirt_cartoons', 'container_holes',
+    'writte_mark_on_label', 'written_mark_on_cartoon', 'container_poor_close',
+    'boxes_poor_close', 'printing_issues_label', 'misaligned_label',
+    'crushed_corners', 'cartoons_holes', 'warped_boxes', 'defects_label',
+    'total_defects'
+]

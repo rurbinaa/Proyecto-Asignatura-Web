@@ -1,9 +1,48 @@
 import pandas as pd
-from quality_data.models import Color, DefectType, InspectionDefect, QualityQcFa
+from quality_data.models import (
+    Color,
+    Container,
+    ContainerDefectType,
+    ContainerInspectionDefect,
+    DefectType,
+    InspectionDefect,
+    QualityQcFa,
+    SecondsA4,
+    SecondsGeneral,
+)
 
+
+def _normalize_defects_fields(defeacts_fields):
+    if defeacts_fields in (None, 0):
+        return []
+    return list(defeacts_fields)
+
+
+def _truncate_charfields(model_class, data):
+    field_lengths = {
+        field.name: field.max_length
+        for field in model_class._meta.fields
+        if hasattr(field, "max_length") and field.max_length is not None
+    }
+
+    for field_name, max_length in field_lengths.items():
+        value = data.get(field_name)
+        if isinstance(value, str):
+            data[field_name] = value[:max_length]
+
+    return data
+
+# He quitado y vuelto a poner esta funcion como mil veces, ya mejor aqui se queda
+def print_headers(file_obj,sheet,header,cols):
+    file_obj.seek(0)
+    df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+    pd.set_option('display.max_columns', None)
+    print(df.columns.tolist())
 
 
 def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols):
+    defeacts_fields = _normalize_defects_fields(defeacts_fields)
+
     file_obj.seek(0)
     df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
 
@@ -36,6 +75,8 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     return df
 
 def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type):
+    defeacts_fields = _normalize_defects_fields(defeacts_fields)
+
     if df.empty:
         return
 
@@ -50,6 +91,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
         production_data['table_type'] = table_type
         production_data['color'] = color_obj
+        production_data = _truncate_charfields(QualityQcFa, production_data)
  
 
         quality_instances.append(QualityQcFa(**production_data))
@@ -82,3 +124,83 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     if inspection_defects:
         InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000)
+
+
+def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):
+    if df.empty:
+        return
+
+    instances = []
+
+    for _, row in df.iterrows():
+        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
+        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+
+        production_data = {field: row.get(field, 0) for field in numeric_columns}
+        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data['color'] = color_obj
+        production_data = _truncate_charfields(SecondsA4, production_data)
+
+        instances.append(SecondsA4(**production_data))
+
+    SecondsA4.objects.bulk_create(instances, batch_size=1000)
+
+
+def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
+    if df.empty:
+        return
+
+    instances = []
+
+    for _, row in df.iterrows():
+        production_data = {field: row.get(field, 0) for field in numeric_columns}
+        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data = _truncate_charfields(SecondsGeneral, production_data)
+
+        instances.append(SecondsGeneral(**production_data))
+
+    SecondsGeneral.objects.bulk_create(instances, batch_size=1000)
+
+
+def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fields):
+    defeacts_fields = _normalize_defects_fields(defeacts_fields)
+
+    if df.empty:
+        return
+
+    container_instances = []
+
+    for _, row in df.iterrows():
+        production_data = {field: row.get(field, 0) for field in numeric_columns}
+        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data = _truncate_charfields(Container, production_data)
+
+        container_instances.append(Container(**production_data))
+
+    created_containers = Container.objects.bulk_create(container_instances, batch_size=1000)
+
+    defect_types = ContainerDefectType.objects.filter(name__in=defeacts_fields)
+    defect_type_map = {defect.name: defect for defect in defect_types}
+
+    container_defects = []
+    for (_, row), container_instance in zip(df.iterrows(), created_containers):
+        for defect_field in defeacts_fields:
+            amount = int(row.get(defect_field, 0) or 0)
+
+            if amount <= 0:
+                continue
+
+            defect_type = defect_type_map.get(defect_field)
+            if defect_type is None:
+                continue
+
+            container_defects.append(
+                ContainerInspectionDefect(
+                    container=container_instance,
+                    defect_type=defect_type,
+                    amount=amount,
+                )
+            )
+
+    if container_defects:
+        ContainerInspectionDefect.objects.bulk_create(container_defects, batch_size=2000)
