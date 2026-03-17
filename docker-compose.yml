@@ -18,7 +18,7 @@ services:
       dockerfile: Dockerfile
     container_name: backend_app
     command: >
-      sh -c "python manage.py makemigrations && python manage.py migrate && 
+      sh -c "python manage.py makemigrations && python manage.py migrate && python manage.py shell -c 'from quality_data.init_data_models import SaveColor, SaveDefects, SaveDefectsContainer; SaveColor(); SaveDefects(); SaveDefectsContainer()' &&
              daphne -b 0.0.0.0 -p 8000 backend.asgi:application"
     volumes:
       - ./backend:/app
