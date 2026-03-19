@@ -1,0 +1,16 @@
+.mockup-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.point-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  background-color: red;
+  border-radius: 50%;
+  border: 2px solid white;
+  pointer-events: none;
+}
