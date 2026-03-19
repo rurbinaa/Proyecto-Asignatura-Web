@@ -1,13 +1,11 @@
-import MockupContainer from './Components/mockupContainer.jsx'; // Importamos tu nuevo componente
+import urlShirt from './assets/shirt.svg';
+import MockupContainer from './Components/mockupContainer.jsx';
 
 function App() {
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '20px' }}>
-        Prueba de la Tarea de Trello
-      </h1>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width:'100vw', minHeight:'60vh', padding:'20px' }}>
       
-      <MockupContainer />
+      <MockupContainer garmentUrl={urlShirt} />
       
     </div>
   );
