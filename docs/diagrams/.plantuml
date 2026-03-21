@@ -1,131 +1,147 @@
-@startuml Uniwell_Database_Model
+@startuml Quality_Data_Model
 
 !theme plain
-top to bottom direction
+left to right direction
 skinparam linetype ortho
 
-entity "User" as User {
-    * ID : Pk
+entity "Color" as Color {
+    * id : PK
     --
-    Code : String
-    Name : String
-    Email : String
-    Role : String
-    Shift : String
-    Status : String
-}
-
-entity "Customer" as Customer {
-    * ID : Pk
-    --
-    Name : String
-}
-
-entity "ProductionLine" as ProductionLine {
-    * ID : Pk
-    --
-    Name : String
-}
-
-entity "PurchaseOrder" as PurchaseOrder {
-    * ID : Pk
-    --
-    PO_Number : String
-    Customer_Id : Fk
-}
-
-entity "Style" as Style {
-    * ID : Pk
-    --
-    Name : String
-    ArtCode : String
-    Size : String
-    Color : String
-    Material : String
-}
-
-entity "DefectCategory" as DefectCategory {
-    * ID : Pk
-    --
-    Name : String
+    name : Char(50) [unique]
+    is_active : Bool
 }
 
 entity "DefectType" as DefectType {
-    * ID : Pk
+    * id : PK
     --
-    Name : String
-    DefectCategory_Id : Fk
+    name : Char(100) [unique]
+    is_active : Bool
 }
 
-entity "Inspection" as Inspection {
-    * ID : Pk
+entity "QualityQcFa" as QualityQcFa {
+    * id : PK
     --
-    Date : DateTime
-    Week : Int
-    BatchCode : String
-    Inspector_Id : Fk
-    PurchaseOrder_Id : Fk
-    Style_Id : Fk
-    ProductionLine_Id : Fk
-    Quantity : Int
-    SampleSize : Int
-    Accepted : Int
-    Rejected : Int
-    Seconds : Int
-    AQL_Percentage : Float
-    FinalStatus : String
-    TotalFixed : Int
-    TotalDefinitive : Int
+    table_type : Char(3) {QFA|QFC}
+    date_1 : Char(20)
+    week : Int
+    customer : Char(50)
+    team : Int
+    coord : Char(50)
+    date_2 : Char(20) [blank]
+    po : Int
+    style : Char(50)
+    batch : Int
+    color_id : FK
+    qty : Int
+    seconds : Int
+    accepted : Int
+    rejected : Int
+    sample : Int
+    defects_total : Int
+    aql : Float
+    pass_or_fail : Char(10)
 }
 
 entity "InspectionDefect" as InspectionDefect {
-    * ID : Pk
+    * id : PK
     --
-    Inspection_Id : Fk
-    DefectType_Id : Fk
-    DefectCount : Int
-    Coordinate_X : Float
-    Coordinate_Y : Float
-    Image : String
-    Comment : String
+    inspection_id : FK
+    defect_type_id : FK
+    amount : Int
+    (inspection_id, defect_type_id) : UNIQUE
 }
 
-entity "ContainerAudit" as ContainerAudit {
-    * ID : Pk
+entity "SecondsA4" as SecondsA4 {
+    * id : PK
     --
-    Date : DateTime
-    ContainerNumber : String
-    TransferNumber : String
-    Customer_Id : Fk
-    TotalPalettes : Int
-    PalettesPass : Int
-    PalettesReject : Int
-    PassPercentage : Float
-    RejectPercentage : Float
+    year : Int
+    week : Int
+    date : Char(20)
+    cut_num : Int
+    style : Char(50)
+    cut_qty : Int
+    color_id : FK
+    first_quality_qty_sewing : Int
+    sample : Int
+    pass_field : Int
+    fail_field : Int
+    sew_def : Int
+    fab_def : Int
+    accepted : Int
+    rejected : Int
+    total_of_2ds : Int
+    percentage_of_2ds : Float
+    line : Char(20)
+    seconds_by_sew : Int
+    seconds_by_fab : Int
+    seconds_sew_a4 : Int
+    seconds_fab_a4 : Int
 }
 
-entity "ContainerDefect" as ContainerDefect {
-    * ID : Pk
+entity "SecondsGeneral" as SecondsGeneral {
+    * id : PK
     --
-    ContainerAudit_Id : Fk
-    DefectType_Id : Fk
-    DefectCount : Int
+    date : Char(20)
+    week : Int
+    corrido_2 : Int
+    barre : Int
+    otros_3 : Int
+    degradacion : Int
+    bordados : Int
+    total_de_tela : Int
 }
 
-' Relaciones
-PurchaseOrder }o--|| Customer
-Inspection }o--|| PurchaseOrder
-Inspection }o--|| Style
-Inspection }o--|| ProductionLine
-Inspection }o--|| User
+entity "ContainerDefectType" as ContainerDefectType {
+    * id : PK
+    --
+    name : Char(100) [unique]
+    is_active : Bool
+}
 
-DefectType }o--|| DefectCategory
+entity "Container" as Container {
+    * id : PK
+    --
+    container_number : Int
+    customer : Char(50)
+    transfer_of_container : Int
+    total_palette : Int
+    total_palette_pass : Int
+    total_palette_rejected : Int
+    percentage_pass : Float
+    percentage_reject : Float
+}
 
-InspectionDefect }o--|| Inspection
+entity "ContainerInspectionDefect" as ContainerInspectionDefect {
+    * id : PK
+    --
+    container_id : FK
+    defect_type_id : FK
+    amount : PositiveInt
+    (container_id, defect_type_id) : UNIQUE
+}
+
+' FK relations
+QualityQcFa }o--|| Color
+InspectionDefect }o--|| QualityQcFa
 InspectionDefect }o--|| DefectType
+SecondsA4 }o--|| Color
+ContainerInspectionDefect }o--|| Container
+ContainerInspectionDefect }o--|| ContainerDefectType
 
-ContainerAudit }o--|| Customer
-ContainerDefect }o--|| ContainerAudit
-ContainerDefect }o--|| DefectType
+' Logical M2M relations (through tables)
+QualityQcFa }o--o{ DefectType : through InspectionDefect
+Container }o--o{ ContainerDefectType : through ContainerInspectionDefect
+
+note bottom of Color
+Seeded from init_data_models.py (COMPANY_COLORS)
+end note
+
+note bottom of DefectType
+Seeded from init_data_models.py (GARMENT_DEFECT_TYPES)
+end note
+
+note bottom of ContainerDefectType
+Seeded from init_data_models.py (CONTAINER_DEFECT_TYPES)
+end note
 
 @enduml

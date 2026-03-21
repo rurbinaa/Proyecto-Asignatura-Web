@@ -1,99 +1,176 @@
-# Plan de Desarrollo Backend (Django / DRF)
+# Modelo De Datos Backend (Estado Implementado)
 
-Este documento detalla la estrategia de implementación para el backend del proyecto **Uniwell Apparel**, basado en el análisis de los archivos Excel históricos, el BRIEF de requerimientos (RF-002, RF-004) y el modelo de datos unificado.
+Este documento refleja el estado real del modelo en `backend/quality_data/models.py` y su complemento de carga inicial en `backend/quality_data/init_data_models.py`.
 
-## 1. Patrón Arquitectónico y Stack
-* **Framework:** Django con Django REST Framework (DRF) para exponer las APIs hacia el frontend en Vite/React.
-* **Base de Datos:** PostgreSQL (recomendado para producción) ya que maneja de forma muy eficiente las consultas de agrupación para analíticas y mapas de calor (JSONB y cálculos geoespaciales si en el futuro se requirieran). Para desarrollo, SQLite es suficiente.
-* **Autenticación:** JSON Web Tokens (JWT) mediante `djangorestframework-simplejwt`.
+## 1. Resumen General
 
-## 2. Sugerencia de Arquitectura de Aplicaciones (Django Apps)
-Para mantener un código limpio y escalable, se sugiere dividir el backend en las siguientes aplicaciones (mediante el comando `python manage.py startapp <nombre>`):
+- App principal: `quality_data`.
+- Esquemas funcionales: control de calidad (`QualityQcFa`, `InspectionDefect`), segundos (`SecondsA4`, `SecondsGeneral`) y contenedores (`Container`, `ContainerInspectionDefect`).
+- Catalogos reutilizables: `Color`, `DefectType`, `ContainerDefectType`.
+- Relaciones M2M con tabla intermedia: `QualityQcFa <-> DefectType` y `Container <-> ContainerDefectType`.
 
-### A. `users` (Gestión de Usuarios y Accesos)
-* **Modelos:** Heredar de `AbstractUser` para crear la entidad `User`.
-* **Propósito:** Manejar roles (Inspector, Supervisor, Gerente), turnos (`Shift`), email y credenciales. 
-* **Endpoints:** Login (Token), Registro, Perfil.
+## 2. Tablas Y Campos
 
-### B. `catalogs` (Datos Maestros y Estáticos)
-* **Modelos:** `Customer`, `ProductionLine`, `DefectCategory`, `DefectType`, `Style`, `PurchaseOrder`.
-* **Propósito:** Agrupar todos los catálogos de los que dependen las inspecciones. Rara vez se eliminan, frecuentemente se leen.
-* **Endpoints:** CRUD completo para gestionar líneas nuevas, nuevos clientes, o añadir tipos de defectos (Catálogos necesarios para los selectores del frontend).
+### 2.1 `Color`
 
-### C. `qc` (Quality Control & Inspections)
-* **Modelos:** `Inspection`, `InspectionDefect`.
-* **Propósito:** Es el núcleo transaccional. Manejará tanto la ingesta masiva (Excel) como la captura táctil en planta.
-* **Endpoints y Servicios:** 
-  * `POST /api/qc/inspections/excel-upload/`: Subida de archivos (Ver sección dinámica).
-  * `POST /api/qc/inspections/`: Creación desde la app táctil, procesando DTOs.
-  * `GET /api/qc/analytics/`: Endpoints especializados en agrupar métricas (AQL Promedio, Defecto más común, Reportes para mapas de calor).
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `name` | `CharField(max_length=50)` | No | - | `unique=True` |
+| `is_active` | `BooleanField` | No | `True` | - |
 
-### D. `logistics` (Auditoría de Contenedores)
-* **Modelos:** `ContainerAudit`, `ContainerDefect`.
-* **Propósito:** Desacoplar las métricas de prendas (QC) de las métricas de embarque/tarimas. 
-* **Endpoints:** Registro de validación de contenedores y defectos logísticos (etiquetas sucias, cajas rotas).
+Uso relacional:
+- FK desde `QualityQcFa.color`.
+- FK desde `SecondsA4.color`.
 
----
+### 2.2 `DefectType`
 
-## 3. Estrategia de Ingesta de Datos 
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `name` | `CharField(max_length=100)` | No | - | `unique=True` |
+| `is_active` | `BooleanField` | No | `True` | - |
 
-### Ingesta Masiva mediante Excel (RF-002)
-Dado que los datos de control de calidad llevan años almacenados en el archivo Excel `QA Data report 2025.xlsx`:
+Uso relacional:
+- M2M con `QualityQcFa` via `InspectionDefect`.
 
-1. **Herramienta:** Usar la librería `pandas` instalada en tu entorno de Python dentro de un servicio o utilitario propio en Django (ej. `services/excel_processor.py`).
-2. **Método:** 
-   * **Transacciones Atómicas:** Todo el archivo debe leerse dentro de un bloque `with transaction.atomic():`. Si hay un error de validación en la fila 200, los cambios se revierten para no dejar la base de datos "a medias".
-   * **Resolución Relacional (`get_or_create`):** El script leerá, por ejemplo, el cliente "Grunt Style". Verificará si existe en el catálogo `Customer`; si no, lo creará al vuelo. Igual con el código de "Estilo", las "Líneas", etc.
-   * **Transposición (Unpivot):** Transformar las columnas horizontales de defectos del Excel a filas verticales para su guardado en `InspectionDefect` con `DefectCount = X` y coordenadas `X/Y = null`.
+### 2.3 `QualityQcFa`
 
-### Ingesta por Interfaz Táctil (RF-004)
-Este flujo exige el registro de defectos puntuales y dibujados sobre la prenda:
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `table_type` | `CharField(max_length=3)` | No | - | `choices=[QFA,QFC]` |
+| `date_1` | `CharField(max_length=20)` | No | - | - |
+| `week` | `IntegerField` | No | - | - |
+| `customer` | `CharField(max_length=50)` | No | - | - |
+| `team` | `IntegerField` | No | - | - |
+| `coord` | `CharField(max_length=50)` | No | - | - |
+| `date_2` | `CharField(max_length=20)` | Blank si | `""` | - |
+| `po` | `IntegerField` | No | - | - |
+| `style` | `CharField(max_length=50)` | No | - | - |
+| `batch` | `IntegerField` | No | - | - |
+| `color` | `ForeignKey(Color)` | No | - | `on_delete=PROTECT` |
+| `qty` | `IntegerField` | No | - | - |
+| `seconds` | `IntegerField` | No | - | - |
+| `accepted` | `IntegerField` | No | - | - |
+| `rejected` | `IntegerField` | No | - | - |
+| `sample` | `IntegerField` | No | - | - |
+| `defects_total` | `IntegerField` | No | `0` | - |
+| `aql` | `FloatField` | No | - | - |
+| `pass_or_fail` | `CharField(max_length=10)` | No | - | - |
+| `defects` | `ManyToManyField(DefectType)` | - | - | `through=InspectionDefect` |
 
-1. **DTOs Combinados (Nested Serializers):** El frontend enviará un JSON con la data consolidada de la inspección y un "array" con cada defecto detectado.
-2. **Estructura Esperada del JSON:**
-   ```json
-   {
-       "inspector_id": 4,
-       "purchase_order": "PO-123",
-       "quantity": 100,
-       "sample_size": 20,
-       "defects": [
-           {
-               "defect_type_id": 12,
-               "coordinate_x": 45.2,
-               "coordinate_y": 12.8,
-               "image": "base64_or_file...",
-               "comment": "Costura abierta en axila derecha"
-           }
-       ]
-   }
-   ```
-3. El serializador de `Inspection` capturará los `defects` e insertará por cada objeto un registro a la vez con `DefectCount = 1`, preservando las coordenadas para renderizar posteriormente el heat-map.
+### 2.4 `InspectionDefect` (tabla intermedia de defectos de inspeccion)
 
----
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `inspection` | `ForeignKey(QualityQcFa)` | No | - | `on_delete=CASCADE` |
+| `defect_type` | `ForeignKey(DefectType)` | No | - | `on_delete=PROTECT` |
+| `amount` | `IntegerField` | No | `0` | - |
 
-## 4. Endpoints y Analíticas Claves (Consultas Sugeridas)
+Constraints:
+- `UniqueConstraint(fields=["inspection", "defect_type"], name="unique_quality_qc_fa_defect")`.
 
-Para alimentar los Dashboards (reportes ejecutivos interactivos a responder en < 3 segundos según el BRIEF), deberás aprovechar el `ORM` de Django usando `annotate()` y `aggregate()`:
+### 2.5 `SecondsA4`
 
-* **Top 5 Defectos Más Frecuentes:**
-  ```python
-  InspectionDefect.objects.values('DefectType_Id__Name') \
-  .annotate(total=Sum('DefectCount')) \
-  .order_by('-total')[:5]
-  ```
-* **Comportamiento y Evolución de Calidad por Lote:** Graficar líneas de tendencia filtrando el parámetro `Week` (Semana) alojado de forma nativa en la tabla de Inspección.
-* **Data de Mapa de Calor:**
-  ```python
-  InspectionDefect.objects.filter(
-      Inspection_Id__Style_Id=estilo_id, 
-      Coordinate_X__isnull=False
-  ).values('Coordinate_X', 'Coordinate_Y', 'DefectType_Id__Name')
-  ```
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `year` | `IntegerField` | No | - | - |
+| `week` | `IntegerField` | No | - | - |
+| `date` | `CharField(max_length=20)` | No | - | - |
+| `cut_num` | `IntegerField` | No | - | - |
+| `style` | `CharField(max_length=50)` | No | - | - |
+| `cut_qty` | `IntegerField` | No | - | - |
+| `color` | `ForeignKey(Color)` | No | - | `on_delete=PROTECT` |
+| `first_quality_qty_sewing` | `IntegerField` | No | - | - |
+| `sample` | `IntegerField` | No | - | - |
+| `pass_field` | `IntegerField` | No | - | - |
+| `fail_field` | `IntegerField` | No | - | - |
+| `sew_def` | `IntegerField` | No | - | - |
+| `fab_def` | `IntegerField` | No | - | - |
+| `accepted` | `IntegerField` | No | - | - |
+| `rejected` | `IntegerField` | No | - | - |
+| `total_of_2ds` | `IntegerField` | No | - | - |
+| `percentage_of_2ds` | `FloatField` | No | - | - |
+| `line` | `CharField(max_length=20)` | No | - | - |
+| `seconds_by_sew` | `IntegerField` | No | - | - |
+| `seconds_by_fab` | `IntegerField` | No | - | - |
+| `seconds_sew_a4` | `IntegerField` | No | - | - |
+| `seconds_fab_a4` | `IntegerField` | No | - | - |
 
-## 5. Próximos pasos a seguir
+### 2.6 `SecondsGeneral`
 
-1. Definir los modelos en los respectivos ficheros `models.py` según el Excalidraw / PlantUML.
-2. Ejecutar `python manage.py makemigrations` y `python manage.py migrate`.
-3. Crear el script pre-poblador de base de datos (`seed.py` o *management command*) que consuma tu `QA Data report 2025.xlsx` local y genere la data inicial de prueba de los años en curso.
-4. Generar la carpeta `serializers.py` en cada lógica para exponer la API REST.
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `date` | `CharField(max_length=20)` | No | - | - |
+| `week` | `IntegerField` | No | - | - |
+| `corrido_2` | `IntegerField` | No | - | - |
+| `barre` | `IntegerField` | No | - | - |
+| `otros_3` | `IntegerField` | No | - | - |
+| `degradacion` | `IntegerField` | No | - | - |
+| `bordados` | `IntegerField` | No | - | - |
+| `total_de_tela` | `IntegerField` | No | - | - |
+
+### 2.7 `ContainerDefectType`
+
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `name` | `CharField(max_length=100)` | No | - | `unique=True` |
+| `is_active` | `BooleanField` | No | `True` | - |
+
+Uso relacional:
+- M2M con `Container` via `ContainerInspectionDefect`.
+
+### 2.8 `Container`
+
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `container_number` | `IntegerField` | No | - | - |
+| `customer` | `CharField(max_length=50)` | No | - | - |
+| `transfer_of_container` | `IntegerField` | No | `0` | - |
+| `total_palette` | `IntegerField` | No | - | - |
+| `total_palette_pass` | `IntegerField` | No | - | - |
+| `total_palette_rejected` | `IntegerField` | No | - | - |
+| `percentage_pass` | `FloatField` | No | - | - |
+| `percentage_reject` | `FloatField` | No | - | - |
+| `defects` | `ManyToManyField(ContainerDefectType)` | - | - | `through=ContainerInspectionDefect` |
+
+### 2.9 `ContainerInspectionDefect` (tabla intermedia de defectos de contenedor)
+
+| Campo | Tipo Django | Null/Blank | Default | Restricciones |
+|---|---|---|---|---|
+| `id` | `BigAutoField` | No | Auto | PK |
+| `container` | `ForeignKey(Container)` | No | - | `on_delete=CASCADE` |
+| `defect_type` | `ForeignKey(ContainerDefectType)` | No | - | `on_delete=PROTECT` |
+| `amount` | `PositiveIntegerField` | No | `0` | - |
+
+Constraints:
+- `UniqueConstraint(fields=["container", "defect_type"], name="unique_container_defect")`.
+
+## 3. Relaciones Del Modelo
+
+- `QualityQcFa.color -> Color` (N:1).
+- `SecondsA4.color -> Color` (N:1).
+- `QualityQcFa <-> DefectType` (N:M via `InspectionDefect`).
+- `Container <-> ContainerDefectType` (N:M via `ContainerInspectionDefect`).
+
+## 4. Catalogos Iniciales (`init_data_models.py`)
+
+Funciones de carga inicial:
+- `SaveColor()` carga `COMPANY_COLORS` en `Color` si no existen.
+- `SaveDefects()` carga `GARMENT_DEFECT_TYPES` en `DefectType` si no existen.
+- `SaveDefectsContainer()` carga `CONTAINER_DEFECT_TYPES` en `ContainerDefectType` si no existen.
+
+Regla de insercion:
+- Patrón `if not Model.objects.filter(name=i).exists(): Model.objects.create(...)`.
+
+## 5. Referencias De Codigo
+
+- `backend/quality_data/models.py`
+- `backend/quality_data/init_data_models.py`
+- `docs/diagrams/.plantuml`
