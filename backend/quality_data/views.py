@@ -1,6 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.parsers import FileUploadParser
 from rest_framework.response import Response
+from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container
+from .models import InspectionDefect, DefectType
+from .serializers import DefectSerializer
 from excel_importer.handler_service import (
     load_and_clean,
     bulk_insert,
@@ -9,7 +12,6 @@ from excel_importer.handler_service import (
     bulk_insert_container,
     print_headers,
 )
-from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container
 from excel_importer.sheet_configs import (
     SHEET_NAMES,
     QC_FA_PLANT_REMAP,
