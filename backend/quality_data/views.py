@@ -215,3 +215,11 @@ class UndoCaptureView(APIView):
             last_defect.delete()
             return Response({"message": "Last record deleted"}, status=204)
         return Response({"error": "No records found"}, status=404)
+
+class CreateDefectView(APIView):
+    def post(self, request):
+        serializer = DefectSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(inspector=request.user)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
