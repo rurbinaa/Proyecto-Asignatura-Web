@@ -3,7 +3,7 @@ from .models import InspectionDefect, DefectType
 
 class DefectSerializer(serializers.ModelSerializer):
     inspector_name = serializers.ReadOnlyField(source='inspector.username')
-    timestamp = serializers.DateTimeField(format="%Y-%m-%d %H:%M:%S", read_only=True)
+    timestamp = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = InspectionDefect

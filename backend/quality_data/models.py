@@ -54,8 +54,6 @@ class QualityQcFa(models.Model):
 
 class InspectionDefect(models.Model):
     inspection = models.ForeignKey(QualityQcFa, on_delete=models.CASCADE, related_name="inspection_defects")
-    inspector = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    timestamp = models.DateTimeField(auto_now_add=True) # Sello de tiempo automático
     defect_type = models.ForeignKey(DefectType, on_delete=models.PROTECT, related_name="inspection_defects")
     amount = models.IntegerField(default=0)
 
@@ -146,10 +144,3 @@ class ContainerInspectionDefect(models.Model):
                 name="unique_container_defect",
             )
         ]
-        
-# Tabla Mockup
-class Mockup(models.Model):
-    name = models.CharField(max_length=100)
-    image = models.ImageField(upload_to='mockups/')
-    width = models.IntegerField(default=1024)
-    height = models.IntegerField(default=768)
