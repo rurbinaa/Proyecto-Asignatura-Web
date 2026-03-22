@@ -4,5 +4,6 @@ from .views import Process, SaveData
 
 urlpatterns = [
     path(r'process/<str:filename>/', Process.as_view(), name='process'),
-    path(r'savedata/<str:filename>/', SaveData.as_view(), name='savedata')
+    path(r'savedata/<str:filename>/', SaveData.as_view(), name='savedata'),
+    path('captura/undo/', UndoCaptureView.as_view(), name='undo-capture'),
 ]

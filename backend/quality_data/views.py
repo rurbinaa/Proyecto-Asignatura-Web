@@ -203,3 +203,15 @@ class MockupMetadataView(APIView):
             "technical_image_url": request.build_absolute_uri('/media/mockups/shirt.png'),
             "dimensions": {"width": 1024, "height": 768}
         })
+        
+# Endpoint para deshacer la última captura de defectos del inspector
+class UndoCaptureView(APIView):
+    def delete(self, request):
+        last_defect = InspectionDefect.objects.filter(
+            inspector=request.user
+        ).last()
+
+        if last_defect:
+            last_defect.delete()
+            return Response({"message": "Last record deleted"}, status=204)
+        return Response({"error": "No records found"}, status=404)
