@@ -144,3 +144,10 @@ class ContainerInspectionDefect(models.Model):
                 name="unique_container_defect",
             )
         ]
+        
+# Tabla Mockup
+class Mockup(models.Model):
+    name = models.CharField(max_length=100)
+    image = models.ImageField(upload_to='mockups/')
+    width = models.IntegerField(default=1024)
+    height = models.IntegerField(default=768)

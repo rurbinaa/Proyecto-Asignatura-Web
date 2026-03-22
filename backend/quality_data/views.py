@@ -194,3 +194,12 @@ class SaveData(APIView):
         print(f"container: {len(container_new_rows)}")
 
         return Response(status = 204)
+
+# Endpoint para obtener la maqueta según el lote
+class MockupMetadataView(APIView):
+    def get(self, request, lote_id):
+       
+        return Response({
+            "technical_image_url": request.build_absolute_uri('/media/mockups/shirt.png'),
+            "dimensions": {"width": 1024, "height": 768}
+        })
