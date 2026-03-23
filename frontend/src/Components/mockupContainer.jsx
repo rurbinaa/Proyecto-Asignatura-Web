@@ -1,21 +1,25 @@
-import { useState, useRef, use, useEffect } from 'react';
+import { useState, useRef, useEffect, use } from 'react';
 import './mockupContainer.css';
 
-export default function MockupContainer( { garmentUrl } ) {
+export default function MockupContainer( { garmentUrl, onMarkersChange } ) {
   const containerRef = useRef(null);
   const [renderedSvg, SetRenderedSvg] = useState(null);
-  const [marker, setmarker] = useState(null);
+  const [marker, setmarker] = useState([]);
 
   useEffect(() => {
     if (!garmentUrl) return;
-
-    setmarker(null);
-
+    setmarker([]);
     fetch(garmentUrl)
       .then((res) => res.text())
       .then((data) => SetRenderedSvg(data))
       .catch((err) => console.error('Error loading SVG:', err));
-      }, [garmentUrl]);
+    }, [garmentUrl]);
+
+  useEffect(() => {
+    if (onMarkersChange) {
+      onMarkersChange(marker);
+    }
+  }, [marker, onMarkersChange]);
 
   const handlePathClick = (e) => {
     if (e.target.tagName.toLowerCase() !== 'path') {
@@ -29,11 +33,11 @@ export default function MockupContainer( { garmentUrl } ) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const porcentajeX = (x / rect.width) * 100;
-    const porcentajeY = (y / rect.height) * 100;
+    const percentageX = (x / rect.width) * 100;
+    const percentageY = (y / rect.height) * 100;
 
-    console.log(`Garment click -> X: ${porcentajeX.toFixed(2)}%, Y: ${porcentajeY.toFixed(2)}%`);
-    setmarker({ x: porcentajeX, y: porcentajeY });
+    console.log(`Garment click -> X: ${percentageX.toFixed(2)}%, Y: ${percentageY.toFixed(2)}%`);
+    setmarker([...marker, { x: percentageX, y: percentageY, id: Date.now() }]);
   };
 
   return (
@@ -50,12 +54,14 @@ export default function MockupContainer( { garmentUrl } ) {
         <p>Loading SVG...</p>
       )}
 
-      {marker && (
+      {marker.map((mk) => (
         <div
+          key={mk.id}
           className="point-marker"
           style={{
-            left: `${marker.x}%`,
-            top: `${marker.y}%`,
+            position: 'absolute',
+            left: `${mk.x}%`,
+            top: `${mk.y}%`,
             transform: 'translate(-50%, -50%)',
             width: '16px',
             height: '16px',
@@ -65,7 +71,7 @@ export default function MockupContainer( { garmentUrl } ) {
             pointerEvents: 'none',
           }}
         />
-      )}
+      ))}
     </div>
   );
 }
