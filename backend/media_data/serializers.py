@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import InspectionData, RevisionDefect, Mockup
+from .models import InspectionData, RevisionDefect, Mockup, LastDefect
 
 class InspectionDataSerializer(serializers.ModelSerializer):
 
