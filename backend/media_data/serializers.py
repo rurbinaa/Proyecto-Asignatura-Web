@@ -1,19 +1,20 @@
 from rest_framework import serializers
-from .models import InspectionDefect, DefectType
+from .models import InspectionData, RevisionDefect, Mockup
 
-class DefectSerializer(serializers.ModelSerializer):
-    inspector_name = serializers.ReadOnlyField(source='inspector.username')
-    timestamp = serializers.DateTimeField(read_only=True)
+class InspectionDataSerializer(serializers.ModelSerializer):
 
     class Meta:
-        model = InspectionDefect
-        fields = [
-            'id', 
-            'inspection', 
-            'defect_type', 
-            'amount', 
-            'inspector',
-            'inspector_name', 
-            'timestamp'
-        ]
-        read_only_fields = ('inspector', 'timestamp')
+        model = InspectionData
+        fields = '_all_'
+
+class RevisionDefectSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = RevisionDefect
+        fields = '_all_'
+
+class MockupSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = Mockup
+        fields = '_all_'

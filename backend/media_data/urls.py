@@ -3,5 +3,5 @@ from .views import CreateDefectView, UndoCaptureView
 
 urlpatterns = [
     path('captura-defecto/', CreateDefectView.as_view(), name='captura-defecto'),
-    path('captura/undo/', UndoCaptureView.as_view(), name='undo-capture'),
+    path('captura/undo/', UndoCaptureView.as_view(), name='undo-capture')
 ]
