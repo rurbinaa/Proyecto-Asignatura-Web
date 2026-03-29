@@ -1,23 +1,23 @@
-import { useState } from 'react';
-import urlShirt from './assets/shirt.svg';
-import MockupContainer from './Components/mockupContainer.jsx';
+import './App.css';
+import Sidebar from './Components/Sidebar.jsx';
+import Navbar from './Components/Navbar.jsx';
+import CaptureView from './views/captureView';
 
 function App() {
-  
-  const [currentDefects, setCurrentDefects] = useState([]);
-  const handleDefectsUpdate = (updateMarkes) => {
-    setCurrentDefects(updateMarkes);
-
-    console.log('Updated defects:', updateMarkes);
-  };
-
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width:'100vw', minHeight:'60vh', padding:'20px' }}>
+    <div className="app-layout">
       
-      <MockupContainer 
-        garmentUrl={urlShirt} 
-        onMarkersChange={handleDefectsUpdate} 
-      />
+      <Sidebar />
+
+      <div className="main-wrapper">
+    
+        <Navbar />
+
+        <main className="content-area">
+          <CaptureView />
+        </main>
+
+      </div>
       
     </div>
   );
