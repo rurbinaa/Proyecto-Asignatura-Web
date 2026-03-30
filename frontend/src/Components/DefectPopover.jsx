@@ -1,69 +1,83 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 
+import { 
+  MdOutlineFormatColorFill, // Para Manchas
+  MdDangerous, // Para Roturas/Roturas de costura
+  MdStraighten, // Para Medidas/Uneven
+  MdGesture, // Para Hilos sueltos
+  MdCropDin, // Para Skip Stitch / Espaciado
+  MdOutlineAssignmentLate, // Generico profesional para el resto
+  MdDoNotDisturbAlt, // Para Dirt mark o cosas que molestan
+  MdScatterPlot // Para Needle Holes
+} from 'react-icons/md';
+import { LuScissors } from 'react-icons/lu';
+
+const GENERIC_ICON = MdOutlineAssignmentLate;
+
 const MOCK_DEFECT_LIST = [
-  { id: 'uneven', name: 'Uneven', detail: 'Description' },
-  { id: 'broken_stitch', name: 'Broken Stitch', detail: 'Description' },
-  { id: 'open_seam', name: 'Open Seam', detail: 'Description' },
-  { id: 'hi_low', name: 'Hi Low', detail: 'Description' },
-  { id: 'run_off_stitch', name: 'Run Off Stitch', detail: 'Description' },
-  { id: 'raw_edge', name: 'Raw Edge', detail: 'Description' },
-  { id: 'needle_holes', name: 'Needle Holes', detail: 'Description' },
-  { id: 'tear', name: 'Tear', detail: 'Description' },
-  { id: 'loose_thread', name: 'Loose Thread', detail: 'Quantity (est)' },
-  { id: 'uncut_thread', name: 'Uncut Thread', detail: 'Quantity (est)' },
-  { id: 'big_neck', name: 'Big/Litter Neck', detail: 'Measurements diff' },
-  { id: 'uneven_sleeve', name: 'Uneven Sleeve', detail: 'Description' },
-  { id: 'out_measurements', name: 'Out of Measurements', detail: 'Measurement (cm)' },
-  { id: 'var_tension_stitch', name: 'Variation Tension Stitch', detail: 'Description' },
-  { id: 'excess_fabric', name: 'Excess Fabric', detail: 'Area' },
-  { id: 'hitched', name: 'Hitched', detail: 'Description' },
-  { id: 'po_mixed', name: 'PO Mixed', detail: 'Description' },
-  { id: 'transfer_leve', name: 'Transfer Peel off, Leve', detail: 'Area' },
-  { id: 'wrong_transfer', name: 'Wrong Transfer', detail: 'Description' },
-  { id: 'missing_transfer', name: 'Missing Transfer', detail: 'Description' },
-  { id: 'missing_label_info', name: 'Missing information Label', detail: 'Label type' },
-  { id: 'wrong_label', name: 'Wrong Label', detail: 'Description' },
-  { id: 'damaged_label', name: 'Damaged Label', detail: 'Description' },
-  { id: 'missing_label', name: 'Missing Label', detail: 'Label type' },
-  { id: 'shine', name: 'Shine', detail: 'Description' },
-  { id: 'skip_stitch', name: 'Skip Stitch', detail: 'Description' },
-  { id: 'pleat', name: 'Pleat', detail: 'Description' },
-  { id: 'dirt_mark', name: 'Dirt Marck', detail: 'Description' },
-  { id: 'missing_operation', name: 'Missing operation', detail: 'Operation name' },
-  { id: 'stain', name: 'Stain/Oil/Soil', detail: 'Size (cm approx)' },
-  { id: 'contamination', name: 'Contamination', detail: 'Description' },
-  { id: 'construction_defect', name: 'Construction Defect', detail: 'Description' },
-  { id: 'mill_flaw', name: 'Mill Flaw', detail: 'Description' },
-  { id: 'fabric_run', name: 'Fabric Run', detail: 'Length (cm approx)' },
-  { id: 'puckering', name: 'Puckering', detail: 'Description' },
-  { id: 'slanted', name: 'Slanted', detail: 'Description' },
-  { id: 'pocket', name: 'Pocket', detail: 'Description' },
-  { id: 'sticker_inside', name: 'Defects Sticker inside', detail: 'Description' },
-  { id: 'label_slanted', name: 'Label Slanted', detail: 'Description' },
-  { id: 'shadding', name: 'Shadding', detail: 'Description' },
-  { id: 'missing_packing', name: 'Missing Packing Trims', detail: 'Trims name' },
-  { id: 'missing_print', name: 'Missing Print/Embroidery', detail: 'Description' },
-  { id: 'wrong_packing', name: 'Wrong Packing Trims', detail: 'Trims name' },
-  { id: 'wrong_po', name: 'Wrong PO', detail: 'PO Number' },
-  { id: 'wrong_folding', name: 'Wrong Folding Method', detail: 'Description' },
-  { id: 'wrong_size', name: 'Wrong Size Attached', detail: 'Description' },
-  { id: 'label_placement', name: 'Label Placement', detail: 'Description' }
+  { id: 'loose_thread', name: 'Loose Thread', detail: 'Quantity (est)', icon: MdGesture },
+  { id: 'stain', name: 'Stain/Oil/Soil', detail: 'Size (cm approx)', icon: MdOutlineFormatColorFill },
+  { id: 'broken_stitch', name: 'Broken Stitch', detail: 'Description', icon: LuScissors },
+  { id: 'open_seam', name: 'Open Seam', detail: 'Description', icon: MdDangerous },
+  { id: 'skip_stitch', name: 'Skip Stitch', detail: 'Description', icon: MdCropDin },
+  { id: 'fabric_run', name: 'Fabric Run', detail: 'Length (cm approx)', icon: MdStraighten },
+  { id: 'uncut_thread', name: 'Uncut Thread', detail: 'Quantity (est)', icon: LuScissors },
+  { id: 'pleat', name: 'Pleat', detail: 'Description', icon: MdDoNotDisturbAlt },
+  { id: 'dirt_mark', name: 'Dirt Marck', detail: 'Description', icon: MdDoNotDisturbAlt },
+  { id: 'needle_holes', name: 'Needle Holes', detail: 'Description', icon: MdScatterPlot },
+
+  // --- El resto de los 30+ defectos usan el genérico profesional ---
+  { id: 'uneven', name: 'Uneven', detail: 'Description', icon: MdStraighten },
+  { id: 'hi_low', name: 'Hi Low', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'run_off_stitch', name: 'Run Off Stitch', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'raw_edge', name: 'Raw Edge', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'tear', name: 'Tear', detail: 'Description', icon: MdDangerous },
+  { id: 'big_neck', name: 'Big/Litter Neck', detail: 'Measurements diff', icon: GENERIC_ICON },
+  { id: 'uneven_sleeve', name: 'Uneven Sleeve', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'out_measurements', name: 'Out of Measurements', detail: 'Measurement (cm)', icon: MdStraighten },
+  { id: 'var_tension_stitch', name: 'Variation Tension Stitch', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'excess_fabric', name: 'Excess Fabric', detail: 'Area', icon: GENERIC_ICON },
+  { id: 'hitched', name: 'Hitched', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'po_mixed', name: 'PO Mixed', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'transfer_leve', name: 'Transfer Peel off, Leve', detail: 'Area', icon: GENERIC_ICON },
+  { id: 'wrong_transfer', name: 'Wrong Transfer', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'missing_transfer', name: 'Missing Transfer', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'missing_label_info', name: 'Missing information Label', detail: 'Label type', icon: GENERIC_ICON },
+  { id: 'wrong_label', name: 'Wrong Label', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'damaged_label', name: 'Damaged Label', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'missing_label', name: 'Missing Label', detail: 'Label type', icon: GENERIC_ICON },
+  { id: 'shine', name: 'Shine', detail: 'Description', icon: GENERIC_ICON },
+  { id: ' contamination', name: 'Contamination', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'construction_defect', name: 'Construction Defect', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'mill_flaw', name: 'Mill Flaw', detail: 'Description', icon: GENERIC_ICON },
+  { id: ' fabric_run', name: 'Fabric Run', detail: 'Length (cm approx)', icon: GENERIC_ICON },
+  { id: 'puckering', name: 'Puckering', detail: 'Description', icon: GENERIC_ICON },
+  { id: ' slanted', name: 'Slanted', detail: 'Description', icon: GENERIC_ICON },
+  { id: ' pocket', name: 'Pocket', detail: 'Description', icon: GENERIC_ICON },
+  { id: ' sticker_inside', name: 'Defects Sticker inside', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'label_slanted', name: 'Label Slanted', detail: 'Description', icon: GENERIC_ICON },
+  { id: ' shadding', name: 'Shadding', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'missing_packing', name: 'Missing Packing Trims', detail: 'Trims name', icon: GENERIC_ICON },
+  { id: ' missing_print', name: 'Missing Print/Embroidery', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'wrong_packing', name: 'Wrong Packing Trims', detail: 'Trims name', icon: GENERIC_ICON },
+  { id: 'wrong_po', name: 'Wrong PO', detail: 'PO Number', icon: GENERIC_ICON },
+  { id: ' wrong_folding', name: 'Wrong Folding Method', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'wrong_size', name: 'Wrong Size Attached', detail: 'Description', icon: GENERIC_ICON },
+  { id: 'label_placement', name: 'Label Placement', detail: 'Description', icon: GENERIC_ICON }
 ];
 
 const MOCK_FREQUENCY_MAP = {
   'loose_thread': 150, 'stain': 120, 'broken_stitch': 90, 'open_seam': 80, 'skip_stitch': 60,
-  'fabric_run': 50, 'uncut_thread': 40, 'pleat': 30, 'dirt_mark': 20, 'needle_holes': 15,
+  ' fabric_run': 50, 'uncut_thread': 40, 'pleat': 30, ' dirt_mark': 20, 'needle_holes': 15,
 };
 
 export default function DefectPopover({ coordinates, onClose, onSave }) {
-  // --- REFERENCIAS ---
   const popoverRef = useRef(null);
 
-  // --- STATES DE DATOS (API Ready) ---
+  // TODO: Estos setters marcan warning ahora, pero se usarán en el useEffect para cargar la API real del backend.
   const [defectList, setDefectList] = useState(MOCK_DEFECT_LIST);
   const [frequencyMap, setFrequencyMap] = useState(MOCK_FREQUENCY_MAP);
 
-  // --- STATES DE INTERFAZ ---
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDefect, setSelectedDefect] = useState(null); 
   const [extraDetail, setExtraDetail] = useState('');
@@ -73,13 +87,8 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-  // --- CONTRATO DE API: GET /defects (Comentado para pruebas) ---
   useEffect(() => {
-    /* const fetchDefectsData = async () => {
-      // ...
-    };
-    fetchDefectsData();
-    */
+    /* const fetchDefectsData = async () => { ... } */
   }, []);
 
   useEffect(() => {
@@ -99,13 +108,10 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
     }
   }, [coordinates]);
 
-
-  // DRAGGABLE LOGIC FUNCTIONS
   const handleMouseDown = (e) => {
-    if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'button' || e.target.tagName.toLowerCase() === 'li') {
-      return;
-    }
+    if (['input', 'button', 'li'].includes(e.target.tagName.toLowerCase())) return;
     if (!popoverRef.current) return;
+    
     setIsDragging(true);
     const rect = popoverRef.current.getBoundingClientRect();
     setDragOffset({
@@ -151,13 +157,11 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     }
-
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, dragOffset]);
-
 
   const top10Defects = useMemo(() => {
     return defectList
@@ -168,10 +172,12 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
 
   const filteredList = useMemo(() => {
     if (!searchTerm.trim()) return [];
+    
     if (selectedDefect && searchTerm === selectedDefect.name) return [];
+
     const lowerSearch = searchTerm.toLowerCase();
     return defectList.filter(defect => defect.name.toLowerCase().includes(lowerSearch)).slice(0, 5); 
-  }, [searchTerm, defectList]);
+  }, [searchTerm, defectList, selectedDefect]);
 
   const handleSelectDefect = (defect) => {
     setSelectedDefect(defect);
@@ -205,7 +211,6 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
       alert("Please select a defect type first.");
       return;
     }
-
     if (isNumericDetail && !extraDetail.trim()) {
       alert(`Please enter a valid number for ${selectedDefect.detail}.`);
       return;
@@ -223,16 +228,15 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
     onSave(finalizedDefect);
   };
 
-  // RENDER
   return (
     <div 
       ref={popoverRef} 
       className="popover" 
       style={{ 
         position: 'fixed',
-        left: `${position.x}px`,
+        left: `${position.x}px`, 
         top: `${position.y}px`,
-        opacity: isReady ? 1 : 0,
+        opacity: isReady ? 1 : 0, 
         zIndex: 9999,
         transform: 'none', 
         boxShadow: isDragging ? '0 15px 40px rgba(0,0,0,0.4)' : '0 8px 30px rgba(0,0,0,0.2)', 
@@ -240,7 +244,6 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
         margin: 0
       }}
     >
-      {/* DRAGGABLE HEADER: Usamos la cabecera como zona de agarre */}
       <div 
         className="popover-header" 
         onMouseDown={handleMouseDown} 
@@ -259,39 +262,73 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
         <button className="popover-close" onClick={onClose} title="Cancel" style={{ top: '8px' }}>✕</button>
       </div>
       
-      {/* BUSQUEDA Y AUTOCOMPLETADO */}
       <div className="popover-section" style={{ position: 'relative' }}>
         <input 
           type="text" 
           className="popover-input" 
           placeholder=" Search defect type... (e.g. Stain)"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            if (selectedDefect && e.target.value !== selectedDefect.name) {
+              setSelectedDefect(null);
+            }
+          }}
         />
         {filteredList.length > 0 && (
           <ul className="popover-autocomplete-list" style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'white', border: '1px solid #d1d5db', borderRadius: '6px', zIndex: 110, listStyle: 'none', padding: '4px 0', marginTop: '2px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)'}}>
-            {filteredList.map(defect => (
-              <li key={defect.id} onClick={() => handleSelectDefect(defect)} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '13px' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                {defect.name}
-              </li>
-            ))}
+            {filteredList.map(defect => {
+              const Icon = defect.icon; 
+              return (
+                <li key={defect.id} onClick={() => handleSelectDefect(defect)} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <Icon style={{ fontSize: '16px', color: '#606D80' }} />
+                  {defect.name}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
 
-      {/* (TOP 10) */}
       <div className="popover-section">
         <p className="popover-subtitle">Frequent Defects (Tap to select)</p>
-        <div className="defects-grid">
-          {top10Defects.map(defect => (
-            <button key={defect.id} className={`defect-tag ${selectedDefect?.id === defect.id ? 'selected' : ''}`} onClick={() => handleSelectDefect(defect)}>
-              {defect.name}
-            </button>
-          ))}
+        
+        <div className="defects-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+          {top10Defects.map(defect => {
+            const IconComponent = defect.icon;
+            return (
+              <button 
+                key={defect.id} 
+                className={`defect-tag ${selectedDefect?.id === defect.id ? 'selected' : ''}`} 
+                onClick={() => handleSelectDefect(defect)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '80px',
+                  padding: '8px',
+                  gap: '6px',
+                  backgroundColor: selectedDefect?.id === defect.id ? 'var(--primary)' : '#f3f4f6',
+                  color: selectedDefect?.id === defect.id ? 'white' : 'var(--bg-dark)',
+                  border: selectedDefect?.id === defect.id ? '2px solid var(--primary-hover)' : '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  whiteSpace: 'normal', 
+                }}
+              >
+                <IconComponent style={{ fontSize: '26px' }} />
+                
+                <span style={{ fontSize: '11px', textAlign: 'center', lineHeight: '1.2', fontWeight: '600' }}>
+                  {defect.name}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* DETALLE DINAMICO */}
       {selectedDefect && (
         <div className="popover-section" style={{ borderTop: '1px solid #e5e7eb', paddingTop: '16px' }}>
           <p className="popover-subtitle">Required Detail for <span style={{color: 'var(--primary)', fontWeight: 'bold'}}>{selectedDefect.name}</span></p>
