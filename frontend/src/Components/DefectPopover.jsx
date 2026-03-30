@@ -68,7 +68,6 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
   const [selectedDefect, setSelectedDefect] = useState(null); 
   const [extraDetail, setExtraDetail] = useState('');
 
-  // 🔴 CAMBIO: Posición inicial fuera de pantalla, y agregamos isReady
   const [position, setPosition] = useState({ x: -1000, y: -1000 });
   const [isReady, setIsReady] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -83,7 +82,6 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
     */
   }, []);
 
-  // 🔴 CAMBIO: Calcular la posición inicial en PÍXELES REALES de la pantalla
   useEffect(() => {
     const container = document.querySelector('.garment-container');
     if (container && popoverRef.current) {
@@ -123,11 +121,9 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
 
       const popoverRect = popoverRef.current.getBoundingClientRect();
 
-      // 🔴 CAMBIO: Matemáticas directas sobre la ventana entera (window), no el contenedor
       let newXPixels = e.clientX - dragOffset.x;
       let newYPixels = e.clientY - dragOffset.y;
 
-      // 🔴 CAMBIO: Constraints usando window.innerWidth/Height
       if (newXPixels < 0) newXPixels = 0;
       if (newXPixels + popoverRect.width > window.innerWidth) {
         newXPixels = window.innerWidth - popoverRect.width;
@@ -138,7 +134,6 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
         newYPixels = window.innerHeight - popoverRect.height;
       }
 
-      // 🔴 CAMBIO: Guardamos directamente los píxeles, sin convertir a porcentaje
       setPosition({
         x: newXPixels,
         y: newYPixels
@@ -183,18 +178,47 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
     setExtraDetail(''); 
   };
 
+  const isNumericDetail = useMemo(() => {
+    if (!selectedDefect) return false;
+    const detailLower = selectedDefect.detail.toLowerCase();
+    return detailLower.includes('cm') || 
+           detailLower.includes('quantity') || 
+           detailLower.includes('measurement') || 
+           detailLower.includes('size') ||
+           detailLower.includes('area');
+  }, [selectedDefect]);
+
+  const handleDetailChange = (e) => {
+    const val = e.target.value;
+    if (isNumericDetail) {
+      if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+        setExtraDetail(val);
+      }
+    } else {
+      setExtraDetail(val);
+    }
+  };
+
   const handleConfirmSave = () => {
     if (!selectedDefect) {
       alert("Please select a defect type first.");
       return;
     }
+
+    if (isNumericDetail && !extraDetail.trim()) {
+      alert(`Please enter a valid number for ${selectedDefect.detail}.`);
+      return;
+    }
+
     const finalizedDefect = {
-      ...coordinates,
+      x: Number(coordinates.x.toFixed(2)), 
+      y: Number(coordinates.y.toFixed(2)), 
       type_id: selectedDefect.id,
       type_name: selectedDefect.name,
       extra_detail: extraDetail || 'N/A',
       id: Date.now() 
     };
+    
     onSave(finalizedDefect);
   };
 
@@ -270,7 +294,14 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
       {selectedDefect && (
         <div className="popover-section" style={{ borderTop: '1px solid #e5e7eb', paddingTop: '16px' }}>
           <p className="popover-subtitle">Required Detail for <span style={{color: 'var(--primary)', fontWeight: 'bold'}}>{selectedDefect.name}</span></p>
-          <input type="text" className="popover-input" placeholder={`Enter ${selectedDefect.detail}...`} value={extraDetail} onChange={(e) => setExtraDetail(e.target.value)}/>
+          <input 
+            type="text" 
+            inputMode={isNumericDetail ? "decimal" : "text"} 
+            className="popover-input" 
+            placeholder={`Enter ${selectedDefect.detail}...`} 
+            value={extraDetail} 
+            onChange={handleDetailChange}
+          />
         </div>
       )}
 
