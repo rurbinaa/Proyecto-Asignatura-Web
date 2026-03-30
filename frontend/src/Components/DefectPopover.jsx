@@ -168,6 +168,7 @@ export default function DefectPopover({ coordinates, onClose, onSave }) {
 
   const filteredList = useMemo(() => {
     if (!searchTerm.trim()) return [];
+    if (selectedDefect && searchTerm === selectedDefect.name) return [];
     const lowerSearch = searchTerm.toLowerCase();
     return defectList.filter(defect => defect.name.toLowerCase().includes(lowerSearch)).slice(0, 5); 
   }, [searchTerm, defectList]);
