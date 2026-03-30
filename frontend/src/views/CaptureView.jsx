@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import urlShirt from '../assets/shirt.svg'; 
+import urlShirt from '../assets/shirt.svg';
+import urlPants from '../assets/pants.svg'; 
 import MockupContainer from '../Components/mockupContainer.jsx'; 
 import DefectPopover from '../Components/DefectPopover.jsx'; 
 
@@ -143,14 +144,14 @@ export default function CaptureView() {
           </span>
           
           <button onClick={() => setIsEditMode(!isEditMode)} className="ingesta-btn" style={{ backgroundColor: isEditMode ? '#ef4444' : 'transparent', color: isEditMode ? 'white' : '#ef4444', border: '1px solid #ef4444', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer' }}>
-            {isEditMode ? '✓ Done' : '✏️ Edit / Delete'}
+            {isEditMode ? 'Done' : 'Edit / Delete'}
           </button>
         </div>
 
         <div className="garment-container" style={{ position: 'relative' }}>
           
           <MockupContainer 
-            garmentUrl={urlShirt} 
+            garmentUrl={garment === 'pants' ? urlPants : urlShirt} 
             confirmedMarkers={currentDefects}
             isEditMode={isEditMode} 
             onDefectPlacePending={handleDefectPlacePending}
