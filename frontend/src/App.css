@@ -25,9 +25,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
-/* ========================================
-   LOGIN VIEW
-   ======================================== */
+/* LOGIN VIEW */
 .login-container {
   min-height: 100vh;
   display: flex;
@@ -127,9 +125,7 @@ h1, h2, h3, h4, h5, h6 {
   background-color: var(--primary-hover);
 }
 
-/* ========================================
-   LAYOUT BASE
-   ======================================== */
+/* LAYOUT */
 .layout {
   display: flex;
   min-height: 100vh;
@@ -272,11 +268,11 @@ h1, h2, h3, h4, h5, h6 {
   background-color: var(--bg-light);
 }
 
-/* CARDS (Shared)*/
+/* CARDS (Shared) */
 .card {
   background-color: var(--white);
   border-radius: 12px;
-  padding: 24px;
+  padding: 40px; 
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
@@ -287,11 +283,15 @@ h1, h2, h3, h4, h5, h6 {
   margin-bottom: 24px;
 }
 
-/* CAPTURA CONTENT */
+/* CAPTURE CONTENT */
 .capture-view {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  padding-top: 32px;
+  padding-left: 32px;
+  padding-right: 32px;
+  padding-bottom: 60px;
 }
 
 .capture-header {
@@ -305,17 +305,26 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   justify-content: center;
   cursor: crosshair;
+  margin-top: 20px; 
 }
 
 .garment-container {
   position: relative;
   width: 100%;
   max-width: 500px;
-  height: 450px;
+  height: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding-bottom: 40px;
+}
+
+.svg_injector svg {
+  width: 100%;
+  height: auto;
+  max-height: 60vh;
+  display: block;
 }
 
 .garment-icon {
@@ -325,7 +334,7 @@ h1, h2, h3, h4, h5, h6 {
   opacity: 0.4;
 }
 
-.prenda-hint {
+.garment-hint {
   margin-top: 16px;
   font-size: 14px;
   color: var(--text-muted);
@@ -384,14 +393,14 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.5px;
 }
 
-.defectos-grid {
+.defects-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 0;
 }
 
-.defecto-tag {
+.defect-tag {
   padding: 8px 12px;
   background-color: #f3f4f6;
   border: 1px solid #d1d5db;
@@ -407,13 +416,13 @@ h1, h2, h3, h4, h5, h6 {
   text-overflow: ellipsis;
 }
 
-.defecto-tag:hover {
+.defect-tag:hover {
   background-color: #e5e7eb;
   border-color: var(--primary);
   color: var(--primary);
 }
 
-.defecto-tag.selected {
+.defect-tag.selected {
   background-color: var(--primary);
   color: var(--white);
   border-color: var(--primary);
@@ -446,7 +455,7 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 0 0 3px rgba(86, 126, 187, 0.1);
 }
 
-.popover-guardar {
+.popover-save {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -465,7 +474,7 @@ h1, h2, h3, h4, h5, h6 {
   margin-top: 16px;
 }
 
-.popover-guardar:hover {
+.popover-save:hover {
   background-color: var(--primary-hover);
 }
 
