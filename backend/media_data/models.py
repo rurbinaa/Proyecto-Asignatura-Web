@@ -33,6 +33,7 @@ class RevisionDefect(models.Model):
 
 # Tabla Mockup para almacenar la imagen de referencia y sus dimensiones
 class Mockup(models.Model):
+    id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100)
     image = models.ImageField(upload_to='mockups/')
     width = models.IntegerField(default=1024)

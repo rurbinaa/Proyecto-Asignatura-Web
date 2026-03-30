@@ -36,6 +36,7 @@ class MockupSerializer(serializers.ModelSerializer):
     class Meta:
         model = Mockup
         fields = [
+            'id',
             'name',
             'image',
             'width',
