@@ -1,7 +1,7 @@
 import './App.css';
 import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
-import CaptureView from './views/captureView';
+import CaptureView from './views/CaptureView.jsx';
 
 function App() {
   return (
