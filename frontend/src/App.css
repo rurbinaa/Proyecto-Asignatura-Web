@@ -123,13 +123,11 @@ h1, h2, h3, h4, h5, h6 {
   background-color: var(--primary-hover);
 }
 
-/* LAYOUT */
-.layout {
+.app-layout {
   display: flex;
   min-height: 100vh;
 }
 
-/* MAIN WRAPPER */
 .main-wrapper {
   flex: 1;
   margin-left: 250px;
@@ -138,7 +136,6 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 100vh;
 }
 
-/* NAVBAR */
 .navbar {
   background-color: var(--white);
   padding: 16px 32px;
@@ -166,7 +163,7 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-muted);
 }
 
-.content {
+.content-area {
   flex: 1;
   padding: 32px;
   background-color: var(--bg-light);
