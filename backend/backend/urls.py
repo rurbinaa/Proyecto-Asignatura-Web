@@ -20,5 +20,6 @@ from quality_data import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('quality_data.urls'))
+    path('', include('media_data.urls', namespace='media_data')),
+    path('quality/', include('quality_data.urls', namespace='quality_data')),
 ]

@@ -1,6 +1,7 @@
 from django.urls import path, include, re_path
 from .views import Process, SaveData
 
+app_name = 'quality_data'
 
 urlpatterns = [
     path(r'process/<str:filename>/', Process.as_view(), name='process'),

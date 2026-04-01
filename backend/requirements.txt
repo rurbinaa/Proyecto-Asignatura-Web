@@ -12,3 +12,4 @@ pytest-django
 requests
 pandas
 openpyxl
+Pillow==11.0.0
