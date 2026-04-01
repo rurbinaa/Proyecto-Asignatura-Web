@@ -210,8 +210,7 @@ export default function CaptureView() {
 
         <div className="card capture-setup-card">
           
-          {/* 👇 Formulario de ingreso manual 👇 */}
-          <div className="input-group" style={{ marginBottom: '15px' }}>
+          <div className="input-group spacing-normal">
             <label className="input-label">Lot Number</label>
             <input 
               type="text" 
@@ -222,7 +221,7 @@ export default function CaptureView() {
             />
           </div>
 
-          <div className="input-group" style={{ marginBottom: '15px' }}>
+          <div className="input-group spacing-normal">
             <label className="input-label">Garment Shape (SVG)</label>
             <select className="input-field" value={garment} onChange={(e) => setGarment(e.target.value)}>
               <option value="">Choose shape...</option>
@@ -230,7 +229,7 @@ export default function CaptureView() {
             </select>
           </div>
 
-          <div className="input-group" style={{ marginBottom: '15px' }}>
+          <div className="input-group spacing-normal">
             <label className="input-label">Style</label>
             <input 
               type="text" 
@@ -241,7 +240,7 @@ export default function CaptureView() {
             />
           </div>
 
-          <div className="input-group" style={{ marginBottom: '15px' }}>
+          <div className="input-group spacing-normal">
             <label className="input-label">Size</label>
             <input 
               type="text" 
@@ -252,7 +251,7 @@ export default function CaptureView() {
             />
           </div>
 
-          <div className="input-group" style={{ marginBottom: '30px' }}>
+          <div className="input-group spacing-large">
             <label className="input-label">Color</label>
             <input 
               type="text" 
@@ -263,7 +262,7 @@ export default function CaptureView() {
             />
           </div>
 
-          <button className="ingesta-btn ingesta-btn-primary" style={{ width: '100%' }} onClick={handleStartCapture}>
+          <button className="ingesta-btn ingesta-btn-primary btn-full" onClick={handleStartCapture}>
             Start Inspection
           </button>
         </div>
@@ -276,7 +275,7 @@ export default function CaptureView() {
       
       <div className="capture-header-flex">
         <div>
-          <h2 className="section-title" style={{ marginBottom: '4px' }}>Quality Control</h2>
+          <h2 className="section-title title-tight">Quality Control</h2>
           <p className="capture-subtitle">
             Inspecting: <span>Lot {lot} | {styleInput} | Size {sizeInput} | {colorInput}</span>
           </p>
