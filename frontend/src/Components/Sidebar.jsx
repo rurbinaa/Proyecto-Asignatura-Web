@@ -1,26 +1,50 @@
-import { Factory, Hand, LogOut } from 'lucide-react';
+import { useState } from 'react';
+import './Sidebar.css';
+import { Factory, Hand, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function Sidebar() {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   return (
-    <aside className="sidebar"> 
+    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}> 
     
       <div className="sidebar-logo">
         <Factory className="sidebar-logo-icon" />
-        <span className="sidebar-logo-text">Rift Analytics</span>
+        
+        {!isCollapsed && <span className="sidebar-logo-text">Rift Analytics</span>}
+        
+        {!isCollapsed && (
+          <button 
+            className="sidebar-toggle top-toggle" 
+            onClick={() => setIsCollapsed(true)}
+            title="Colapsar menú"
+          >
+            <ChevronLeft className="sidebar-nav-icon" />
+          </button>
+        )}
       </div>
       
       <nav className="sidebar-nav">
-          <button className="sidebar-nav-item active">
+          <button className="sidebar-nav-item active" title={isCollapsed ? "Captura Táctil" : ""}>
             <Hand className="sidebar-nav-icon" />
-            <span>Captura Táctil</span>
+            {!isCollapsed && <span>Captura Táctil</span>}
           </button>
       </nav>
 
-      <button className="sidebar-logout">
-        <LogOut className="sidebar-nav-icon" />
-        <span>Cerrar Sesión</span>
-      </button>        
-
+      {!isCollapsed ? (
+        <button className="sidebar-logout">
+          <LogOut className="sidebar-nav-icon" />
+          <span>Log Out</span>
+        </button>
+      ) : (
+        <button 
+          className="sidebar-toggle bottom-toggle" 
+          onClick={() => setIsCollapsed(false)}
+          title="Ampliar menú"
+        >
+          <ChevronRight className="sidebar-nav-icon" />
+        </button>
+      )}
 
     </aside>
   );
