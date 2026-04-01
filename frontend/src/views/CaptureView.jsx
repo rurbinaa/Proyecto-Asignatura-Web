@@ -56,7 +56,6 @@ const MOCK_DEFECT_LIST = [
     { id: 'contamination', name: 'Contamination', detail: 'Description', icon: GENERIC_ICON },
     { id: 'construction_defect', name: 'Construction Defect', detail: 'Description', icon: GENERIC_ICON },
     { id: 'mill_flaw', name: 'Mill Flaw', detail: 'Description', icon: GENERIC_ICON },
-    { id: 'fabric_run', name: 'Fabric Run', detail: 'Length (cm approx)', icon: GENERIC_ICON },
     { id: 'puckering', name: 'Puckering', detail: 'Description', icon: GENERIC_ICON },
     { id: 'slanted', name: 'Slanted', detail: 'Description', icon: GENERIC_ICON },
     { id: 'pocket', name: 'Pocket', detail: 'Description', icon: GENERIC_ICON },
@@ -74,13 +73,13 @@ const MOCK_DEFECT_LIST = [
   
   const MOCK_FREQUENCY_MAP = {
     'loose_thread': 150, 'stain': 120, 'broken_stitch': 90, 'open_seam': 80, 'skip_stitch': 60,
-    ' fabric_run': 50, 'uncut_thread': 40, 'pleat': 30, ' dirt_mark': 20, 'needle_holes': 15,
+    'fabric_run': 50, 'uncut_thread': 40, 'pleat': 30, 'dirt_mark': 20, 'needle_holes': 15,
   };
 
-const MOCK_GARMENTS = [
-  { id: "shirt", name: "Shirt / T-Shirt" },
-  { id: "pants", name: "Pants" }
-];
+  const MOCK_GARMENTS = [
+    { id: "shirt", name: "Shirt / T-Shirt" },
+    { id: "pants", name: "Pants" }
+  ];
 
 export default function CaptureView() {
   const [step, setStep] = useState('selection'); 
