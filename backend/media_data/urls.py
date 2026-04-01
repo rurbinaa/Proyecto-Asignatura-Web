@@ -2,13 +2,14 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from .views import RevisionDefectViewSet, MockupViewSet
+from .views import RevisionDefectViewSet, MockupViewSet, InspectionDataViewSet
 
 app_name = 'media_data'
 
 router = DefaultRouter()
-router.register(r'defects', RevisionDefectViewSet, basename='defect')
 router.register(r'mockups', MockupViewSet, basename='mockup')
+router.register(r'defects', RevisionDefectViewSet, basename='defect')
+router.register(r'inspections', InspectionDataViewSet, basename='inspection')
 
 urlpatterns = [
     path('api/v1/', include(router.urls)),

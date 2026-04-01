@@ -20,13 +20,13 @@ class InspectionDataViewSet(viewsets.ModelViewSet):
     def close_inspection(self, request, pk=None):
         inspection = self.get_object()
         if inspection.is_closed:
-            return Response({"message": "La inspección ya está cerrada"}, status=400)
-        
+                return Response({"message": "The inspection is already closed"}, status=400)
+            
         inspection.is_closed = True
         inspection.closed_at = timezone.now()
         inspection.save()
         return Response({
-            'status': 'Revision cerrada correctamente',
+            'status': 'Review closed successfully',
             'closed_at': inspection.closed_at,
             'result': inspection.status
         })
@@ -45,6 +45,6 @@ class RevisionDefectViewSet(viewsets.ModelViewSet):
         last_defect = RevisionDefect.objects.filter(inspector=request.user).order_by('-timestamp').first()
         if last_defect:
             last_defect.delete()
-            return Response({"message": "Última captura de defectos eliminada"}, status=200)
-        return Response({"message": "No se encontró ninguna captura de defectos para eliminar"}, status=404)
+            return Response({"message": "Last defect capture removed"}, status=200)
+        return Response({"message": "No defect captures were found to remove"}, status=404)
 

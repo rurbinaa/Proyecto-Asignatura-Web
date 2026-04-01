@@ -8,43 +8,58 @@ from .models import InspectionData, RevisionDefect, Mockup
 class InspectionTests(APITestCase):
 
     def setUp(self):
-        self.user = User.objects.create_user(username='operario1', password='123')
-        self.client.login(username='operario1', password='123')
-
-        self.color = Color.objects.create(name="Rojo", is_active=True)
-        self.tipo_defecto = DefectType.objects.create(name="Costura", is_active=True)
+        self.user = User.objects.create_user(username='operator1', password='123')
+        self.client.login(username='operator1', password='123')
+        self.color = Color.objects.create(name="Red", is_active=True)
+        self.defect_type = DefectType.objects.create(name="Stitching", is_active=True)
         
-        self.inspeccion = InspectionData.objects.create(inspector=self.user, color=self.color)
-        self.maqueta = Mockup.objects.create(name="Lote A", width=800, height=600)
+        self.inspection = InspectionData.objects.create(
+            inspector=self.user, 
+            color=self.color,
+            style="POLO-2026",
+            size="XL"
+        )
+        self.mockup = Mockup.objects.create(name="Batch A", width=800, height=600)
 
-    def test_crear_defecto_exitoso(self):
+    def test_create_defect_with_free_text_size(self):
         url = reverse('media_data:defect-list')
         payload = {
-            "inspection": self.inspeccion.id,
-            "defectType": self.tipo_defecto.id,
-            "defectSize": "S",
+            "inspection": self.inspection.id,
+            "defectType": self.defect_type.id,
+            "defectSize": "Detailed descriptive text for defect size",
             "coordinates_x": [100.5],
             "coordinates_y": [200.0]
         }
         response = self.client.post(url, payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(RevisionDefect.objects.last().defectSize, payload["defectSize"])
 
-    def test_deshacer_ultimo_defecto(self):
+    def test_close_inspection_successfully(self):
+        url = reverse('media_data:inspection-close-inspection', kwargs={'pk': self.inspection.id})
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.inspection.refresh_from_db()
+        self.assertTrue(self.inspection.is_closed)
+        self.assertIsNotNone(self.inspection.closed_at)
+
+    def test_undo_last_defect(self):
         RevisionDefect.objects.create(
-            inspection=self.inspeccion, inspector=self.user,
-            defectType=self.tipo_defecto, defectSize="M"
+            inspection=self.inspection, 
+            inspector=self.user,
+            defectType=self.defect_type, 
+            defectSize="Medium"
         )
         url = reverse('media_data:defect-undo')
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_obtener_info_maqueta(self):
-        url = reverse('media_data:mockup-detail', kwargs={'pk': self.maqueta.id})
+    def test_get_mockup_info(self):
+        url = reverse('media_data:mockup-detail', kwargs={'pk': self.mockup.id})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['width'], 800)
 
-    def test_error_si_no_hay_registros_para_deshacer(self):
+    def test_error_if_no_records_to_undo(self):
         url = reverse('media_data:defect-undo')
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

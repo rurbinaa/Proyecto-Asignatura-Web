@@ -1,13 +1,13 @@
-import datetime
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 from quality_data.models import DefectType, Color
 
 # Tabla Mockup para almacenar la imagen de referencia y sus dimensiones
 class Mockup(models.Model):
     Side_Choices = [
-        ('FRONT', 'Frente'),
-        ('BACK', 'Espalda'),
+        ('FRONT', 'Front Side'),
+        ('BACK', 'Back Side'),
     ]
     name = models.CharField(max_length=100)
     side = models.CharField(max_length=10, choices=Side_Choices, default='FRONT')
@@ -22,30 +22,29 @@ class Mockup(models.Model):
 # Tabla InspectionData para almacenar los datos de cada inspección
 class InspectionData(models.Model):
     Estatus_Choices = [
-        ('OPEN', 'En Proceso'),
-        ('PASS', 'Aprobado'),
-        ('FAIL', 'Rechazado'),
+        ('OPEN', 'Open'),
+        ('PASS', 'Pass'),
+        ('REJECT', 'Reject'),
     ]
-    
     inspector = models.ForeignKey(User, on_delete=models.PROTECT)
     date = models.DateField(auto_now_add=True)
     created_at = models.TimeField(auto_now_add=True)
     week = models.PositiveIntegerField(editable=False)
-    style = models.CharField(max_length=100, verbose_name="Estilo")
-    size = models.CharField(max_length=50, verbose_name="Talla")    
+    style = models.CharField(max_length=100)
+    size = models.CharField(max_length=50)    
     color = models.ForeignKey(Color, on_delete=models.PROTECT)
     is_closed = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=Estatus_Choices, default='OPEN')
     closed_at = models.DateTimeField(null=True, blank=True)
       
     def save(self, *args, **kwargs):
-        if not self.id:
-            self.week = datetime.date.today().isocalendar()[1]
+        if not self.pk:
+            self.week = timezone.now().date().isocalendar()[1]
         super().save(*args, **kwargs)
     
     def __str__(self):
-        estado = "Cerrada" if self.is_closed else "Abierta"
-        return f"ID {self.id} | Date {self.date} | Week {self.week} | {self.color.name} ({estado})"
+        condition = "closed" if self.is_closed else "open"
+        return f"ID {self.id} | Date {self.date} | Week {self.week} | {self.color.name} ({condition})"
 
 # Tabla RevisionDefect para almacenar los defectos capturados durante la inspección
 class RevisionDefect(models.Model):  
