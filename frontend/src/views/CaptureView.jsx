@@ -77,12 +77,6 @@ const MOCK_DEFECT_LIST = [
     ' fabric_run': 50, 'uncut_thread': 40, 'pleat': 30, ' dirt_mark': 20, 'needle_holes': 15,
   };
 
-const MOCK_LOTS = [
-  { id: "LOT-001", name: "Morning Shift" },
-  { id: "LOT-002", name: "Evening Shift" },
-  { id: "LOT-003", name: "Urgent" }
-];
-
 const MOCK_GARMENTS = [
   { id: "shirt", name: "Shirt / T-Shirt" },
   { id: "pants", name: "Pants" }
@@ -90,8 +84,13 @@ const MOCK_GARMENTS = [
 
 export default function CaptureView() {
   const [step, setStep] = useState('selection'); 
+  
   const [lot, setLot] = useState('');
+  const [styleInput, setStyleInput] = useState('');
+  const [sizeInput, setSizeInput] = useState('');
+  const [colorInput, setColorInput] = useState('');
   const [garment, setGarment] = useState('');
+  
   const [currentDefects, setCurrentDefects] = useState([]);
   const [lastSubmission, setLastSubmission] = useState(null);
   const [viewSide, setViewSide] = useState('front');
@@ -103,8 +102,8 @@ export default function CaptureView() {
 
 
   const handleStartCapture = () => {
-    if (!lot || !garment) {
-      alert("Please select a Lot and a Garment Type to continue.");
+    if (!lot.trim() || !garment || !styleInput.trim() || !sizeInput.trim() || !colorInput.trim()) {
+      alert("Please fill out all fields (Lot, Garment Type, Style, Size, and Color) to continue.");
       return;
     }
     setStep('capture');
@@ -148,7 +147,6 @@ export default function CaptureView() {
     const groupedDefects = Object.values(currentDefects.reduce((acc, defect) => {
 
       const detailValue = defect.defectSize || defect.defectCount || defect.notes || "N/A";
-      // Agrupamos por ID del defecto + Detalle + Lado
       const key = `${defect.defectType}-${detailValue}-${defect.side}`;
       
       if (!acc[key]) {
@@ -183,7 +181,10 @@ export default function CaptureView() {
     const payload = { 
       lot_id: lot, 
       garment_type: garment, 
-      defects: formattedDefects // Lista agrupada
+      style: styleInput,
+      size: sizeInput,
+      color: colorInput,
+      defects: formattedDefects 
     };
     
     console.log("Payload agrupado para Django:", payload);
@@ -209,24 +210,62 @@ export default function CaptureView() {
         </div>
 
         <div className="card capture-setup-card">
-          <div className="input-group" style={{ marginBottom: '20px' }}>
-            <label className="input-label">Select Lot to Inspect</label>
-            <select className="input-field" value={lot} onChange={(e) => setLot(e.target.value)}>
-              <option value="">Choose a lot</option>
-              {MOCK_LOTS.map((item) => <option key={item.id} value={item.id}>{item.id} ({item.name})</option>)}
-            </select>
+          
+          {/* 👇 Formulario de ingreso manual 👇 */}
+          <div className="input-group" style={{ marginBottom: '15px' }}>
+            <label className="input-label">Lot Number</label>
+            <input 
+              type="text" 
+              className="popover-input"
+              placeholder="e.g. L-90210"
+              value={lot} 
+              onChange={(e) => setLot(e.target.value)} 
+            />
           </div>
 
-          <div className="input-group" style={{ marginBottom: '30px' }}>
-            <label className="input-label">Garment Type</label>
+          <div className="input-group" style={{ marginBottom: '15px' }}>
+            <label className="input-label">Garment Shape (SVG)</label>
             <select className="input-field" value={garment} onChange={(e) => setGarment(e.target.value)}>
-              <option value="">Choose garment</option>
+              <option value="">Choose shape...</option>
               {MOCK_GARMENTS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
           </div>
 
-          <button className="ingesta-btn ingesta-btn-primary" style={{ width: '100%', cursor: 'pointer' }} onClick={handleStartCapture}>
-            Start Touch Capture
+          <div className="input-group" style={{ marginBottom: '15px' }}>
+            <label className="input-label">Style</label>
+            <input 
+              type="text" 
+              className="popover-input" 
+              placeholder="e.g. Slim Fit, V-Neck"
+              value={styleInput} 
+              onChange={(e) => setStyleInput(e.target.value)} 
+            />
+          </div>
+
+          <div className="input-group" style={{ marginBottom: '15px' }}>
+            <label className="input-label">Size</label>
+            <input 
+              type="text" 
+              className="popover-input" 
+              placeholder="e.g. M, 32, XL"
+              value={sizeInput} 
+              onChange={(e) => setSizeInput(e.target.value)} 
+            />
+          </div>
+
+          <div className="input-group" style={{ marginBottom: '30px' }}>
+            <label className="input-label">Color</label>
+            <input 
+              type="text" 
+              className="popover-input" 
+              placeholder="e.g. Navy Blue, Red"
+              value={colorInput} 
+              onChange={(e) => setColorInput(e.target.value)} 
+            />
+          </div>
+
+          <button className="ingesta-btn ingesta-btn-primary" style={{ width: '100%' }} onClick={handleStartCapture}>
+            Start Inspection
           </button>
         </div>
       </div>
@@ -240,11 +279,11 @@ export default function CaptureView() {
         <div>
           <h2 className="section-title" style={{ marginBottom: '4px' }}>Quality Control</h2>
           <p className="capture-subtitle">
-            Inspecting: <span>{lot} ({garment})</span>
+            Inspecting: <span>Lot {lot} | {styleInput} | Size {sizeInput} | {colorInput}</span>
           </p>
         </div>
         <button className="ingesta-btn ingesta-btn-outline" onClick={() => { setStep('selection'); setIsEditMode(false); handleClosePopover(); }}>
-          Cancel / Back
+          Back to Setup
         </button>
       </div>
 
