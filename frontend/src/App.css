@@ -381,30 +381,6 @@ h1, h2, h3, h4, h5, h6 {
   background-color: var(--primary-hover);
 }
 
-/* RESPONSIVE */
-@media (max-width: 768px) {
-  .sidebar {
-    width: 80px;
-    padding: 16px 8px;
-  }
-
-  .sidebar-logo-text,
-  .sidebar-nav-item span,
-  .sidebar-logout span {
-    display: none;
-  }
-
-  .sidebar-nav-item,
-  .sidebar-logout {
-    justify-content: center;
-    padding: 12px;
-  }
-
-  .main-wrapper {
-    margin-left: 80px;
-  }
-
-  .content {
-    padding: 16px;
-  }
+.content {
+  padding: 16px;
 }
