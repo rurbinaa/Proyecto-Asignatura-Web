@@ -205,7 +205,7 @@ export default function DefectPopover({ coordinates, onClose, onSave, defectList
             )}
           </div>
 
-          <div className="popover-section" style={{ marginBottom: 0 }}>
+          <div className="popover-section no-margin-bottom">
             <p className="popover-subtitle">Frequent Defects (Tap to select)</p>
             <div className="defects-grid">
               {top10Defects.map(defect => {
@@ -225,12 +225,12 @@ export default function DefectPopover({ coordinates, onClose, onSave, defectList
           </div>
         </>
       ) : (
-        <div className="popover-section slide-in" style={{ marginBottom: 0 }}>
+        <div className="popover-section slide-in no-margin-bottom">
           
           <div className="selected-defect-card">
             <div className="selected-defect-info">
-              <selectedDefect.icon className="grid-icon" style={{ color: '#567EBB' }} />
-              <span className="highlight-name" style={{ fontSize: '15px' }}>{selectedDefect.name}</span>
+              <selectedDefect.icon className="grid-icon icon-primary" />
+              <span className="highlight-name text-md">{selectedDefect.name}</span>
             </div>
             <button 
               className="change-defect-btn" 
@@ -240,7 +240,7 @@ export default function DefectPopover({ coordinates, onClose, onSave, defectList
             </button>
           </div>
 
-          <div style={{ marginTop: '20px' }}>
+          <div className="margin-top-md">
             <p className="popover-subtitle">
               Required Detail:
             </p>

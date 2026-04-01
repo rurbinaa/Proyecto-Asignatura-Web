@@ -147,3 +147,19 @@
   font-size: 14px;
   padding: 10px 12px;
 }
+
+.no-margin-bottom {
+  margin-bottom: 0;
+}
+
+.margin-top-md {
+  margin-top: 20px;
+}
+
+.icon-primary {
+  color: #567EBB;
+}
+
+.text-md {
+  font-size: 15px;
+}
