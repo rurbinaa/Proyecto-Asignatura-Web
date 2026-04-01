@@ -40,11 +40,26 @@
   border-color: #94a3b8;
 }
 
+.capture-view{
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-top: 40px;
+  height: 100%;
+  gap: 0;
+}
+
 .capture-setup-card {
   max-width: 400px;
-  margin: 40px auto;
-  padding: 32px;
+  margin: 0 auto;
+  padding: 25px;
   width: 100%;
+
+}
+
+.capture-header{
+  margin-bottom: 15px;
+  text-align: center;
 }
 
 .capture-header-flex {
