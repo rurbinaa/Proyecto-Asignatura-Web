@@ -230,6 +230,22 @@
   font-weight: bold;
 }
 
+.spacing-normal {
+  margin-bottom: 15px;
+}
+
+.spacing-large {
+  margin-bottom: 30px;
+}
+
+.btn-full {
+  width: 100%;
+}
+
+.title-tight {
+  margin-bottom: 4px;
+}
+
 @media (max-width: 1250px) {
   .garment-area-layout {
     display: flex;
