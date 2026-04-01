@@ -1,21 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import './mockupContainer.css';
 
 export default function MockupContainer({ garmentUrl, confirmedMarkers, isEditMode, onDefectPlacePending, onRemoveConfirmedMarker, pendingCoords }) {
   const wrapperRef = useRef(null); 
-  const [renderedSvg, setRenderedSvg] = useState(null);
 
-  useEffect(() => {
-    if (!garmentUrl) return;
-    fetch(garmentUrl)
-      .then((res) => res.text())
-      .then((data) => setRenderedSvg(data))
-      .catch((err) => console.error('Error loading SVG:', err));
-  }, [garmentUrl]);
-
-  const handlePathClick = (e) => {
+  const handleImageClick = (e) => {
     if (isEditMode) return;
-    if (e.target.tagName.toLowerCase() !== 'path') return; 
     if (!wrapperRef.current) return;
     
     const rect = wrapperRef.current.getBoundingClientRect();
@@ -43,14 +33,16 @@ export default function MockupContainer({ garmentUrl, confirmedMarkers, isEditMo
       className={`mockup-wrapper ${isEditMode ? 'edit-mode' : ''}`} 
       ref={wrapperRef}
     >
-      {renderedSvg ? (
-        <div
-          onClick={handlePathClick}
-          dangerouslySetInnerHTML={{ __html: renderedSvg}}
-          className="svg_injector"
+      {garmentUrl ? (
+        <img
+          src={garmentUrl}
+          alt="Garment Mockup"
+          onClick={handleImageClick}
+          className="svg_injector garment-image"
+          draggable="false"
         />
       ) : (
-        <p>Loading SVG...</p>
+        <p>Loading image...</p>
       )}
 
       {confirmedMarkers.map((mk) => (
