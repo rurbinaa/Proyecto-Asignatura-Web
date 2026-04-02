@@ -144,3 +144,50 @@ class ContainerInspectionDefect(models.Model):
                 name="unique_container_defect",
             )
         ]
+
+
+class ExcelSyncSession(models.Model):
+    """
+    Stores the state of an Excel import preview session.
+
+    When a user uploads an Excel file, the system parses it and computes a diff
+    against the database. The parsed data and diff summary are stored in this
+    model so the user can review before confirming.
+
+    Flow: upload → preview (creates session) → confirm/reject (deletes session)
+    """
+    STATUS_CHOICES = [
+        ("pending", "Pending confirmation"),
+        ("confirmed", "Confirmed and applied"),
+        ("rejected", "Rejected by user"),
+    ]
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Parsed Excel data per sheet (JSONField stores list of dicts)
+    qc_fa_plant_data = models.JSONField(default=list)
+    qc_fa_customer_data = models.JSONField(default=list)
+    seconds_a4_data = models.JSONField(default=list)
+    seconds_general_data = models.JSONField(default=list)
+    container_data = models.JSONField(default=list)
+
+    # Diff summary per sheet (JSONField stores preview metadata)
+    qc_fa_plant_preview = models.JSONField(default=dict)
+    qc_fa_customer_preview = models.JSONField(default=dict)
+    seconds_a4_preview = models.JSONField(default=dict)
+    seconds_general_preview = models.JSONField(default=dict)
+    container_preview = models.JSONField(default=dict)
+
+    # Global warnings (e.g., data loss risks)
+    warnings = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"SyncSession #{self.pk} [{self.status}] - {self.created_at}"
+
+    @property
+    def is_pending(self):
+        return self.status == "pending"
