@@ -572,13 +572,120 @@ def _rows_differ(row_a, row_b):
 
 
 def _sync_defects(excel_rows, model_class, defect_fields):
-    """Sync defect through-table records for QC FA or Container."""
-    # This is a simplified version — full implementation would compare
-    # existing defects and only update changed ones
-    pass  # TODO: Implement if needed, or delegate to existing bulk_insert logic
+    """
+    Sync defect through-table records for QC FA or Container.
+    
+    Delegates to handler_service for defect creation logic.
+    """
+    # Delegate to handler_service - it already handles the defect creation logic
+    from excel_importer.handler_service import (
+        bulk_insert as handler_bulk_insert,
+    )
+    
+    if not excel_rows or not defect_fields:
+        return
+    
+    # Reuse handler_service's logic - it expects DataFrame but we have list of dicts
+    # Convert to simple format and use bulk_insert for defect sync
+    _sync_defects_via_handler(excel_rows, model_class, defect_fields)
 
 
 def _sync_defects_timewindow(excel_rows, model_class, table_type,
                               defect_fields, excel_dates):
-    """Sync defects for time-window strategy (already deleted, just create)."""
-    pass  # TODO: Implement if needed, or delegate to existing bulk_insert logic
+    """
+    Sync defects for time-window strategy (already deleted, just create).
+    
+    Delegates to handler_service for defect creation logic.
+    """
+    if not excel_rows or not defect_fields:
+        return
+    
+    # For time-window, the parent records were already deleted (CASCADE deletes defects)
+    # So we just need to create new defect records for the new parent records
+    _sync_defects_via_handler(excel_rows, model_class, defect_fields)
+
+
+def _sync_defects_via_handler(excel_rows, model_class, defect_fields):
+    """
+    Helper that delegates defect creation to handler_service.
+    
+    The handler_service.bulk_insert functions already handle creating
+    InspectionDefect/ContainerInspectionDefect records. We reuse that logic
+    by passing the Excel rows through it.
+    """
+    import pandas as pd
+    from excel_importer.handler_service import (
+        bulk_insert as handler_bulk_insert_qcfa,
+        bulk_insert_container,
+    )
+    from quality_data.models import QualityQcFa, Container
+    
+    if not excel_rows or not defect_fields:
+        return
+    
+    # Convert list of dicts to DataFrame (handler_service expects DataFrame)
+    df = pd.DataFrame(excel_rows)
+    
+    # Get column lists from sheet_configs
+    numeric_cols = _get_numeric_columns_for_model(model_class)
+    not_numeric_cols = _get_not_numeric_columns_for_model(model_class)
+    
+    # Determine table_type for QualityQcFa
+    table_type = None
+    if model_class == QualityQcFa:
+        # Check if this is QFA or QFC based on data
+        table_types = df['table_type'].unique() if 'table_type' in df.columns else []
+        table_type = table_types[0] if len(table_types) == 1 else 'QFA'
+    
+    # Call the appropriate handler based on model
+    if model_class == QualityQcFa:
+        # Get QC defect field names
+        qc_defect_fields = _get_defect_fields('qc_fa_plant') or defect_fields
+        
+        # For QC FA, we need to create QualityQcFa records first, then defects
+        # The handler creates both in one pass
+        handler_bulk_insert_qcfa(
+            df,
+            numeric_cols,
+            not_numeric_cols,
+            qc_defect_fields or defect_fields,
+            table_type
+        )
+    elif model_class == Container:
+        container_defect_fields = _get_defect_fields('container') or defect_fields
+        handler_bulk_insert_container(
+            df,
+            numeric_cols,
+            not_numeric_cols,
+            container_defect_fields or defect_fields
+        )
+
+
+def _get_numeric_columns_for_model(model_class):
+    """Get numeric columns for a specific model class."""
+    from excel_importer.sheet_configs import (
+        QC_FA_PLANT_NUMERIC_COLUMNS,
+        QC_FA_CUSTOMER_NUMERIC_COLUMNS,
+        CONTAINER_NUMERIC_COLUMNS,
+    )
+    
+    if model_class == QualityQcFa:
+        return QC_FA_PLANT_NUMERIC_COLUMNS
+    elif model_class == Container:
+        return CONTAINER_NUMERIC_COLUMNS
+    return []
+
+
+def _get_not_numeric_columns_for_model(model_class):
+    """Get non-numeric columns for a specific model class."""
+    from excel_importer.sheet_configs import (
+        QC_FA_PLANT_NOT_NUMERIC_COLUMNS,
+        QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS,
+        CONTAINER_NOT_NUMERIC_COLUMNS,
+    )
+    
+    if model_class == QualityQcFa:
+        return QC_FA_PLANT_NOT_NUMERIC_COLUMNS
+    elif model_class == Container:
+        return CONTAINER_NOT_NUMERIC_COLUMNS
+    return []
