@@ -1,0 +1,69 @@
+import { useState } from 'react';
+import { Factory } from 'lucide-react';
+import './LoginView.css';
+
+export default function LoginView({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    
+    if (!email || !password) {
+      setError('Por favor llena todos los campos.');
+      return;
+    }
+
+    const userRole = email.toLowerCase().includes('gerente') ? 'manager' : 'operator';
+    
+    const userData = {
+      email: email,
+      role: userRole,
+    };
+
+    onLogin(userData); 
+  };
+
+  return (
+    <div className="login-container">
+      <div className="login-card">
+        <div className="login-header">
+          <Factory className="login-icon" />
+          <h2 className="login-title">Rift Analytics</h2>
+          <p className="login-subtitle">Enter your credentials</p>
+        </div>
+
+        <form className="login-form" onSubmit={handleSubmit}>
+          <div className="input-group">
+            <label className="input-label">Email</label>
+            <input 
+              type="email" 
+              className="input-field" 
+              placeholder="ej. gerente@uniwell.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Password</label>
+            <input 
+              type="password" 
+              className="input-field" 
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {error && <p className="error-text">{error}</p>}
+
+          <button type="submit" className="login-button">
+            Log In
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
