@@ -103,8 +103,10 @@ class Process(APIView):
 
 
         return Response(status = 204)
-    
-    
+
+
+# DEPRECATED: Use ExcelPreviewView + ExcelConfirmView instead.
+# Kept for backward compatibility. Will be removed in a future version.
 class SaveData(APIView):
     parser_classes = [FileUploadParser]
 
@@ -191,12 +193,6 @@ class SaveData(APIView):
             CONTAINER_AMOUNT_DEFEACTS_FIELDS,
         )
 
-
-        print(f"qc_fa_plant: {len(qc_fa_plant_new_rows)}")
-        print(f"qc_fa_customer: {len(qc_fa_customer_new_rows)}")
-        print(f"seconds_a4: {len(seconds_a4_new_rows)}")
-        print(f"seconds_general: {len(seconds_general_new_rows)}")
-        print(f"container: {len(container_new_rows)}")
 
         return Response(status = 204)
 
