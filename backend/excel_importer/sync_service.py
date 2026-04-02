@@ -122,7 +122,7 @@ def compute_preview_upsert(excel_rows, db_queryset, key_builder, date_field):
     # Build DB index by natural key
     db_index = {}
     for obj in db_queryset:
-        row_dict = _model_to_dict(obj, key_builder)
+        row_dict = _model_to_dict(obj)
         key = key_builder(row_dict)
         db_index[key] = row_dict
 
@@ -228,7 +228,7 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
     db_objects = {obj for obj in model_class.objects.all()}
     db_index = {}
     for obj in db_objects:
-        row_dict = _model_to_dict(obj, key_builder)
+        row_dict = _model_to_dict(obj)
         key = key_builder(row_dict)
         db_index[key] = obj
 
@@ -541,14 +541,12 @@ def _update_instance(instance, row, numeric_columns, not_numeric_columns):
         instance.color = color_obj
 
 
-def _model_to_dict(obj, key_builder):
-    """Convert a model instance to a dict compatible with key_builder."""
+def _model_to_dict(obj):
+    """Convert a model instance to a dict for comparison with Excel rows."""
     result = {}
     for field in obj._meta.fields:
         value = getattr(obj, field.name)
-        if hasattr(value, "strftime"):
-            result[field.name] = value
-        elif hasattr(value, "pk"):
+        if hasattr(value, "pk"):
             result[field.name] = value.pk if field.name != "color" else str(value)
         else:
             result[field.name] = value
@@ -577,16 +575,9 @@ def _sync_defects(excel_rows, model_class, defect_fields):
     
     Delegates to handler_service for defect creation logic.
     """
-    # Delegate to handler_service - it already handles the defect creation logic
-    from excel_importer.handler_service import (
-        bulk_insert as handler_bulk_insert,
-    )
-    
     if not excel_rows or not defect_fields:
         return
     
-    # Reuse handler_service's logic - it expects DataFrame but we have list of dicts
-    # Convert to simple format and use bulk_insert for defect sync
     _sync_defects_via_handler(excel_rows, model_class, defect_fields)
 
 
