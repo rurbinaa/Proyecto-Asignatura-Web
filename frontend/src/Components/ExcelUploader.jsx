@@ -173,6 +173,12 @@ export default function ExcelUploader() {
     onDrop,
     maxFiles: 1,
     maxSize: 10 * 1024 * 1024, // 10 MB limit
+    onDropRejected: (rejectedFiles) => {
+      const tooLarge = rejectedFiles.some(f => f.errors.some(e => e.code === 'file-too-large'));
+      if (tooLarge) {
+        setErrorMsg('File is too large. Maximum size is 10 MB.');
+      }
+    },
     accept: { 
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 
       'text/csv': ['.csv'] 
