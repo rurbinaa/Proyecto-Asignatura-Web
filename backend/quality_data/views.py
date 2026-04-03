@@ -49,6 +49,8 @@ from excel_importer.pivot_parsers import (
     parse_cut_qty,
     parse_fabric_defects,
     parse_enganche,
+    parse_top_defects,
+    parse_defects_by_style,
 )
 
 def _get_incremental_rows(df, model_class, **filters):
@@ -1149,9 +1151,9 @@ class VolatileKpiView(APIView):
                 "seconds_rework": seconds_rework,
                 "performance_by_customer": self._calc_perf_by_customer(rows),
                 "performance_by_line": self._calc_perf_by_line(rows),
-                "top_defects": None,  # Requiere InspectionDefect
+                "top_defects": parse_top_defects(rows),
                 "fabric_defects": fabric_defects,
-                "defects_by_style_type": None,  # Requiere InspectionDefect
+                "defects_by_style_type": parse_defects_by_style(rows),
                 "pass_reject_distribution": self._calc_pass_reject(rows),
                 "rejected_evolution": self._calc_rejected_evolution(rows),
                 "containers_by_state": None,  # Requiere Container

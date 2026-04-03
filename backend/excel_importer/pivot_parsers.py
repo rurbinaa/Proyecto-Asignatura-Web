@@ -2,7 +2,8 @@
 Pivot table parsers for KPI Excel dynamic ranges.
 
 These parsers read specific ranges from Excel sheets that contain
-pivot table data for KPIs (seconds rework, cut qty, fabric defects, enganche).
+pivot table data for KPIs (seconds rework, cut qty, fabric defects, enganche,
+top defects, defects by style type).
 """
 import pandas as pd
 from excel_importer.handler_service import load_pivot_range
@@ -258,6 +259,113 @@ def parse_enganche(file_obj):
         ]
 
         return [{"name": "Enganche", "data": data}]
+
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────────────────────
+# QC FA Plant based parsers (use pre-parsed rows, no Excel read)
+# ─────────────────────────────────────────────────────────
+
+from excel_importer.sheet_configs import QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS
+
+DEFECT_LABEL_MAP = {
+    'uneven': 'Uneven', 'broken_stitch': 'Broken Stitch', 'open_seam': 'Open Seam',
+    'tear': 'Tear', 'hi_low': 'Hi Low', 'run_off_stitch': 'Run Off Stitch',
+    'raw_edge': 'Raw Edge', 'neddle_holes': 'Needle Holes', 'loose_thread': 'Loose Thread',
+    'uncut_thread': 'Uncut Thread', 'big_or_littler_neck': 'Big/Littler Neck',
+    'uneven_neck_or_sleeve': 'Uneven Neck/Sleeve', 'out_of_measurements': 'Out of Measurements',
+    'incorrect_stitch': 'Incorrect Stitch', 'variation_tension_sttich': 'Variation Tension',
+    'excess_fabric': 'Excess Fabric', 'hitched': 'Hitched', 'po_midex': 'PO Mixed',
+    'transfer_peel_off_or_leave': 'Transfer Peel Off', 'wrong_transfer': 'Wrong Transfer',
+    'wrong_label': 'Wrong Label', 'missing_transfer': 'Missing Transfer',
+    'missing_label': 'Missing Label', 'shine': 'Shine', 'skip_stitch': 'Skip Stitch',
+    'pleat': 'Pleat', 'dirt_marck': 'Dirt Mark', 'missing_operation': 'Missing Operation',
+    'stain_oil_soil': 'Stain/Oil/Soil', 'contamination': 'Contamination',
+    'construction_defect': 'Construction Defect', 'mill_flaw': 'Mill Flaw',
+    'fabric_run': 'Fabric Run', 'misplaced': 'Misplaced', 'pucketing': 'Puckering',
+    'slanted': 'Slanted', 'defect_sticker_inside': 'Sticker Inside', 'roping': 'Roping',
+    'label_slanted': 'Label Slanted', 'shadding': 'Shading',
+    'missing_packing_trims': 'Missing Packing Trims',
+    'missing_print_or_embroidery': 'Missing Print/Embroidery',
+    'wrong_packing_trims': 'Wrong Packing Trims', 'wrong_po': 'Wrong PO',
+    'wrong_folding_method': 'Wrong Folding', 'wrong_size_attached': 'Wrong Size',
+    'damaged_label': 'Damaged Label', 'pocket_label': 'Pocket Label',
+    'label_placement': 'Label Placement', 'missing_information_label': 'Missing Info Label',
+}
+
+
+def parse_top_defects(rows):
+    """
+    Calcula Top Defectos desde las filas ya parseadas de QC FA Plant.
+    SUM cada columna de defecto, ordena DESC, top 10.
+
+    Returns: [{"label": "Loose Thread", "value": 234}, ...] or None on error.
+    """
+    try:
+        if not rows:
+            return []
+
+        totals = {}
+        for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
+            total = sum(int(row.get(field, 0) or 0) for row in rows)
+            if total > 0:
+                label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
+                totals[label] = totals.get(label, 0) + total
+
+        result = [{"label": k, "value": v} for k, v in totals.items()]
+        result.sort(key=lambda x: x['value'], reverse=True)
+        return result[:10]
+
+    except Exception:
+        return None
+
+
+def parse_defects_by_style(rows):
+    """
+    Calcula Defectos por Estilo × Tipo desde las filas ya parseadas de QC FA Plant.
+    Top 5 styles × top 5 defect types.
+
+    Returns: [{"x": "Style-2", "y": "Loose Thread", "value": 45}, ...] or None on error.
+    """
+    try:
+        if not rows:
+            return []
+
+        # Top 5 styles by total defects
+        style_totals = {}
+        for row in rows:
+            style = row.get('style', 'Unknown')
+            total = sum(int(row.get(f, 0) or 0) for f in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS)
+            style_totals[style] = style_totals.get(style, 0) + total
+
+        top_styles = sorted(style_totals, key=style_totals.get, reverse=True)[:5]
+
+        # Top 5 defect types by total amount
+        defect_totals = {}
+        for row in rows:
+            for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
+                val = int(row.get(field, 0) or 0)
+                if val > 0:
+                    defect_totals[field] = defect_totals.get(field, 0) + val
+
+        top_defect_fields = sorted(defect_totals, key=defect_totals.get, reverse=True)[:5]
+
+        # Build heatmap: style × defect
+        from collections import defaultdict
+        agg = defaultdict(int)
+        for row in rows:
+            style = row.get('style', 'Unknown')
+            if style not in top_styles:
+                continue
+            for field in top_defect_fields:
+                val = int(row.get(field, 0) or 0)
+                if val > 0:
+                    label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
+                    agg[(style, label)] += val
+
+        return [{"x": k[0], "y": k[1], "value": v} for k, v in agg.items()]
 
     except Exception:
         return None

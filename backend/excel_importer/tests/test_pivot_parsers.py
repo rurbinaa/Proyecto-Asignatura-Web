@@ -13,6 +13,8 @@ from excel_importer.pivot_parsers import (
     parse_cut_qty,
     parse_fabric_defects,
     parse_enganche,
+    parse_top_defects,
+    parse_defects_by_style,
 )
 from excel_importer.handler_service import load_pivot_range
 
@@ -319,3 +321,89 @@ class ParseNullHandlingTest(TestCase):
         empty_file.seek(0)
         result = parse_enganche(empty_file)
         self.assertIsNone(result)
+
+
+class ParseTopDefectsTest(TestCase):
+    """Tests for parse_top_defects — uses pre-parsed rows, no Excel read."""
+
+    def test_returns_top_10_defects_sorted_descending(self):
+        rows = [
+            {'style': 'S1', 'loose_thread': 5, 'broken_stitch': 3, 'open_seam': 0, 'tear': 0,
+             'hi_low': 0, 'run_off_stitch': 0, 'raw_edge': 0, 'neddle_holes': 0,
+             'uncut_thread': 0, 'big_or_littler_neck': 0, 'uneven_neck_or_sleeve': 0,
+             'out_of_measurements': 0, 'incorrect_stitch': 0, 'variation_tension_sttich': 0,
+             'excess_fabric': 0, 'hitched': 0, 'po_midex': 0, 'transfer_peel_off_or_leave': 0,
+             'wrong_transfer': 0, 'wrong_label': 0, 'missing_transfer': 0, 'missing_label': 0,
+             'shine': 0, 'skip_stitch': 0, 'pleat': 0, 'dirt_marck': 0, 'missing_operation': 0,
+             'stain_oil_soil': 0, 'contamination': 0, 'construction_defect': 0, 'mill_flaw': 0,
+             'fabric_run': 0, 'misplaced': 0, 'pucketing': 0, 'slanted': 0,
+             'defect_sticker_inside': 0, 'roping': 0, 'label_slanted': 0, 'shadding': 0,
+             'missing_packing_trims': 0, 'missing_print_or_embroidery': 0,
+             'wrong_packing_trims': 0, 'wrong_po': 0, 'wrong_folding_method': 0,
+             'wrong_size_attached': 0, 'damaged_label': 0, 'pocket_label': 0,
+             'label_placement': 0, 'missing_information_label': 0, 'uneven': 1},
+            {'style': 'S2', 'loose_thread': 2, 'broken_stitch': 8, 'open_seam': 1, 'tear': 0,
+             'hi_low': 0, 'run_off_stitch': 0, 'raw_edge': 0, 'neddle_holes': 0,
+             'uncut_thread': 0, 'big_or_littler_neck': 0, 'uneven_neck_or_sleeve': 0,
+             'out_of_measurements': 0, 'incorrect_stitch': 0, 'variation_tension_sttich': 0,
+             'excess_fabric': 0, 'hitched': 0, 'po_midex': 0, 'transfer_peel_off_or_leave': 0,
+             'wrong_transfer': 0, 'wrong_label': 0, 'missing_transfer': 0, 'missing_label': 0,
+             'shine': 0, 'skip_stitch': 0, 'pleat': 0, 'dirt_marck': 0, 'missing_operation': 0,
+             'stain_oil_soil': 0, 'contamination': 0, 'construction_defect': 0, 'mill_flaw': 0,
+             'fabric_run': 0, 'misplaced': 0, 'pucketing': 0, 'slanted': 0,
+             'defect_sticker_inside': 0, 'roping': 0, 'label_slanted': 0, 'shadding': 0,
+             'missing_packing_trims': 0, 'missing_print_or_embroidery': 0,
+             'wrong_packing_trims': 0, 'wrong_po': 0, 'wrong_folding_method': 0,
+             'wrong_size_attached': 0, 'damaged_label': 0, 'pocket_label': 0,
+             'label_placement': 0, 'missing_information_label': 0, 'uneven': 0},
+        ]
+        result = parse_top_defects(rows)
+        self.assertIsNotNone(result)
+        # Should be sorted descending: broken_stitch(11), loose_thread(7), open_seam(1), uneven(1)
+        self.assertEqual(result[0]['label'], 'Broken Stitch')
+        self.assertEqual(result[0]['value'], 11)
+        self.assertEqual(result[1]['label'], 'Loose Thread')
+        self.assertEqual(result[1]['value'], 7)
+
+    def test_returns_empty_for_empty_rows(self):
+        result = parse_top_defects([])
+        self.assertEqual(result, [])
+
+    def test_handles_none_values(self):
+        rows = [{'style': 'S1', 'loose_thread': None, 'broken_stitch': 0}]
+        result = parse_top_defects(rows)
+        self.assertIsNotNone(result)
+        # None and 0 should be treated as 0
+
+
+class ParseDefectsByStyleTest(TestCase):
+    """Tests for parse_defects_by_style — heatmap of style × defect type."""
+
+    def test_returns_heatmap_data(self):
+        rows = [
+            {'style': 'Style-A', 'loose_thread': 5, 'broken_stitch': 3, 'open_seam': 0, 'tear': 0,
+             'hi_low': 0, 'run_off_stitch': 0, 'raw_edge': 0, 'neddle_holes': 0,
+             'uncut_thread': 0, 'big_or_littler_neck': 0, 'uneven_neck_or_sleeve': 0,
+             'out_of_measurements': 0, 'incorrect_stitch': 0, 'variation_tension_sttich': 0,
+             'excess_fabric': 0, 'hitched': 0, 'po_midex': 0, 'transfer_peel_off_or_leave': 0,
+             'wrong_transfer': 0, 'wrong_label': 0, 'missing_transfer': 0, 'missing_label': 0,
+             'shine': 0, 'skip_stitch': 0, 'pleat': 0, 'dirt_marck': 0, 'missing_operation': 0,
+             'stain_oil_soil': 0, 'contamination': 0, 'construction_defect': 0, 'mill_flaw': 0,
+             'fabric_run': 0, 'misplaced': 0, 'pucketing': 0, 'slanted': 0,
+             'defect_sticker_inside': 0, 'roping': 0, 'label_slanted': 0, 'shadding': 0,
+             'missing_packing_trims': 0, 'missing_print_or_embroidery': 0,
+             'wrong_packing_trims': 0, 'wrong_po': 0, 'wrong_folding_method': 0,
+             'wrong_size_attached': 0, 'damaged_label': 0, 'pocket_label': 0,
+             'label_placement': 0, 'missing_information_label': 0, 'uneven': 1},
+        ]
+        result = parse_defects_by_style(rows)
+        self.assertIsNotNone(result)
+        self.assertTrue(len(result) > 0)
+        for item in result:
+            self.assertIn('x', item)
+            self.assertIn('y', item)
+            self.assertIn('value', item)
+
+    def test_returns_empty_for_empty_rows(self):
+        result = parse_defects_by_style([])
+        self.assertEqual(result, [])
