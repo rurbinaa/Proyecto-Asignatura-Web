@@ -644,7 +644,7 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields):
         )
     elif model_class == Container:
         container_defect_fields = _get_defect_fields('container') or defect_fields
-        handler_bulk_insert_container(
+        bulk_insert_container(
             df,
             numeric_cols,
             not_numeric_cols,
