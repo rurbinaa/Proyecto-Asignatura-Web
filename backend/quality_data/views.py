@@ -1,14 +1,15 @@
 from rest_framework.views import APIView
 from rest_framework.parsers import FileUploadParser
 from rest_framework.response import Response
-from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container
+from rest_framework import status as http_status
+from django.shortcuts import get_object_or_404
+from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession
 from excel_importer.handler_service import (
     load_and_clean,
     bulk_insert,
     bulk_insert_seconds_a4,
     bulk_insert_seconds_general,
     bulk_insert_container,
-    print_headers,
 )
 from excel_importer.sheet_configs import (
     SHEET_NAMES,
@@ -30,7 +31,11 @@ from excel_importer.sheet_configs import (
     CONTAINER_NUMERIC_COLUMNS,
     CONTAINER_NOT_NUMERIC_COLUMNS,
     CONTAINER_AMOUNT_DEFEACTS_FIELDS
-
+)
+from excel_importer.sync_service import (
+    create_session_from_dataframes,
+    apply_session,
+    reject_session,
 )
 
 def _get_incremental_rows(df, model_class, **filters):
@@ -98,8 +103,10 @@ class Process(APIView):
 
 
         return Response(status = 204)
-    
-    
+
+
+# DEPRECATED: Use ExcelPreviewView + ExcelConfirmView instead.
+# Kept for backward compatibility. Will be removed in a future version.
 class SaveData(APIView):
     parser_classes = [FileUploadParser]
 
@@ -187,10 +194,137 @@ class SaveData(APIView):
         )
 
 
-        print(f"qc_fa_plant: {len(qc_fa_plant_new_rows)}")
-        print(f"qc_fa_customer: {len(qc_fa_customer_new_rows)}")
-        print(f"seconds_a4: {len(seconds_a4_new_rows)}")
-        print(f"seconds_general: {len(seconds_general_new_rows)}")
-        print(f"container: {len(container_new_rows)}")
-
         return Response(status = 204)
+
+
+# ─────────────────────────────────────────────────────────
+# New V2 Views — Preview → Confirm → Apply workflow
+# ─────────────────────────────────────────────────────────
+
+class ExcelPreviewView(APIView):
+    """
+    Upload an Excel file and return a preview diff without modifying the database.
+
+    POST /excel/preview/<filename>/
+    Returns: session_id + preview summary (new, modified, warnings per sheet)
+    """
+    parser_classes = [FileUploadParser]
+
+    def post(self, request, filename, format=None):
+        file_obj = request.data['file']
+
+        try:
+            # Parse all 5 sheets
+            dataframes = {}
+
+            qc_fa_plant_df = load_and_clean(
+                file_obj, QC_FA_PLANT_REMAP, QC_FA_PLANT_NUMERIC_COLUMNS,
+                QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[0],
+            )
+            dataframes["qc_fa_plant"] = qc_fa_plant_df.to_dict('records')
+
+            qc_fa_customer_df = load_and_clean(
+                file_obj, QC_FA_CUSTOMER_REMAP, QC_FA_CUSTOMER_NUMERIC_COLUMNS,
+                QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[1],
+            )
+            dataframes["qc_fa_customer"] = qc_fa_customer_df.to_dict('records')
+
+            seconds_a4_df = load_and_clean(
+                file_obj, SECONDS_A4_REMAP, SECONDS_A4_NUMERIC_COLUMNS,
+                None, *SHEET_NAMES[2],
+            )
+            dataframes["seconds_a4"] = seconds_a4_df.to_dict('records')
+
+            seconds_general_df = load_and_clean(
+                file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
+                None, *SHEET_NAMES[3],
+            )
+            dataframes["seconds_general"] = seconds_general_df.to_dict('records')
+
+            container_df = load_and_clean(
+                file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
+                CONTAINER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[4],
+            )
+            dataframes["container"] = container_df.to_dict('records')
+
+            # Create session with preview
+            session = create_session_from_dataframes(dataframes)
+
+            return Response({
+                "session_id": session.pk,
+                "status": session.status,
+                "preview": {
+                    "qc_fa_plant": session.qc_fa_plant_preview,
+                    "qc_fa_customer": session.qc_fa_customer_preview,
+                    "seconds_a4": session.seconds_a4_preview,
+                    "seconds_general": session.seconds_general_preview,
+                    "container": session.container_preview,
+                },
+                "warnings": session.warnings,
+            }, status=http_status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to process Excel file: {str(e)}"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class ExcelConfirmView(APIView):
+    """
+    Confirm and apply changes from a pending preview session.
+
+    POST /excel/confirm/<int:session_id>/
+    Returns: confirmation with summary of applied changes
+    """
+
+    def post(self, request, session_id, format=None):
+        session = get_object_or_404(ExcelSyncSession, pk=session_id)
+
+        if not session.is_pending:
+            return Response(
+                {"error": f"Session is already {session.status}"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            apply_session(session)
+            session.refresh_from_db()
+
+            return Response({
+                "session_id": session.pk,
+                "status": session.status,
+                "message": "Changes applied successfully",
+            }, status=http_status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to apply changes: {str(e)}"},
+                status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class ExcelRejectView(APIView):
+    """
+    Reject a pending preview session — no changes are applied.
+
+    DELETE /excel/reject/<int:session_id>/
+    Returns: confirmation that session was rejected
+    """
+
+    def delete(self, request, session_id, format=None):
+        session = get_object_or_404(ExcelSyncSession, pk=session_id)
+
+        if not session.is_pending:
+            return Response(
+                {"error": f"Session is already {session.status}"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        reject_session(session)
+
+        return Response({
+            "session_id": session.pk,
+            "status": "rejected",
+            "message": "Session rejected, no changes applied",
+        }, status=http_status.HTTP_200_OK)

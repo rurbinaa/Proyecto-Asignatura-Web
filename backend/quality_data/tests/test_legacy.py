@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.db import IntegrityError
-from .models import (
+from quality_data.models import (
     Color,
     DefectType,
     QualityQcFa,
@@ -298,7 +298,7 @@ import pandas as pd
 class ProcessViewTest(APITestCase):
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse('process', kwargs={'filename': 'test.xlsx'})
+        self.url = reverse('quality_data:process', kwargs={'filename': 'test.xlsx'})
 
     @patch('quality_data.views.load_and_clean')
     def test_process_view_post(self, mock_load_and_clean):
@@ -319,7 +319,7 @@ class ProcessViewTest(APITestCase):
 class SaveDataViewTest(APITestCase):
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse('savedata', kwargs={'filename': 'test.xlsx'})
+        self.url = reverse('quality_data:savedata', kwargs={'filename': 'test.xlsx'})
 
     @patch('quality_data.views.load_and_clean')
     @patch('quality_data.views._get_incremental_rows')
@@ -362,7 +362,7 @@ class SaveDataViewTest(APITestCase):
 
 class InitDataModelsTest(TestCase):
     def test_save_color(self):
-        from .init_data_models import SaveColor, COMPANY_COLORS
+        from quality_data.init_data_models import SaveColor, COMPANY_COLORS
         
         SaveColor()
         
@@ -373,7 +373,7 @@ class InitDataModelsTest(TestCase):
             self.assertTrue(Color.objects.filter(name=color_name, is_active=True).exists())
     
     def test_save_color_idempotent(self):
-        from .init_data_models import SaveColor
+        from quality_data.init_data_models import SaveColor
         
         SaveColor()
         initial_count = Color.objects.count()
@@ -384,7 +384,7 @@ class InitDataModelsTest(TestCase):
         self.assertEqual(initial_count, final_count)
     
     def test_save_defects(self):
-        from .init_data_models import SaveDefects, GARMENT_DEFECT_TYPES
+        from quality_data.init_data_models import SaveDefects, GARMENT_DEFECT_TYPES
         
         SaveDefects()
         
@@ -395,7 +395,7 @@ class InitDataModelsTest(TestCase):
             self.assertTrue(DefectType.objects.filter(name=defect_name, is_active=True).exists())
     
     def test_save_defects_container(self):
-        from .init_data_models import SaveDefectsContainer, CONTAINER_DEFECT_TYPES
+        from quality_data.init_data_models import SaveDefectsContainer, CONTAINER_DEFECT_TYPES
         
         SaveDefectsContainer()
         
@@ -532,7 +532,7 @@ class InspectionDefectAmountTest(TestCase):
 class SaveDataViewRealDBTest(APITestCase):
     def setUp(self):
         self.client = APIClient()
-        self.url = reverse('savedata', kwargs={'filename': 'test.xlsx'})
+        self.url = reverse('quality_data:savedata', kwargs={'filename': 'test.xlsx'})
         
         self.color = Color.objects.create(name="TestColor")
         self.defect_type = DefectType.objects.create(name="TestDefect")
