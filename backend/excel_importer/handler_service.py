@@ -41,6 +41,31 @@ def print_headers(file_obj,sheet,header,cols):
     print(df.columns.tolist())
 
 
+def load_pivot_range(file_obj, sheet, header_row, usecols, nrows=None):
+    """
+    Lee un rango específico de un sheet del Excel.
+
+    Args:
+        file_obj: File object (seekable)
+        sheet: Sheet name
+        header_row: 1-indexed row number containing headers
+        usecols: Column range string like "X:Z" or "AE:AF"
+        nrows: Number of rows of data to read (optional)
+
+    Returns:
+        DataFrame with the specified range, empty rows/columns removed.
+    """
+    file_obj.seek(0)
+    df = pd.read_excel(
+        file_obj, engine='openpyxl', sheet_name=sheet,
+        header=header_row - 1,  # Convert 1-indexed to 0-indexed
+        usecols=usecols,
+        nrows=nrows
+    )
+    df = df.dropna(how='all').dropna(axis=1, how='all')
+    return df
+
+
 def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols):
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 

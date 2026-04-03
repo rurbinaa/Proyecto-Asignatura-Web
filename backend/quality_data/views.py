@@ -44,6 +44,12 @@ from excel_importer.sync_service import (
     apply_session,
     reject_session,
 )
+from excel_importer.pivot_parsers import (
+    parse_seconds_rework,
+    parse_cut_qty,
+    parse_fabric_defects,
+    parse_enganche,
+)
 
 def _get_incremental_rows(df, model_class, **filters):
     db_rows = model_class.objects.filter(**filters).count()
@@ -1113,17 +1119,38 @@ class VolatileKpiView(APIView):
             )
             rows = df.to_dict('records')
 
+            # Parsear KPIs desde ranges dinámicos del Excel
+            try:
+                seconds_rework = parse_seconds_rework(file_obj)
+            except Exception:
+                seconds_rework = None
+
+            try:
+                fabric_defects = parse_fabric_defects(file_obj)
+            except Exception:
+                fabric_defects = None
+
+            try:
+                cut_qty = parse_cut_qty(file_obj)
+            except Exception:
+                cut_qty = None
+
+            try:
+                enganche = parse_enganche(file_obj)
+            except Exception:
+                enganche = None
+
             # Calcular los 14 KPIs usando pandas
             kpis = {
                 "aql_by_style": self._calc_aql_by_style(rows),
                 "aql_weekly": self._calc_aql_weekly(rows),
                 "audited_pieces": self._calc_audited_pieces(rows),
                 "ac_re_rate_by_line": self._calc_ac_re_rate(rows),
-                "seconds_rework": None,  # Requiere sheet SecondsA4
+                "seconds_rework": seconds_rework,
                 "performance_by_customer": self._calc_perf_by_customer(rows),
                 "performance_by_line": self._calc_perf_by_line(rows),
                 "top_defects": None,  # Requiere InspectionDefect
-                "fabric_defects": None,  # Requiere SecondsGeneral
+                "fabric_defects": fabric_defects,
                 "defects_by_style_type": None,  # Requiere InspectionDefect
                 "pass_reject_distribution": self._calc_pass_reject(rows),
                 "rejected_evolution": self._calc_rejected_evolution(rows),

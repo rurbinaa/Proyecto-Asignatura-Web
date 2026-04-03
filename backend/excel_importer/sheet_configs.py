@@ -284,3 +284,12 @@ CONTAINER_AMOUNT_DEFEACTS_FIELDS = [
     'crushed_corners', 'cartoons_holes', 'warped_boxes', 'defects_label',
     'total_defects'
 ]
+
+# Pivot table ranges for KPI dynamic parsing
+PIVOT_RANGES = {
+    'seconds_rework': {'sheet': 'SecondsA4', 'header_row': 8, 'usecols': 'X:Z', 'nrows': 48},
+    'cut_qty': {'sheet': 'SecondsA4', 'header_row': 70, 'usecols': 'AE:AF', 'nrows': 48},
+    'fabric_defects_corrido2': {'sheet': 'Seconds General', 'header_row': 3, 'usecols': 'AM:AN', 'nrows': 42},
+    'fabric_defects_corrido': {'sheet': 'Seconds General', 'header_row': 49, 'usecols': 'AM:AN', 'nrows': 35},
+    'enganche': {'sheet': 'Seconds General', 'header_row': 42, 'usecols': 'AR:AS', 'nrows': 38},
+}
