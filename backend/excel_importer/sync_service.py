@@ -219,6 +219,12 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
             if excel_count > db_count:
                 new_count += excel_count - db_count
 
+    # Rows with missing/unparseable dates are skipped in the date loop
+    # but still counted in total. Attribute them to 'new' to keep math consistent.
+    unmatched = len(excel_rows) - (new_count + modified_count + unchanged_count)
+    if unmatched > 0:
+        new_count += unmatched
+
     return {
         "strategy": "time_window",
         "new": new_count,

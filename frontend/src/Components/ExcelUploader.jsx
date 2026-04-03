@@ -82,7 +82,7 @@ export default function ExcelUploader() {
       reader.onload = (e) => {
         try {
           const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array', sheetRows: 200 });
+          const workbook = XLSX.read(data, { type: 'array' });
           
           const targetSheets = SHEET_GROUPS_MAP[reportType];
           let newPreviews = [];
