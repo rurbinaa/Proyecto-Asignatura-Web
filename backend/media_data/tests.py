@@ -41,16 +41,38 @@ class InspectionTests(APITestCase):
         self.assertEqual(last_defect.notes, "Frayed edges near the collar")
         self.assertEqual(last_defect.defect_count, 3)
 
-    def test_close_inspection_successfully(self):
+    def test_close_inspection_with_defects_returns_reject(self):
+        """Closing an inspection with defects sets status to REJECT."""
+        RevisionDefect.objects.create(
+            inspection=self.inspection,
+            inspector=self.user,
+            defect_type=self.defect_type,
+            defect_size="Medium",
+            defect_count=1,
+        )
         url = reverse(
             'media_data:inspection-close-inspection',
             kwargs={'pk': self.inspection.id},
         )
         response = self.client.post(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['result'], 'REJECT')
+        self.assertEqual(response.data['total_defects'], 1)
         self.inspection.refresh_from_db()
         self.assertTrue(self.inspection.is_closed)
-        self.assertIsNotNone(self.inspection.closed_at)
+
+    def test_close_inspection_without_defects_returns_pass(self):
+        """Closing an inspection with no defects sets status to PASS."""
+        url = reverse(
+            'media_data:inspection-close-inspection',
+            kwargs={'pk': self.inspection.id},
+        )
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['result'], 'PASS')
+        self.assertEqual(response.data['total_defects'], 0)
+        self.inspection.refresh_from_db()
+        self.assertTrue(self.inspection.is_closed)
 
     def test_close_inspection_already_closed(self):
         """Closing an already-closed inspection returns 400."""
@@ -71,7 +93,7 @@ class InspectionTests(APITestCase):
             defect_size="Medium",
             defect_count=1,
         )
-        url = reverse('media_data:defect-undo')
+        url = f"{reverse('media_data:defect-undo')}?inspection={self.inspection.id}"
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -85,17 +107,24 @@ class InspectionTests(APITestCase):
             defect_count=1,
         )
         defect_id = defect.pk
-        url = reverse('media_data:defect-undo')
+        url = f"{reverse('media_data:defect-undo')}?inspection={self.inspection.id}"
         self.client.delete(url)
         self.assertFalse(RevisionDefect.objects.filter(pk=defect_id).exists())
+
+    def test_undo_requires_inspection_param(self):
+        """Undo returns 400 if inspection query param is missing."""
+        url = reverse('media_data:defect-undo')
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_undo_no_defects_returns_404(self):
+        """Undo returns 404 if no defects exist for the inspection."""
+        url = f"{reverse('media_data:defect-undo')}?inspection={self.inspection.id}"
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_get_mockup_info(self):
         url = reverse('media_data:mockup-detail', kwargs={'pk': self.mockup.id})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['width'], 800)
-
-    def test_error_if_no_records_to_undo(self):
-        url = reverse('media_data:defect-undo')
-        response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
