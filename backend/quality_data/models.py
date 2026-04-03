@@ -117,7 +117,7 @@ class ContainerDefectType(models.Model):
         return self.name
 
 class Container(models.Model):
-    container_number = models.IntegerField()
+    container_number = models.IntegerField(unique=True)
     customer = models.CharField(max_length=50)
     transfer_of_container = models.IntegerField(default=0)
     total_palette = models.IntegerField()

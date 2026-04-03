@@ -1,3 +1,4 @@
+from django.core.validators import MinValueValidator
 from rest_framework import serializers
 from quality_data.models import DefectType, Color
 from .models import InspectionData, RevisionDefect, Mockup
@@ -89,6 +90,7 @@ class RevisionDefectSerializer(serializers.ModelSerializer):
         queryset=DefectType.objects.filter(is_active=True),
         get_or_create_defaults={'is_active': True},
     )
+    defect_count = serializers.IntegerField(validators=[MinValueValidator(1)])
 
     class Meta:
         model = RevisionDefect
