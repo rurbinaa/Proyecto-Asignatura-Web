@@ -15,7 +15,7 @@ export default function LoginView({ onLogin }) {
       return;
     }
 
-    const userRole = email.toLowerCase().includes('gerente') ? 'manager' : 'operator';
+    const userRole = /gerente|gerencia|manager|admin/i.test(email) ? 'manager' : 'operator';
     
     const userData = {
       email: email,
