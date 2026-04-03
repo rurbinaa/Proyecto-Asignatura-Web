@@ -1,5 +1,5 @@
 from rest_framework.views import APIView
-from rest_framework.parsers import FileUploadParser
+from rest_framework.parsers import MultiPartParser, FileUploadParser
 from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.decorators import action
@@ -1076,3 +1076,237 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
                 {"name": "Pieces", "data": pieces_data},
             ]
         })
+
+
+# ─────────────────────────────────────────────────────────
+# Volatile KPIs — In-Memory Excel Processing (No DB)
+# ─────────────────────────────────────────────────────────
+
+class VolatileKpiView(APIView):
+    """
+    POST /api/kpis/volatile/
+
+    Recibe un archivo Excel via FormData, lo procesa en memoria (sin guardar
+    en la base de datos) y devuelve los 14 KPIs en el mismo formato que los
+    endpoints live.
+
+    Solo usa el sheet "QC FA Plant". Los KPIs que requieren datos de otras
+    tablas (SecondsA4, InspectionDefect, Container) se devuelven como null.
+    """
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file provided"}, status=400)
+
+        try:
+            # Parsear QC FA Plant (header=2, 67 columnas)
+            df = load_and_clean(
+                file_obj,
+                QC_FA_PLANT_REMAP,
+                QC_FA_PLANT_NUMERIC_COLUMNS,
+                QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
+                "QC FA Plant",
+                2,
+                67,
+            )
+            rows = df.to_dict('records')
+
+            # Calcular los 14 KPIs usando pandas
+            kpis = {
+                "aql_by_style": self._calc_aql_by_style(rows),
+                "aql_weekly": self._calc_aql_weekly(rows),
+                "audited_pieces": self._calc_audited_pieces(rows),
+                "ac_re_rate_by_line": self._calc_ac_re_rate(rows),
+                "seconds_rework": None,  # Requiere sheet SecondsA4
+                "performance_by_customer": self._calc_perf_by_customer(rows),
+                "performance_by_line": self._calc_perf_by_line(rows),
+                "top_defects": None,  # Requiere InspectionDefect
+                "fabric_defects": None,  # Requiere SecondsGeneral
+                "defects_by_style_type": None,  # Requiere InspectionDefect
+                "pass_reject_distribution": self._calc_pass_reject(rows),
+                "rejected_evolution": self._calc_rejected_evolution(rows),
+                "containers_by_state": None,  # Requiere Container
+                "defect_rate": self._calc_defect_rate(rows),
+            }
+
+            return Response(kpis, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=400)
+
+    def _calc_aql_by_style(self, rows):
+        """GROUP BY style: SUM(defects_total)/SUM(sample)*100"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+        grouped = df.groupby('style').agg(
+            total_defects=('defects_total', 'sum'),
+            total_sample=('sample', 'sum')
+        ).reset_index()
+        grouped = grouped[grouped['total_sample'] > 0]
+        grouped['aql'] = (grouped['total_defects'] / grouped['total_sample'] * 100).round(2)
+        result = [
+            {"label": row['style'], "value": row['aql']}
+            for _, row in grouped.iterrows()
+        ]
+        result.sort(key=lambda x: x['value'], reverse=True)
+        return result
+
+    def _calc_aql_weekly(self, rows):
+        """GROUP BY week: SUM(defects_total)/SUM(sample)*100 con línea de tendencia."""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return [{"name": "AQL", "data": []}, {"name": "Trend", "data": []}]
+
+        grouped = df.groupby('week').agg(
+            total_defects=('defects_total', 'sum'),
+            total_sample=('sample', 'sum')
+        ).reset_index().sort_values('week')
+
+        aql_data = []
+        for _, row in grouped.iterrows():
+            sample = row['total_sample'] or 0
+            defects = row['total_defects'] or 0
+            aql = (defects / sample * 100) if sample > 0 else 0.0
+            aql_data.append({"x": int(row['week']), "y": round(aql, 2)})
+
+        # Calcular línea de tendencia
+        trend_data = []
+        if len(aql_data) >= 2:
+            differences = []
+            for i in range(1, len(aql_data)):
+                diff = aql_data[i]['y'] - aql_data[i - 1]['y']
+                differences.append(diff)
+            slope = sum(differences) / len(differences) if differences else 0
+            first_x = aql_data[0]['x']
+            first_y = aql_data[0]['y']
+            for point in aql_data:
+                trend_y = first_y + slope * (point['x'] - first_x)
+                trend_data.append({"x": point['x'], "y": round(trend_y, 2)})
+        elif len(aql_data) == 1:
+            trend_data = [{"x": aql_data[0]['x'], "y": aql_data[0]['y']}]
+
+        return [{"name": "AQL", "data": aql_data}, {"name": "Trend", "data": trend_data}]
+
+    def _calc_audited_pieces(self, rows):
+        """GROUP BY week: SUM(sample)"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return [{"name": "Pieces", "data": []}]
+
+        grouped = df.groupby('week').agg(
+            total_sample=('sample', 'sum')
+        ).reset_index().sort_values('week')
+
+        pieces_data = [
+            {"x": int(row['week']), "y": int(row['total_sample'] or 0)}
+            for _, row in grouped.iterrows()
+        ]
+        return [{"name": "Pieces", "data": pieces_data}]
+
+    def _calc_ac_re_rate(self, rows):
+        """GROUP BY team × pass_or_fail: COUNT de registros."""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+
+        # Filtrar filas válidas con team y pass_or_fail
+        df = df.dropna(subset=['team', 'pass_or_fail'])
+        df = df[df['team'] != 0]
+
+        grouped = df.groupby(['team', 'pass_or_fail']).size().reset_index(name='count')
+
+        result = [
+            {"label": f"{int(row['team'])} - {row['pass_or_fail']}", "value": int(row['count'])}
+            for _, row in grouped.iterrows()
+        ]
+        return result
+
+    def _calc_perf_by_customer(self, rows):
+        """GROUP BY customer: SUM(accepted)/SUM(sample)*100"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+
+        df = df[df['sample'] > 0]
+        grouped = df.groupby('customer').agg(
+            total_accepted=('accepted', 'sum'),
+            total_sample=('sample', 'sum')
+        ).reset_index()
+
+        result = [
+            {
+                "label": row['customer'],
+                "value": round((row['total_accepted'] / row['total_sample']) * 100, 2)
+                if row['total_sample'] > 0 else 0,
+            }
+            for _, row in grouped.iterrows()
+        ]
+        return result
+
+    def _calc_perf_by_line(self, rows):
+        """GROUP BY team: SUM(accepted)/SUM(sample)*100"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+
+        grouped = df.groupby('team').agg(
+            total_accepted=('accepted', 'sum'),
+            total_sample=('sample', 'sum')
+        ).reset_index()
+
+        result = [
+            {
+                "label": str(int(row['team'])),
+                "value": round((row['total_accepted'] / row['total_sample']) * 100, 2)
+                if row['total_sample'] > 0 else 0,
+            }
+            for _, row in grouped.iterrows()
+        ]
+        return result
+
+    def _calc_pass_reject(self, rows):
+        """GROUP BY pass_or_fail: COUNT"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+
+        grouped = df.groupby('pass_or_fail').size().reset_index(name='value')
+        result = [
+            {"name": row['pass_or_fail'], "value": int(row['value'])}
+            for _, row in grouped.iterrows()
+        ]
+        return result
+
+    def _calc_rejected_evolution(self, rows):
+        """GROUP BY week: SUM(rejected)"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return [{"name": "Rejected", "data": []}]
+
+        grouped = df.groupby('week').agg(
+            total_rejected=('rejected', 'sum')
+        ).reset_index().sort_values('week')
+
+        rejected_data = [
+            {"x": int(row['week']), "y": int(row['total_rejected'] or 0)}
+            for _, row in grouped.iterrows()
+        ]
+        return [{"name": "Rejected", "data": rejected_data}]
+
+    def _calc_defect_rate(self, rows):
+        """SUM(defects_total)/SUM(sample)*100 global"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return {"label": "Defect Rate", "value": 0}
+
+        total_defects = df['defects_total'].sum()
+        total_sample = df['sample'].sum()
+
+        value = 0
+        if total_sample > 0:
+            value = round((total_defects / total_sample) * 100, 2)
+
+        return {"label": "Defect Rate", "value": value}

@@ -6,6 +6,7 @@ from .views import (
     KpiViewSet, AqlKpiViewSet,
     PassRejectDistributionView, RejectedEvolutionView,
     ContainersByStateView, DefectRateView,
+    VolatileKpiView,
 )
 
 app_name = 'quality_data'
@@ -39,4 +40,7 @@ urlpatterns = [
     path(r'kpis/rejected-evolution/', RejectedEvolutionView.as_view(), name='kpi-rejected-evolution'),
     path(r'kpis/containers-by-state/', ContainersByStateView.as_view(), name='kpi-containers-by-state'),
     path(r'kpis/defect-rate/', DefectRateView.as_view(), name='kpi-defect-rate'),
+
+    # Volatile KPIs — Excel en memoria (sin DB)
+    path(r'kpis/volatile/', VolatileKpiView.as_view(), name='kpi-volatile'),
 ]
