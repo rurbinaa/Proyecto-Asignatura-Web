@@ -200,8 +200,30 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
                 f"{lost} existing records will be replaced."
             )
 
+    # Derive new/modified/unchanged from date comparison
+    # For time_window strategy, we can't distinguish new vs modified at the row level
+    # So: new = rows where excel > db, modified = rows where db > 0 and excel > 0, unchanged = 0
+    new_count = 0
+    modified_count = 0
+    unchanged_count = 0
+    for date, counts in date_comparison.items():
+        excel_count = counts['excel']
+        db_count = counts['db']
+        if db_count == 0:
+            new_count += excel_count
+        elif excel_count == db_count:
+            unchanged_count += excel_count
+        else:
+            # Some overlap — count the overlap as modified, the rest as new
+            modified_count += min(excel_count, db_count)
+            if excel_count > db_count:
+                new_count += excel_count - db_count
+
     return {
         "strategy": "time_window",
+        "new": new_count,
+        "modified": modified_count,
+        "unchanged": unchanged_count,
         "total": len(excel_rows),
         "dates": sorted(excel_dates),
         "date_counts": date_comparison,

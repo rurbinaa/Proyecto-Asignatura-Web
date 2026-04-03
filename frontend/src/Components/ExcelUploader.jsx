@@ -198,8 +198,12 @@ export default function ExcelUploader() {
     try {
       await confirmSession(sessionId);
       // Calculate stats from backend preview
-      const total = Object.values(previewStats || {}).reduce((sum, s) => sum + (s.total || 0), 0);
-      setImportStats({ total, inserted: total, skipped: 0 });
+      const stats = Object.values(previewStats || {});
+      const total = stats.reduce((sum, s) => sum + (s.total || 0), 0);
+      const newCount = stats.reduce((sum, s) => sum + (s.new || 0), 0);
+      const modifiedCount = stats.reduce((sum, s) => sum + (s.modified || 0), 0);
+      const unchangedCount = stats.reduce((sum, s) => sum + (s.unchanged || 0), 0);
+      setImportStats({ total, inserted: newCount + modifiedCount, skipped: unchangedCount });
       setUploadState('success');
     } catch (err) {
       setApiError(err.message);
@@ -378,7 +382,7 @@ export default function ExcelUploader() {
       {/* Confirm/Reject actions */}
       <div className="upload-actions">
         <button className="ingesta-btn-primary full-width-btn" onClick={handleConfirm}>
-          Confirm & Import All ({importStats.total} Records)
+          Confirm & Import All ({Object.values(previewStats || {}).reduce((sum, s) => sum + (s.total || 0), 0)} Records)
         </button>
         <button className="ingesta-btn-outline full-width-btn" onClick={handleReject}>
           <X size={18} />
