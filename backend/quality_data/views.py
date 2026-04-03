@@ -3,6 +3,9 @@ from rest_framework.parsers import FileUploadParser
 from rest_framework.response import Response
 from rest_framework import status as http_status
 from django.shortcuts import get_object_or_404
+import pandas as pd
+import numpy as np
+import datetime
 from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession
 from excel_importer.handler_service import (
     load_and_clean,
@@ -47,6 +50,44 @@ def _get_incremental_rows(df, model_class, **filters):
         return df.iloc[0:0]
 
     return df.tail(rows_to_insert).copy()
+
+
+def _df_to_json_safe(df):
+    """
+    Convert a DataFrame to a list of dicts with JSON-serializable values.
+
+    Handles:
+    - pandas.Timestamp / datetime → ISO date string (YYYY-MM-DD)
+    - numpy.integer / numpy.floating → Python int / float
+    - numpy.bool_ → Python bool
+    - pandas.NaT / None → None
+    """
+    if df is None or df.empty:
+        return []
+
+    records = df.to_dict('records')
+    result = []
+    for row in records:
+        clean_row = {}
+        for key, value in row.items():
+            if value is None or pd.isna(value):
+                clean_row[key] = None
+            elif isinstance(value, (pd.Timestamp, datetime.datetime)):
+                clean_row[key] = value.strftime("%Y-%m-%d")
+            elif isinstance(value, datetime.date):
+                clean_row[key] = value.strftime("%Y-%m-%d")
+            elif isinstance(value, (np.integer,)):
+                clean_row[key] = int(value)
+            elif isinstance(value, (np.floating,)):
+                clean_row[key] = float(value)
+            elif isinstance(value, (np.bool_,)):
+                clean_row[key] = bool(value)
+            elif isinstance(value, np.ndarray):
+                clean_row[key] = value.tolist()
+            else:
+                clean_row[key] = value
+        result.append(clean_row)
+    return result
 
 class Process(APIView):
     parser_classes = [FileUploadParser]
@@ -221,31 +262,31 @@ class ExcelPreviewView(APIView):
                 file_obj, QC_FA_PLANT_REMAP, QC_FA_PLANT_NUMERIC_COLUMNS,
                 QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[0],
             )
-            dataframes["qc_fa_plant"] = qc_fa_plant_df.to_dict('records')
+            dataframes["qc_fa_plant"] = _df_to_json_safe(qc_fa_plant_df)
 
             qc_fa_customer_df = load_and_clean(
                 file_obj, QC_FA_CUSTOMER_REMAP, QC_FA_CUSTOMER_NUMERIC_COLUMNS,
                 QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[1],
             )
-            dataframes["qc_fa_customer"] = qc_fa_customer_df.to_dict('records')
+            dataframes["qc_fa_customer"] = _df_to_json_safe(qc_fa_customer_df)
 
             seconds_a4_df = load_and_clean(
                 file_obj, SECONDS_A4_REMAP, SECONDS_A4_NUMERIC_COLUMNS,
                 None, *SHEET_NAMES[2],
             )
-            dataframes["seconds_a4"] = seconds_a4_df.to_dict('records')
+            dataframes["seconds_a4"] = _df_to_json_safe(seconds_a4_df)
 
             seconds_general_df = load_and_clean(
                 file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
                 None, *SHEET_NAMES[3],
             )
-            dataframes["seconds_general"] = seconds_general_df.to_dict('records')
+            dataframes["seconds_general"] = _df_to_json_safe(seconds_general_df)
 
             container_df = load_and_clean(
                 file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
                 CONTAINER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[4],
             )
-            dataframes["container"] = container_df.to_dict('records')
+            dataframes["container"] = _df_to_json_safe(container_df)
 
             # Create session with preview
             session = create_session_from_dataframes(dataframes)
