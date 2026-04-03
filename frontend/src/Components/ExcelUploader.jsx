@@ -40,16 +40,38 @@ export default function ExcelUploader() {
   const cleanText = (text) => String(text || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
   const formatExcelDate = (serial) => {
-    if (!serial || isNaN(serial)) return serial;
-    const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
-    return date.toISOString().split('T')[0];
+    if (serial == null || serial === '') return serial;
+
+    // Already a valid YYYY-MM-DD string
+    if (typeof serial === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(serial)) {
+      return serial;
+    }
+
+    // Excel serial number (e.g. 45665)
+    if (typeof serial === 'number') {
+      const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+      return serial;
+    }
+
+    // String date in various formats (MM/DD/YYYY, DD-MM-YYYY, etc.)
+    if (typeof serial === 'string') {
+      const date = new Date(serial);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+    }
+
+    return serial;
   };
 
   const findHeadersAndData = (rows, sheetName) => {
     const required = REQUIRED_COLUMNS[sheetName];
     if (!required) return null;
     
-    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    for (let i = 0; i < Math.min(rows.length, 40); i++) {
       if (!rows[i] || rows[i].length === 0) continue;
       
       const potentialRow = rows[i].map(cell => cleanText(cell));
@@ -150,6 +172,7 @@ export default function ExcelUploader() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
+    maxSize: 10 * 1024 * 1024, // 10 MB limit
     accept: { 
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 
       'text/csv': ['.csv'] 
