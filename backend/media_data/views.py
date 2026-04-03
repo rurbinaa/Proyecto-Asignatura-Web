@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from .models import RevisionDefect, Mockup, InspectionData
 from .serializers import RevisionDefectSerializer, MockupSerializer, InspectionDataSerializer
+from .inspection_bridge import bridge_inspection
 
 
 class MockupViewSet(viewsets.ReadOnlyModelViewSet):
@@ -17,7 +18,7 @@ class InspectionDataViewSet(viewsets.ModelViewSet):
     Manage inspection sessions.
 
     Custom actions:
-    - POST /inspections/<pk>/close_inspection/ — close and evaluate result
+    - POST /inspections/<pk>/close_inspection/ — close, evaluate, and sync to QC
     """
     queryset = InspectionData.objects.all()
     serializer_class = InspectionDataSerializer
@@ -25,11 +26,12 @@ class InspectionDataViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def close_inspection(self, request, pk=None):
         """
-        Close an inspection and determine PASS/REJECT status.
+        Close an inspection, determine PASS/REJECT, and sync to QualityQcFa.
 
-        Logic:
-        - If no defects were recorded → PASS
-        - If any defects were recorded → REJECT
+        Steps:
+        1. Count defects → set PASS (0) or REJECT (>0)
+        2. Mark as closed
+        3. Bridge to quality_data: update/create QualityQcFa records
         """
         inspection = self.get_object()
 
@@ -50,11 +52,15 @@ class InspectionDataViewSet(viewsets.ModelViewSet):
         inspection.closed_at = timezone.now()
         inspection.save()
 
+        # Sync to quality_data tables
+        bridge_result = bridge_inspection(inspection)
+
         return Response({
             'message': 'Inspection closed successfully',
             'closed_at': inspection.closed_at,
             'result': inspection.status,
             'total_defects': total_defects,
+            'quality_data_sync': bridge_result,
         })
 
 
