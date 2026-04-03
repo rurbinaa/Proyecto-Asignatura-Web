@@ -13,28 +13,29 @@ import {
 import './ExcelUploader.css';
 
 const REQUIRED_COLUMNS = {
-  QFA: ["date", "week", "customer", "team", "coord", "po", "style", "batch", "color", "qty"],
-  SECONDS_A4: ["year", "week", "date", "cut_num", "style", "cut_qty", "color", "accepted", "rejected"],
-  CONTAINER: ["container_number", "customer", "total_palette", "total_palette_pass", "percentage_pass"]
+  "QC FA Plant": ["date", "week", "customer", "team", "coord", "po", "style", "batch", "color", "qty"],
+  "QC FA Customer": ["date", "week", "customer", "line", "artcode", "po", "style", "batch", "color", "quantity"],
+  "SecondsA4": ["year", "week", "date", "cut", "style", "color", "accepted", "rejected"],
+  "Seconds General": ["date", "week", "picado", "manchas", "grasa", "tono", "fuera", "definitive"],
+  "Container": ["container", "customer", "palette", "pass"]
 };
 
-const SHEET_NAMES_MAP = {
-  QFA: "QC FA Plant",
-  SECONDS_A4: "SecondsA4",
-  CONTAINER: "Container"
+const SHEET_GROUPS_MAP = {
+  QFA: ["QC FA Plant", "QC FA Customer"],
+  SECONDS: ["SecondsA4", "Seconds General"],
+  CONTAINER: ["Container"],
+  ALL: ["QC FA Plant", "QC FA Customer", "SecondsA4", "Seconds General", "Container"] 
 };
 
 export default function ExcelUploader() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [reportType, setReportType] = useState('QFA'); 
   const [errorMsg, setErrorMsg] = useState('');
-  const [previewHeaders, setPreviewHeaders] = useState([]);
-  const [previewRows, setPreviewRows] = useState([]);
+  const [sheetPreviews, setSheetPreviews] = useState([]); 
   const [uploadState, setUploadState] = useState('idle');
-  
   const [importStats, setImportStats] = useState({ total: 0, inserted: 0, skipped: 0 });
 
-  const cleanText = (text) => String(text).replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  const cleanText = (text) => String(text || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
   const formatExcelDate = (serial) => {
     if (!serial || isNaN(serial)) return serial;
@@ -42,13 +43,22 @@ export default function ExcelUploader() {
     return date.toISOString().split('T')[0];
   };
 
-  const validateHeaders = (headers) => {
-    const required = REQUIRED_COLUMNS[reportType];
-    const cleanHeaders = headers.map(h => cleanText(h));
-    const missing = required.filter(col => !cleanHeaders.includes(cleanText(col)));
+  const findHeadersAndData = (rows, sheetName) => {
+    const required = REQUIRED_COLUMNS[sheetName];
+    if (!required) return null;
     
-    if (missing.length > 0) {
-      return `Missing columns: ${missing.join(', ')}`;
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      if (!rows[i] || rows[i].length === 0) continue;
+      
+      const potentialRow = rows[i].map(cell => cleanText(cell));
+      
+      const matchCount = required.filter(req => 
+        potentialRow.some(cell => cell.includes(cleanText(req)))
+      ).length;
+      
+      if (matchCount >= required.length - 1) {
+        return { headers: rows[i], data: rows.slice(i + 1) };
+      }
     }
     return null;
   };
@@ -58,56 +68,77 @@ export default function ExcelUploader() {
       const file = acceptedFiles[0];
       setSelectedFile(file);
       setErrorMsg('');
+      setSheetPreviews([]);
       
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array', sheetRows: 50 });
+          const workbook = XLSX.read(data, { type: 'array', sheetRows: 200 });
           
-          const targetSheet = SHEET_NAMES_MAP[reportType];
-          const worksheet = workbook.Sheets[targetSheet];
+          const targetSheets = SHEET_GROUPS_MAP[reportType];
+          let newPreviews = [];
+          let missingOrInvalidSheets = [];
+          let totalProcessedRecords = 0;
 
-          if (!worksheet) {
-            setErrorMsg(`Sheet "${targetSheet}" not found in this file.`);
-            setPreviewHeaders([]);
-            return;
-          }
+          targetSheets.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
 
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-          
-          if (jsonData.length > 0) {
-            const rawHeaders = jsonData[0];
-            const validationError = validateHeaders(rawHeaders);
-            
-            if (validationError) {
-              setErrorMsg(validationError);
-              setPreviewHeaders([]);
-              setPreviewRows([]);
-            } else {
-              setPreviewHeaders(rawHeaders);
-              
-              const dateIndices = rawHeaders.reduce((acc, header, idx) => {
-                if (cleanText(header).includes('date')) acc.push(idx);
-                return acc;
-              }, []);
-
-              const formattedRows = jsonData.slice(1).map(row => {
-                const newRow = [...row];
-                dateIndices.forEach(idx => {
-                  if (typeof newRow[idx] === 'number') {
-                    newRow[idx] = formatExcelDate(newRow[idx]);
-                  }
-                });
-                return newRow;
-              });
-
-              setPreviewRows(formattedRows);
-              setImportStats({ total: jsonData.length - 1, inserted: 0, skipped: 0 });
+            if (!worksheet) {
+              missingOrInvalidSheets.push(`${sheetName} (Not found)`);
+              return;
             }
+
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+            
+            if (jsonData.length > 0) {
+              const result = findHeadersAndData(jsonData, sheetName);
+              
+              if (!result) {
+                missingOrInvalidSheets.push(`${sheetName} (Invalid format/columns)`);
+              } else {
+                const { headers: rawHeaders, data: sheetData } = result;
+                
+                const dateIndices = rawHeaders.reduce((acc, header, idx) => {
+                  if (cleanText(header).includes('date')) acc.push(idx);
+                  return acc;
+                }, []);
+
+                const formattedRows = sheetData.map(row => {
+                  const newRow = [...row];
+                  dateIndices.forEach(idx => {
+                    if (typeof newRow[idx] === 'number') {
+                      newRow[idx] = formatExcelDate(newRow[idx]);
+                    }
+                  });
+                  return newRow;
+                });
+
+                newPreviews.push({
+                  sheetName,
+                  headers: rawHeaders,
+                  rows: formattedRows.slice(0, 5),
+                  count: sheetData.length
+                });
+
+                totalProcessedRecords += sheetData.length;
+              }
+            }
+          });
+
+          if (newPreviews.length === 0) {
+            setErrorMsg(`Could not process information. Issues with: ${missingOrInvalidSheets.join(', ')}`);
+          } else {
+            if (missingOrInvalidSheets.length > 0) {
+              setErrorMsg(`Warning: Missing data or error in ${missingOrInvalidSheets.join(', ')}`);
+            }
+            setSheetPreviews(newPreviews);
+            setImportStats({ total: totalProcessedRecords, inserted: 0, skipped: 0 });
           }
+
         } catch (error) {
-          setErrorMsg('Error parsing Excel. Check file format.');
+          console.error(error);
+          setErrorMsg('Error reading Excel. Please check the file.');
         }
       };
       reader.readAsArrayBuffer(file);
@@ -127,8 +158,7 @@ export default function ExcelUploader() {
     setSelectedFile(null);
     setErrorMsg('');
     setUploadState('idle');
-    setPreviewHeaders([]);
-    setPreviewRows([]);
+    setSheetPreviews([]);
     setImportStats({ total: 0, inserted: 0, skipped: 0 });
   };
 
@@ -137,7 +167,7 @@ export default function ExcelUploader() {
     
     setTimeout(() => {
       const totalProcessed = importStats.total;
-      const skipped = Math.floor(totalProcessed * 0.1);
+      const skipped = Math.floor(totalProcessed * 0.1); 
       const inserted = totalProcessed - skipped;
 
       setImportStats({
@@ -158,8 +188,9 @@ export default function ExcelUploader() {
           value={reportType} 
           onChange={(e) => { setReportType(e.target.value); resetUploader(); }}
         >
-          <option value="QFA">QC FA (Plant/Customer)</option>
-          <option value="SECONDS_A4">Seconds A4</option>
+          <option value="ALL">All Sheets (Import All)</option> 
+          <option value="QFA">QC FA (Plant & Customer)</option>
+          <option value="SECONDS">Seconds (A4 & General)</option>
           <option value="CONTAINER">Container Inspection</option>
         </select>
       </div>
@@ -168,7 +199,9 @@ export default function ExcelUploader() {
         <div className="status-panel">
           <Loader2 className="spinner-icon" />
           <h3 className="status-title">Processing {importStats.total} records...</h3>
-          <p className="status-subtitle">Validating sheet: {SHEET_NAMES_MAP[reportType]}</p>
+          <p className="status-subtitle">
+            Extracting data from: {reportType === 'ALL' ? 'All sheets' : SHEET_GROUPS_MAP[reportType].join(' and ')}
+          </p>
         </div>
       ) : uploadState === 'success' ? (
         <div className="status-panel success-panel">
@@ -196,7 +229,7 @@ export default function ExcelUploader() {
         </div>
       ) : (
         <>
-          <div {...getRootProps()} className={`dropzone ${isDragActive ? 'drag-active' : ''} ${errorMsg ? 'drag-error' : ''}`}>
+          <div {...getRootProps()} className={`dropzone ${isDragActive ? 'drag-active' : ''} ${errorMsg && sheetPreviews.length === 0 ? 'drag-error' : ''}`}>
             <input {...getInputProps()} />
             {selectedFile ? (
               <div className="file-preview">
@@ -211,8 +244,10 @@ export default function ExcelUploader() {
             ) : (
               <div className="dropzone-content">
                 <UploadCloud className="upload-icon" />
-                <h3 className="dropzone-title">Drop file for "{SHEET_NAMES_MAP[reportType]}"</h3>
-                <p className="dropzone-subtitle">or click to browse</p>
+                <h3 className="dropzone-title">
+                  Upload your file for: {reportType === 'ALL' ? 'All sheets' : SHEET_GROUPS_MAP[reportType].join(' + ')}
+                </h3>
+                <p className="dropzone-subtitle">Drag and drop or click to browse</p>
               </div>
             )}
           </div>
@@ -224,26 +259,34 @@ export default function ExcelUploader() {
             </div>
           )}
 
-          {selectedFile && !errorMsg && previewHeaders.length > 0 && (
+          {selectedFile && sheetPreviews.length > 0 && (
             <div className="preview-container">
-              <div className="preview-header">
-                <Eye size={18} /> 
-                <span className="preview-title">Data Preview (Top 5 rows)</span>
-              </div>
-              <div className="table-responsive">
-                <table className="preview-table">
-                  <thead>
-                    <tr>{previewHeaders.map((h, i) => <th key={i}>{h}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.slice(0, 5).map((row, i) => (
-                      <tr key={i}>
-                        {previewHeaders.map((_, ci) => <td key={ci}>{row[ci] || '-'}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              
+              {sheetPreviews.map((preview, index) => (
+                <div key={index} className="sheet-preview-section" style={{ marginBottom: '2rem' }}>
+                  <div className="preview-header">
+                    <Eye size={18} /> 
+                    <span className="preview-title">
+                      Data Preview: <strong>{preview.sheetName}</strong> ({preview.count} rows detected)
+                    </span>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="preview-table">
+                      <thead>
+                        <tr>{preview.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {preview.rows.map((row, i) => (
+                          <tr key={i}>
+                            {preview.headers.map((_, ci) => <td key={ci}>{row[ci] || '-'}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+
               <div className="upload-actions">
                 <button className="ingesta-btn-primary full-width-btn" onClick={handleProcess}>
                   Confirm & Import All ({importStats.total} Records)
