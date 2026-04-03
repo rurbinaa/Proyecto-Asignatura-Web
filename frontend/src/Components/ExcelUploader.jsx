@@ -1,160 +1,206 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileSpreadsheet, XCircle, FileWarning, Loader2, CheckCircle } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { 
+  UploadCloud, 
+  FileSpreadsheet, 
+  XCircle, 
+  Loader2, 
+  CheckCircle, 
+  Eye, 
+  AlertTriangle 
+} from 'lucide-react';
 import './ExcelUploader.css';
+
+const REQUIRED_COLUMNS = {
+  QFA: ["date", "week", "customer", "team", "coord", "po", "style", "batch", "color", "qty"],
+  SECONDS_A4: ["year", "week", "date", "cut_num", "style", "cut_qty", "color", "accepted", "rejected"],
+  CONTAINER: ["container_number", "customer", "total_palette", "total_palette_pass", "percentage_pass"]
+};
+
+const SHEET_NAMES_MAP = {
+  QFA: "QC FA Plant",
+  SECONDS_A4: "SecondsA4",
+  CONTAINER: "Container"
+};
 
 export default function ExcelUploader() {
   const [selectedFile, setSelectedFile] = useState(null);
+  const [reportType, setReportType] = useState('QFA'); 
   const [errorMsg, setErrorMsg] = useState('');
-  
-  // Controla en qué fase de la subida estamos
-  const [uploadState, setUploadState] = useState('idle'); // 'idle', 'uploading', 'success', 'error'
-  const [report, setReport] = useState(null);
+  const [previewHeaders, setPreviewHeaders] = useState([]);
+  const [previewRows, setPreviewRows] = useState([]);
+  const [uploadState, setUploadState] = useState('idle');
 
-  const onDrop = useCallback((acceptedFiles, fileRejections) => {
-    if (fileRejections.length > 0) {
-      setSelectedFile(null);
-      setErrorMsg('Formato inválido. Por favor sube archivos .xlsx, .xls o .csv.');
-      return;
+  const cleanText = (text) => String(text).replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+
+  const validateHeaders = (headers) => {
+    const required = REQUIRED_COLUMNS[reportType];
+    const cleanHeaders = headers.map(h => cleanText(h));
+    
+    const missing = required.filter(col => !cleanHeaders.includes(cleanText(col)));
+    
+    if (missing.length > 0) {
+      return `Missing columns: ${missing.join(', ')}`;
     }
+    return null;
+  };
 
+  const onDrop = useCallback((acceptedFiles) => {
     if (acceptedFiles.length > 0) {
-      setSelectedFile(acceptedFiles[0]);
+      const file = acceptedFiles[0];
+      setSelectedFile(file);
       setErrorMsg('');
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array', sheetRows: 50 });
+          
+          const targetSheet = SHEET_NAMES_MAP[reportType];
+          const worksheet = workbook.Sheets[targetSheet];
+
+          if (!worksheet) {
+            setErrorMsg(`Sheet "${targetSheet}" not found in this file.`);
+            setPreviewHeaders([]);
+            return;
+          }
+
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+          
+          if (jsonData.length > 0) {
+            const rawHeaders = jsonData[0];
+            const validationError = validateHeaders(rawHeaders);
+            
+            if (validationError) {
+              setErrorMsg(validationError);
+              setPreviewHeaders([]);
+              setPreviewRows([]);
+            } else {
+              setPreviewHeaders(rawHeaders);
+              setPreviewRows(jsonData.slice(1, 6));
+            }
+          }
+        } catch (error) {
+          setErrorMsg('Error parsing Excel. Check file format.');
+        }
+      };
+      reader.readAsArrayBuffer(file);
     }
-  }, []);
+  }, [reportType]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
-    accept: {
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv']
+    accept: { 
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 
+      'text/csv': ['.csv'] 
     }
   });
 
-  const resetUploader = (e) => {
-    if (e) e.stopPropagation();
+  const resetUploader = () => {
     setSelectedFile(null);
     setErrorMsg('');
     setUploadState('idle');
-    setReport(null);
+    setPreviewHeaders([]);
+    setPreviewRows([]);
   };
 
-  const handleUpload = async () => {
-    if (!selectedFile) return;
-
-    // Cambiamos a Fase 2: Pantalla de carga
+  const handleProcess = () => {
     setUploadState('uploading');
-
-    // 🚀 MOCK: Simulamos el tiempo de procesamiento del backend (3 segundos)
     setTimeout(() => {
-      // Simulamos la respuesta exitosa del backend con el reporte (Fase 3)
-      setReport({
-        total: 1500,
-        inserted: 1480,
-        skipped: 20 // Registros omitidos por ser duplicados
-      });
       setUploadState('success');
-    }, 3000);
+    }, 2500);
   };
 
-  // ==========================================
-  // FASE 2: VISTA DE CARGA (SPINNER)
-  // ==========================================
-  if (uploadState === 'uploading') {
-    return (
-      <div className="uploader-container">
-        <div className="status-panel">
-          <Loader2 className="spinner-icon" />
-          <h3 className="status-title">Procesando archivo...</h3>
-          <p className="status-subtitle">El servidor está validando y guardando los registros. Esto puede tomar un momento.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // FASE 3: VISTA DE REPORTE
-  // ==========================================
-  if (uploadState === 'success' && report) {
-    return (
-      <div className="uploader-container">
-        <div className="status-panel success-panel">
-          <CheckCircle className="success-main-icon" />
-          <h3 className="status-title">¡Importación Exitosa!</h3>
-          
-          <div className="report-grid">
-            <div className="report-card neutral">
-              <span className="report-number">{report.total}</span>
-              <span className="report-label">Filas Leídas</span>
-            </div>
-            <div className="report-card positive">
-              <span className="report-number">{report.inserted}</span>
-              <span className="report-label">Integrados</span>
-            </div>
-            <div className="report-card warning">
-              <span className="report-number">{report.skipped}</span>
-              <span className="report-label">Omitidos (Duplicados)</span>
-            </div>
-          </div>
-
-          <button className="ingesta-btn ingesta-btn-outline action-btn-margin" onClick={resetUploader}>
-            Subir Otro Archivo
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // FASE 1: VISTA PRINCIPAL (DRAG & DROP)
-  // ==========================================
   return (
     <div className="uploader-container">
-      <div 
-        {...getRootProps()} 
-        className={`dropzone ${isDragActive ? 'drag-active' : ''} ${errorMsg ? 'drag-error' : ''}`}
-      >
-        <input {...getInputProps()} />
-        
-        {selectedFile ? (
-          <div className="file-preview">
-            <FileSpreadsheet className="file-icon success-icon" />
-            <div className="file-info">
-              <span className="file-name">{selectedFile.name}</span>
-              <span className="file-size">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>
-            </div>
-            <button className="clear-btn" onClick={resetUploader} title="Quitar archivo">
-              <XCircle size={20} />
-            </button>
-          </div>
-        ) : (
-          <div className="dropzone-content">
-            <UploadCloud className={`upload-icon ${isDragActive ? 'bounce' : ''}`} />
-            <h3 className="dropzone-title">
-              {isDragActive ? 'Suelta el archivo Excel aquí...' : 'Arrastra y suelta tu Excel aquí'}
-            </h3>
-            <p className="dropzone-subtitle">o haz clic para explorar tus archivos</p>
-            <p className="dropzone-hint">Formatos soportados: .xlsx, .xls, .csv</p>
-          </div>
-        )}
+      <div className="report-selector-group">
+        <label className="input-label">Data Import Type:</label>
+        <select 
+          className="input-field select-field" 
+          value={reportType} 
+          onChange={(e) => { setReportType(e.target.value); resetUploader(); }}
+        >
+          <option value="QFA">QC FA (Plant/Customer)</option>
+          <option value="SECONDS_A4">Seconds A4</option>
+          <option value="CONTAINER">Container Inspection</option>
+        </select>
       </div>
 
-      {errorMsg && (
-        <div className="error-alert">
-          <FileWarning size={18} />
-          <span>{errorMsg}</span>
+      {uploadState === 'uploading' ? (
+        <div className="status-panel">
+          <Loader2 className="spinner-icon" />
+          <h3 className="status-title">Processing...</h3>
+          <p className="status-subtitle">Targeting sheet: {SHEET_NAMES_MAP[reportType]}</p>
         </div>
-      )}
-
-      {selectedFile && !errorMsg && (
-        <div className="upload-actions">
-          <button className="ingesta-btn ingesta-btn-primary full-width-btn" onClick={handleUpload}>
-            Procesar e Importar Lotes
+      ) : uploadState === 'success' ? (
+        <div className="status-panel success-panel">
+          <CheckCircle className="success-main-icon" />
+          <h3 className="status-title">Import Successful!</h3>
+          <button className="ingesta-btn-outline action-btn-margin" onClick={resetUploader}>
+            Upload Another
           </button>
         </div>
+      ) : (
+        <>
+          <div {...getRootProps()} className={`dropzone ${isDragActive ? 'drag-active' : ''} ${errorMsg ? 'drag-error' : ''}`}>
+            <input {...getInputProps()} />
+            {selectedFile ? (
+              <div className="file-preview">
+                <FileSpreadsheet className="file-icon success-icon" />
+                <div className="file-info">
+                  <span className="file-name">{selectedFile.name}</span>
+                </div>
+                <button className="clear-btn" onClick={(e) => { e.stopPropagation(); resetUploader(); }}>
+                  <XCircle size={20} />
+                </button>
+              </div>
+            ) : (
+              <div className="dropzone-content">
+                <UploadCloud className="upload-icon" />
+                <h3 className="dropzone-title">Drop file for "{SHEET_NAMES_MAP[reportType]}"</h3>
+                <p className="dropzone-subtitle">or click to browse</p>
+              </div>
+            )}
+          </div>
+
+          {errorMsg && (
+            <div className="error-alert">
+              <AlertTriangle size={18} />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {selectedFile && !errorMsg && previewHeaders.length > 0 && (
+            <div className="preview-container">
+              <div className="preview-header">
+                <Eye size={18} /> 
+                <span className="preview-title">Preview: {SHEET_NAMES_MAP[reportType]}</span>
+              </div>
+              <div className="table-responsive">
+                <table className="preview-table">
+                  <thead>
+                    <tr>{previewHeaders.map((h, i) => <th key={i}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i}>
+                        {previewHeaders.map((_, ci) => <td key={ci}>{row[ci] || '-'}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="upload-actions">
+                <button className="ingesta-btn-primary full-width-btn" onClick={handleProcess}>
+                  Confirm & Import
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
