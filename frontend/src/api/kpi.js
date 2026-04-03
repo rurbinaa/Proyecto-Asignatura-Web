@@ -113,6 +113,31 @@ export async function getDefectRate(filters) {
   return fetchKpi('defect-rate/', filters);
 }
 
+// ─── Volatile (Excel upload) KPIs ─────────────────────────────────────────────
+
+/**
+ * Fetch KPIs from an uploaded Excel file via the volatile endpoint.
+ * The response has the same format as live KPI endpoints.
+ * @param {File} file - The Excel file to process
+ * @returns {Promise<object>} KPI results object (same shape as fetchAllKpis)
+ */
+export async function fetchVolatileKpis(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE}/quality/kpis/volatile/`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(error.error || 'Failed to process Excel');
+  }
+
+  return response.json();
+}
+
 // ─── Bulk fetch ───────────────────────────────────────────────────────────────
 
 /**

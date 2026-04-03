@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchAllKpis } from '../api/kpi';
+import { fetchAllKpis, fetchVolatileKpis } from '../api/kpi';
 import * as calc from '../utils/kpiCalculations';
 import KpiCard from '../Components/kpi/KpiCard';
 import BarChartKpi from '../Components/kpi/BarChartKpi';
@@ -224,8 +224,12 @@ function transformSecondsRework(data) {
   }));
 }
 
-export default function DashboardView({ volatileData }) {
-  const isLiveMode = !volatileData;
+export default function DashboardView({ volatileData, volatileFile }) {
+  // Live mode = no volatile data, no volatile file
+  // Volatile mode (file) = volatileFile provided (server-side calculation)
+  // Volatile mode (data) = volatileData provided (client-side calculation)
+  const isLiveMode = !volatileData && !volatileFile;
+  const isVolatileFileMode = !!volatileFile;
 
   const [filters, setFilters] = useState({
     date_range: ['', ''],
@@ -261,8 +265,30 @@ export default function DashboardView({ volatileData }) {
   }, [isLiveMode, filters, volatileData]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (!isVolatileFileMode) {
+      loadData();
+    }
+  }, [isVolatileFileMode, loadData]);
+
+  // Fetch KPIs from volatile file (server-side calculation)
+  useEffect(() => {
+    if (!volatileFile) return;
+
+    const fetchVolatile = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await fetchVolatileKpis(volatileFile);
+        setKpiData(result);
+      } catch (err) {
+        setError(err.message || 'Error al procesar archivo Excel');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchVolatile();
+  }, [volatileFile]);
 
   const handleFilterChange = useCallback((newFilters) => {
     setFilters(newFilters);

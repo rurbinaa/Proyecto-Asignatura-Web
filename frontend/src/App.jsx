@@ -27,9 +27,10 @@ function App() {
     }
   });
   const [volatileData, setVolatileData] = useState(null);
+  const [volatileFile, setVolatileFile] = useState(null);
 
-  const handleVolatileDashboard = (data) => {
-    setVolatileData(data);
+  const handleVolatileDashboard = (file) => {
+    setVolatileFile(file);
     setActiveView('dashboard');
   };
 
@@ -80,7 +81,7 @@ function App() {
           )}
 
           {activeView === 'dashboard' && (
-            <DashboardView volatileData={volatileData} />
+            <DashboardView volatileData={volatileData} volatileFile={volatileFile} />
           )}
 
         </main>
