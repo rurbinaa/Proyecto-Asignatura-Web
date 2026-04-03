@@ -90,18 +90,23 @@ def _df_to_json_safe(df):
     return result
 
 class Process(APIView):
+    """
+    Process an uploaded Excel file for preview (V2 workflow).
+
+    Note: This endpoint only uses qc_fa_plant_df for parsing validation.
+    The other 4 sheets are parsed but discarded because the real sync
+    happens in ExcelConfirmView after user confirmation.
+
+    This endpoint exists to support the upload → preview → confirm workflow.
+    """
     parser_classes = [FileUploadParser]
 
     def post (self, request, filename, format = None):
         file_obj = request.data['file']
 
-        # print_headers(file_obj, *SHEET_NAMES[0])
-        # print_headers(file_obj, *SHEET_NAMES[1])
-        # print_headers(file_obj, *SHEET_NAMES[2])
-        # print_headers(file_obj, *SHEET_NAMES[3])
-        # print_headers(file_obj, *SHEET_NAMES[4])
-
-
+        # Only qc_fa_plant_df is used for validation in this endpoint.
+        # The other sheets are parsed but not used here - they will be
+        # processed in ExcelConfirmView after user confirms the preview.
         qc_fa_plant_df = load_and_clean(
             file_obj,
             QC_FA_PLANT_REMAP,
@@ -110,6 +115,8 @@ class Process(APIView):
             *SHEET_NAMES[0],
         )
 
+        # Parse remaining sheets to validate file structure.
+        # Results are discarded but parsing ensures the file is valid.
         load_and_clean(
             file_obj,
             QC_FA_CUSTOMER_REMAP,
