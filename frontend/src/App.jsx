@@ -5,6 +5,7 @@ import Navbar from './Components/Navbar.jsx';
 import CaptureView from './views/CaptureView.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
+import DashboardView from './views/DashboardView.jsx';
 
 const STORAGE_KEY = 'rift-user';
 
@@ -25,6 +26,12 @@ function App() {
       return '';
     }
   });
+  const [volatileData, setVolatileData] = useState(null);
+
+  const handleVolatileDashboard = (data) => {
+    setVolatileData(data);
+    setActiveView('dashboard');
+  };
 
   const handleLogin = (userData) => {
     setUser(userData);
@@ -51,6 +58,7 @@ function App() {
         userRole={user.role} 
         activeView={activeView} 
         setActiveView={setActiveView} 
+        setVolatileData={setVolatileData}
         onLogout={handleLogout} 
       />
 
@@ -67,8 +75,12 @@ function App() {
               <p className="excel-subtitle">
                 Drag your file to ingest multiple records into the system.
               </p>
-              <ExcelUploader />
+              <ExcelUploader onVolatileDashboard={handleVolatileDashboard} />
             </div>
+          )}
+
+          {activeView === 'dashboard' && (
+            <DashboardView volatileData={volatileData} />
           )}
 
         </main>
