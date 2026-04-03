@@ -9,6 +9,8 @@ for comparison during Time-Window Sync.
 import datetime
 import re
 
+import pandas as pd
+
 
 def parse_date(value):
     """
@@ -19,7 +21,7 @@ def parse_date(value):
     - Datetime objects
     - Pandas Timestamps
     - Excel serial numbers (days since 1899-12-30)
-    - None, empty strings, and invalid values → returns None
+    - None, empty strings, pandas NaT, and invalid values → returns None
 
     Args:
         value: The date value to parse (str, datetime, Timestamp, int, None)
@@ -28,6 +30,12 @@ def parse_date(value):
         str: Normalized date string 'YYYY-MM-DD', or None if unparseable.
     """
     if value is None:
+        return None
+
+    # Handle pandas NaT (Not a Time) — must be checked BEFORE datetime check
+    # because NaT inherits from datetime.datetime in some pandas versions
+    # but does NOT support strftime()
+    if isinstance(value, type(pd.NaT)):
         return None
 
     # Handle datetime objects (includes pandas Timestamp)

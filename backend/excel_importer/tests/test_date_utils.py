@@ -65,6 +65,12 @@ class ParseDateTest(TestCase):
         result = parse_date(ts)
         self.assertEqual(result, "2025-06-20")
 
+    def test_parse_pandas_nat(self):
+        """Given a pandas NaT (empty date cell), returns None instead of crashing."""
+        import pandas as pd
+        result = parse_date(pd.NaT)
+        self.assertIsNone(result)
+
     def test_parse_day_month_year_format(self):
         """Given '20/06/2025' (DD/MM/YYYY), returns normalized '2025-06-20'."""
         result = parse_date("20/06/2025")
