@@ -1,7 +1,20 @@
 from django.urls import path, include, re_path
-from .views import Process, SaveData, ExcelPreviewView, ExcelConfirmView, ExcelRejectView
+from rest_framework.routers import DefaultRouter
+from .views import (
+    Process, SaveData, ExcelPreviewView, ExcelConfirmView, ExcelRejectView,
+    TopDefectsView, FabricDefectsView, DefectsByStyleTypeView,
+    KpiViewSet, AqlKpiViewSet,
+    PassRejectDistributionView, RejectedEvolutionView,
+    ContainersByStateView, DefectRateView,
+)
 
 app_name = 'quality_data'
+
+# Router for ViewSet-based KPI endpoints
+# Both AqlKpiViewSet (Grupo 1) and KpiViewSet (Grupo 2) share /api/kpis/ prefix
+router = DefaultRouter()
+router.register(r'kpis', AqlKpiViewSet, basename='kpi-aql')
+router.register(r'kpis', KpiViewSet, basename='kpi-rendimiento')
 
 urlpatterns = [
     # Legacy endpoints (kept for backward compatibility)
@@ -12,4 +25,18 @@ urlpatterns = [
     path(r'excel/preview/<str:filename>/', ExcelPreviewView.as_view(), name='excel-preview'),
     path(r'excel/confirm/<int:session_id>/', ExcelConfirmView.as_view(), name='excel-confirm'),
     path(r'excel/reject/<int:session_id>/', ExcelRejectView.as_view(), name='excel-reject'),
+
+    # Grupo 2 - KPIs Rendimiento (ViewSet with @action)
+    path(r'', include(router.urls)),
+
+    # Grupo 3 - KPIs Defectos
+    path(r'kpis/top-defects/', TopDefectsView.as_view(), name='kpi-top-defects'),
+    path(r'kpis/fabric-defects/', FabricDefectsView.as_view(), name='kpi-fabric-defects'),
+    path(r'kpis/defects-by-style-type/', DefectsByStyleTypeView.as_view(), name='kpi-defects-by-style-type'),
+
+    # Grupo 4 - KPIs Operativos
+    path(r'kpis/pass-reject-distribution/', PassRejectDistributionView.as_view(), name='kpi-pass-reject-distribution'),
+    path(r'kpis/rejected-evolution/', RejectedEvolutionView.as_view(), name='kpi-rejected-evolution'),
+    path(r'kpis/containers-by-state/', ContainersByStateView.as_view(), name='kpi-containers-by-state'),
+    path(r'kpis/defect-rate/', DefectRateView.as_view(), name='kpi-defect-rate'),
 ]
