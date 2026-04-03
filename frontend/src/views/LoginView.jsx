@@ -11,11 +11,11 @@ export default function LoginView({ onLogin }) {
     e.preventDefault();
     
     if (!email || !password) {
-      setError('Por favor llena todos los campos.');
+      setError('Please fill in all fields.');
       return;
     }
 
-    const userRole = email.toLowerCase().includes('gerente') ? 'manager' : 'operator';
+    const userRole = /gerente|gerencia|manager|admin/i.test(email) ? 'manager' : 'operator';
     
     const userData = {
       email: email,
