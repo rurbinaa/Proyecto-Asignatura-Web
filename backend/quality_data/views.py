@@ -255,41 +255,65 @@ class ExcelPreviewView(APIView):
         file_obj = request.data['file']
 
         try:
-            # Parse all 5 sheets
+            # Parse all 5 sheets — each independently to handle missing sheets
             dataframes = {}
+            sheet_warnings = []
 
-            qc_fa_plant_df = load_and_clean(
-                file_obj, QC_FA_PLANT_REMAP, QC_FA_PLANT_NUMERIC_COLUMNS,
-                QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[0],
-            )
-            dataframes["qc_fa_plant"] = _df_to_json_safe(qc_fa_plant_df)
+            try:
+                qc_fa_plant_df = load_and_clean(
+                    file_obj, QC_FA_PLANT_REMAP, QC_FA_PLANT_NUMERIC_COLUMNS,
+                    QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[0],
+                )
+                dataframes["qc_fa_plant"] = _df_to_json_safe(qc_fa_plant_df)
+            except Exception as e:
+                dataframes["qc_fa_plant"] = []
+                sheet_warnings.append(f"QC FA Plant: {str(e)}")
 
-            qc_fa_customer_df = load_and_clean(
-                file_obj, QC_FA_CUSTOMER_REMAP, QC_FA_CUSTOMER_NUMERIC_COLUMNS,
-                QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[1],
-            )
-            dataframes["qc_fa_customer"] = _df_to_json_safe(qc_fa_customer_df)
+            try:
+                qc_fa_customer_df = load_and_clean(
+                    file_obj, QC_FA_CUSTOMER_REMAP, QC_FA_CUSTOMER_NUMERIC_COLUMNS,
+                    QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[1],
+                )
+                dataframes["qc_fa_customer"] = _df_to_json_safe(qc_fa_customer_df)
+            except Exception as e:
+                dataframes["qc_fa_customer"] = []
+                sheet_warnings.append(f"QC FA Customer: {str(e)}")
 
-            seconds_a4_df = load_and_clean(
-                file_obj, SECONDS_A4_REMAP, SECONDS_A4_NUMERIC_COLUMNS,
-                None, *SHEET_NAMES[2],
-            )
-            dataframes["seconds_a4"] = _df_to_json_safe(seconds_a4_df)
+            try:
+                seconds_a4_df = load_and_clean(
+                    file_obj, SECONDS_A4_REMAP, SECONDS_A4_NUMERIC_COLUMNS,
+                    None, *SHEET_NAMES[2],
+                )
+                dataframes["seconds_a4"] = _df_to_json_safe(seconds_a4_df)
+            except Exception as e:
+                dataframes["seconds_a4"] = []
+                sheet_warnings.append(f"SecondsA4: {str(e)}")
 
-            seconds_general_df = load_and_clean(
-                file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
-                None, *SHEET_NAMES[3],
-            )
-            dataframes["seconds_general"] = _df_to_json_safe(seconds_general_df)
+            try:
+                seconds_general_df = load_and_clean(
+                    file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
+                    None, *SHEET_NAMES[3],
+                )
+                dataframes["seconds_general"] = _df_to_json_safe(seconds_general_df)
+            except Exception as e:
+                dataframes["seconds_general"] = []
+                sheet_warnings.append(f"Seconds General: {str(e)}")
 
-            container_df = load_and_clean(
-                file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
-                CONTAINER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[4],
-            )
-            dataframes["container"] = _df_to_json_safe(container_df)
+            try:
+                container_df = load_and_clean(
+                    file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
+                    CONTAINER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[4],
+                )
+                dataframes["container"] = _df_to_json_safe(container_df)
+            except Exception as e:
+                dataframes["container"] = []
+                sheet_warnings.append(f"Container: {str(e)}")
 
             # Create session with preview
             session = create_session_from_dataframes(dataframes)
+
+            # Merge sheet-level warnings with session warnings
+            all_warnings = sheet_warnings + (session.warnings or [])
 
             return Response({
                 "session_id": session.pk,
@@ -301,7 +325,7 @@ class ExcelPreviewView(APIView):
                     "seconds_general": session.seconds_general_preview,
                     "container": session.container_preview,
                 },
-                "warnings": session.warnings,
+                "warnings": all_warnings,
             }, status=http_status.HTTP_200_OK)
 
         except Exception as e:
