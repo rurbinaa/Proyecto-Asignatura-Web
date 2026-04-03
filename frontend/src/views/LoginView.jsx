@@ -11,7 +11,7 @@ export default function LoginView({ onLogin }) {
     e.preventDefault();
     
     if (!email || !password) {
-      setError('Por favor llena todos los campos.');
+      setError('Please fill in all fields.');
       return;
     }
 
@@ -40,7 +40,7 @@ export default function LoginView({ onLogin }) {
             <input 
               type="email" 
               className="input-field" 
-              placeholder="ej. gerente@uniwell.com"
+              placeholder="e.g. manager@uniwell.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />

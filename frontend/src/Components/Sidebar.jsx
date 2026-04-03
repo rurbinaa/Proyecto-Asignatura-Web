@@ -17,7 +17,7 @@ export default function Sidebar({ userRole, activeView, setActiveView, onLogout 
           <button 
             className="sidebar-toggle top-toggle" 
             onClick={() => setIsCollapsed(true)}
-            title="Colapsar menú"
+            title="Collapse menu"
           >
             <ChevronLeft className="sidebar-nav-icon" />
           </button>
@@ -29,22 +29,22 @@ export default function Sidebar({ userRole, activeView, setActiveView, onLogout 
           {userRole === 'operator' && (
             <button 
               className={`sidebar-nav-item ${activeView === 'capture' ? 'active' : ''}`} 
-              title={isCollapsed ? "Captura Táctil" : ""}
+              title={isCollapsed ? "Touch Capture" : ""}
               onClick={() => setActiveView('capture')}
             >
               <Hand className="sidebar-nav-icon" />
-              {!isCollapsed && <span>Captura Táctil</span>}
+              {!isCollapsed && <span>Touch Capture</span>}
             </button>
           )}
 
           {userRole === 'manager' && (
             <button 
               className={`sidebar-nav-item ${activeView === 'excel' ? 'active' : ''}`} 
-              title={isCollapsed ? "Importar Lotes" : ""}
+              title={isCollapsed ? "Import Batches" : ""}
               onClick={() => setActiveView('excel')}
             >
               <Database className="sidebar-nav-icon" />
-              {!isCollapsed && <span>Importar Lotes</span>}
+              {!isCollapsed && <span>Import Batches</span>}
             </button>
           )}
           
