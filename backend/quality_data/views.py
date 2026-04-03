@@ -614,13 +614,13 @@ class PassRejectDistributionView(KpiFilterMixin, APIView):
 
         aggregated = (
             queryset
-            .values(pass_or_fail=F('pass_or_fail'))
+            .values(pof=F('pass_or_fail'))
             .annotate(count=Count('id'))
-            .order_by('pass_or_fail')
+            .order_by('pof')
         )
 
         result = [
-            {"name": item['pass_or_fail'], "value": item['count']}
+            {"name": item['pof'], "value": item['count']}
             for item in aggregated
         ]
 
@@ -643,15 +643,15 @@ class RejectedEvolutionView(KpiFilterMixin, APIView):
 
         aggregated = (
             queryset
-            .values(week=F('week'))
+            .values(week_num=F('week'))
             .annotate(total_rejected=Sum('rejected'))
-            .order_by('week')
+            .order_by('week_num')
         )
 
         result = [{
             "name": "Rejected",
             "data": [
-                {"x": item['week'], "y": item['total_rejected'] or 0}
+                {"x": item['week_num'], "y": item['total_rejected'] or 0}
                 for item in aggregated
             ]
         }]
@@ -785,13 +785,13 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
 
         aggregated = (
             queryset
-            .values(team=F('team'), pass_or_fail=F('pass_or_fail'))
+            .values(team_name=F('team'), pof=F('pass_or_fail'))
             .annotate(count=Count('id'))
-            .order_by('team', 'pass_or_fail')
+            .order_by('team_name', 'pof')
         )
 
         result = [
-            {"label": f"{item['team']} - {item['pass_or_fail']}", "value": item['count']}
+            {"label": f"{item['team_name']} - {item['pof']}", "value": item['count']}
             for item in aggregated
         ]
 
@@ -827,16 +827,16 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
 
         aggregated = (
             queryset
-            .values(week=F('week'))
+            .values(week_num=F('week'))
             .annotate(
                 total_sew=Sum('seconds_by_sew'),
                 total_fab=Sum('seconds_by_fab'),
             )
-            .order_by('week')
+            .order_by('week_num')
         )
 
-        sewing_data = [{"x": item['week'], "y": item['total_sew'] or 0} for item in aggregated]
-        fabric_data = [{"x": item['week'], "y": item['total_fab'] or 0} for item in aggregated]
+        sewing_data = [{"x": item['week_num'], "y": item['total_sew'] or 0} for item in aggregated]
+        fabric_data = [{"x": item['week_num'], "y": item['total_fab'] or 0} for item in aggregated]
 
         result = [
             {"name": "Sewing", "data": sewing_data},
@@ -860,17 +860,17 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
 
         aggregated = (
             queryset
-            .values(customer=F('customer'))
+            .values(customer_name=F('customer'))
             .annotate(
                 total_accepted=Sum('accepted'),
                 total_sample=Sum('sample'),
             )
-            .order_by('customer')
+            .order_by('customer_name')
         )
 
         result = [
             {
-                "label": item['customer'],
+                "label": item['customer_name'],
                 "value": round((item['total_accepted'] / item['total_sample']) * 100, 2)
                 if item['total_sample'] > 0 else 0,
             }
@@ -893,17 +893,17 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
 
         aggregated = (
             queryset
-            .values(team=F('team'))
+            .values(team_name=F('team'))
             .annotate(
                 total_accepted=Sum('accepted'),
                 total_sample=Sum('sample'),
             )
-            .order_by('team')
+            .order_by('team_name')
         )
 
         result = [
             {
-                "label": f"{item['team']}",
+                "label": f"{item['team_name']}",
                 "value": round((item['total_accepted'] / item['total_sample']) * 100, 2)
                 if item['total_sample'] > 0 else 0,
             }
@@ -984,22 +984,24 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         if not queryset.exists():
             return Response({"data": []})
 
-        # GROUP BY week: AVG(defects_total / sample) * 100
-        annotated = queryset.annotate(
-            week_avg=ExpressionWrapper(
-                Avg(F('defects_total') * 1.0 / Case(
-                    When(sample=0, then=1),
-                    default=F('sample')
-                )),
-                output_field=FloatField()
+        # GROUP BY week: SUM(defects_total) / SUM(sample) * 100
+        annotated = (
+            queryset
+            .values('week')
+            .annotate(
+                total_defects=Sum('defects_total'),
+                total_sample=Sum('sample'),
             )
-        ).values('week').order_by('week')
+            .order_by('week')
+        )
 
         # Build series data
         aql_data = []
         for row in annotated:
             week = row['week']
-            aql = (row['week_avg'] or 0) * 100
+            total_defects = row['total_defects'] or 0
+            total_sample = row['total_sample'] or 0
+            aql = (total_defects / total_sample * 100) if total_sample > 0 else 0.0
             aql_data.append({"x": week, "y": round(aql, 2)})
 
         if not aql_data:
