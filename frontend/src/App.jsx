@@ -1,22 +1,57 @@
+import { useState } from 'react';
 import './App.css';
 import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
 import CaptureView from './views/CaptureView.jsx';
+import LoginView from './views/LoginView.jsx';
+import ExcelUploader from './Components/ExcelUploader.jsx';
 
 function App() {
+  const [user, setUser] = useState(null); 
+  const [activeView, setActiveView] = useState('');
+
+  const handleLogin = (userData) => {
+    setUser(userData);
+    setActiveView(userData.role === 'manager' ? 'excel' : 'capture');
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setActiveView('');
+  };
+
+  if (!user) {
+    return <LoginView onLogin={handleLogin} />;
+  }
+
   return (
     <div className="app-layout">
       
-      <Sidebar />
+      <Sidebar 
+        userRole={user.role} 
+        activeView={activeView} 
+        setActiveView={setActiveView} 
+        onLogout={handleLogout} 
+      />
 
       <div className="main-wrapper">
-    
-        <Navbar />
+        <Navbar user={user} />
 
         <main className="content-area">
-          <CaptureView />
-        </main>
+          
+          {activeView === 'capture' && user.role === 'operator' && <CaptureView />}
 
+          {activeView === 'excel' && user.role === 'manager' && (
+            <div className="card excel-view-card">
+              <h2 className="section-title title-tight">Importation of batches (Excel)</h2>
+              <p className="excel-subtitle">
+                Drag your file to ingest multiple records into the system.
+              </p>
+              <ExcelUploader />
+            </div>
+          )}
+
+        </main>
       </div>
       
     </div>
