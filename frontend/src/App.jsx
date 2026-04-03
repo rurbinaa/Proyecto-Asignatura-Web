@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
@@ -6,17 +6,28 @@ import CaptureView from './views/CaptureView.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
 
+const STORAGE_KEY = 'rift-user';
+
 function App() {
-  const [user, setUser] = useState(null); 
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  }); 
   const [activeView, setActiveView] = useState('');
 
   const handleLogin = (userData) => {
     setUser(userData);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
     setActiveView(userData.role === 'manager' ? 'excel' : 'capture');
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem(STORAGE_KEY);
     setActiveView('');
   };
 
