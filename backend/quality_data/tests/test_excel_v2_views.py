@@ -21,10 +21,11 @@ from quality_data.models import (
 
 
 def _make_mock_dataframe(rows):
-    """Create a mock DataFrame-like object for testing."""
-    mock_df = MagicMock()
-    mock_df.to_dict.return_value = rows
-    return mock_df
+    """Create a real pandas DataFrame for testing."""
+    import pandas as pd
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
 
 
 class ExcelPreviewViewTest(TestCase):
