@@ -41,6 +41,7 @@ class InspectionData(models.Model):
     week = models.PositiveIntegerField(editable=False)
     style = models.CharField(max_length=100)
     size = models.CharField(max_length=50)
+    lot = models.CharField(max_length=50, blank=True, default="")
     color = models.ForeignKey(Color, on_delete=models.PROTECT)
     is_closed = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='OPEN')

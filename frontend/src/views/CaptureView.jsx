@@ -8,6 +8,12 @@ import MockupContainer from '../Components/mockupContainer.jsx';
 import DefectPopover from '../Components/DefectPopover.jsx'; 
 
 import { 
+  createInspection,
+  createDefect,
+  closeInspection,
+} from '../api/capture.js'; 
+
+import { 
   MdOutlineFormatColorFill, 
   MdDangerous, 
   MdStraighten, 
@@ -83,6 +89,7 @@ const MOCK_DEFECT_LIST = [
 
 export default function CaptureView() {
   const [step, setStep] = useState('selection'); 
+  const [syncState, setSyncState] = useState('idle'); // idle | capturing | sending | success | error
   
   const [lot, setLot] = useState('');
   const [styleInput, setStyleInput] = useState('');
@@ -143,61 +150,79 @@ export default function CaptureView() {
       return;
     }
 
-    const groupedDefects = Object.values(currentDefects.reduce((acc, defect) => {
-
-      const detailValue = defect.defectSize || defect.defectCount || defect.notes || "N/A";
-      const key = `${defect.defectType}-${detailValue}-${defect.side}`;
-      
-      if (!acc[key]) {
-        acc[key] = {
-          defectType: defect.defectType,
-          defectSize: defect.defectSize,
-          notes: defect.notes,
-          side: defect.side,
-          pointsCount: 0,
-          coordinates_x: [],
-          coordinates_y: []
-        };
-      }
-      
-      acc[key].coordinates_x.push(defect.coordinates_x);
-      acc[key].coordinates_y.push(defect.coordinates_y);
-      acc[key].pointsCount += 1;
-      
-      return acc;
-    }, {}));
-
-    const formattedDefects = groupedDefects.map(group => ({
-      defectType: group.defectType,
-      defectSize: group.defectSize,
-      defectCount: group.pointsCount,
-      notes: group.notes,
-      coordinates_x: group.coordinates_x,
-      coordinates_y: group.coordinates_y,
-      side: group.side
-    }));
-
-    const payload = { 
-      lot_id: lot, 
-      garment_type: garment, 
-      style: styleInput,
-      size: sizeInput,
-      color: colorInput,
-      defects: formattedDefects 
-    };
-    
-    console.log("Payload agrupado para Django:", payload);
+    setSyncState('sending');
 
     try {
+      // Group defects by type + size + side (existing logic)
+      const groupedDefects = Object.values(currentDefects.reduce((acc, defect) => {
+        const detailValue = defect.defectSize || defect.defectCount || defect.notes || "N/A";
+        const key = `${defect.defectType}-${detailValue}-${defect.side}`;
+        
+        if (!acc[key]) {
+          acc[key] = {
+            defectType: defect.defectType,
+            defectSize: defect.defectSize,
+            notes: defect.notes,
+            side: defect.side,
+            pointsCount: 0,
+            coordinates_x: [],
+            coordinates_y: []
+          };
+        }
+        
+        acc[key].coordinates_x.push(defect.coordinates_x);
+        acc[key].coordinates_y.push(defect.coordinates_y);
+        acc[key].pointsCount += 1;
+        
+        return acc;
+      }, {}));
+
+      // Step 1: Create inspection
+      const inspection = await createInspection({
+        lot: lot,
+        style: styleInput,
+        size: sizeInput,
+        color: colorInput,
+      });
+
+      // Step 2: Send each grouped defect to the API
+      for (const group of groupedDefects) {
+        await createDefect({
+          inspection: inspection.id,
+          defect_type: group.defectType,
+          defect_size: group.defectSize || '',
+          coordinates_x: group.coordinates_x,
+          coordinates_y: group.coordinates_y,
+          defect_count: group.pointsCount,
+        });
+      }
+
+      // Step 3: Close inspection and sync to QualityQcFa
+      const result = await closeInspection(inspection.id);
+
+      // Step 4: Show result based on sync status
+      if (result.quality_data_sync && result.quality_data_sync.status === 'synced') {
+        const message = result.result === 'PASS' 
+          ? `Inspection PASSED!\n\nDefects found: ${result.total_defects}`
+          : `Inspection REJECTED!\n\nDefects found: ${result.total_defects}`;
+        alert(message);
+      } else if (result.quality_data_sync && result.quality_data_sync.status === 'no_match') {
+        alert(`Inspection ${result.result} but no matching QC record found.\nDefects captured: ${result.total_defects}`);
+      } else {
+        alert(`Inspection ${result.result}\nDefects: ${result.total_defects}`);
+      }
+
+      // Clear UI for next inspection
       setLastSubmission(currentDefects);
       setCurrentDefects([]);
       setIsEditMode(false);
       setViewSide('front');
-      alert(`Success! Envió agrupado a la BD.`);
+      setSyncState('success');
 
     } catch (error) {
       console.error("Error saving to DB:", error);
-      alert("Error saving data. Check console.");
+      alert(`Error saving data: ${error.message}`);
+      setSyncState('error');
     }
   };
 
@@ -356,9 +381,9 @@ export default function CaptureView() {
           <button 
             className="ingesta-btn ingesta-btn-primary btn-send" 
             onClick={handleSaveToDB} 
-            disabled={isEditMode || isPopoverOpen || currentDefects.length === 0}
+            disabled={isEditMode || isPopoverOpen || currentDefects.length === 0 || syncState === 'sending'}
           >
-            Send
+            {syncState === 'sending' ? 'Sending...' : 'Send'}
           </button>
         </div>
 
