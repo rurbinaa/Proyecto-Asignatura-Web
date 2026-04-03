@@ -8,24 +8,11 @@ import {
   Loader2, 
   CheckCircle, 
   Eye, 
-  AlertTriangle 
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import './ExcelUploader.css';
-
-const REQUIRED_COLUMNS = {
-  "QC FA Plant": ["date", "week", "customer", "team", "coord", "po", "style", "batch", "color", "qty"],
-  "QC FA Customer": ["date", "week", "customer", "line", "artcode", "po", "style", "batch", "color", "quantity"],
-  "SecondsA4": ["year", "week", "date", "cut", "style", "color", "accepted", "rejected"],
-  "Seconds General": ["date", "week", "picado", "manchas", "grasa", "tono", "fuera", "definitive"],
-  "Container": ["container", "customer", "palette", "pass"]
-};
-
-const SHEET_GROUPS_MAP = {
-  QFA: ["QC FA Plant", "QC FA Customer"],
-  SECONDS: ["SecondsA4", "Seconds General"],
-  CONTAINER: ["Container"],
-  ALL: ["QC FA Plant", "QC FA Customer", "SecondsA4", "Seconds General", "Container"] 
-};
+import { REQUIRED_COLUMNS, SHEET_GROUPS_MAP, cleanText, formatExcelDate, findHeadersAndData } from '../utils/excelParser';
 
 export default function ExcelUploader() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -34,34 +21,7 @@ export default function ExcelUploader() {
   const [sheetPreviews, setSheetPreviews] = useState([]); 
   const [uploadState, setUploadState] = useState('idle');
   const [importStats, setImportStats] = useState({ total: 0, inserted: 0, skipped: 0 });
-
-  const cleanText = (text) => String(text || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-
-  const formatExcelDate = (serial) => {
-    if (!serial || isNaN(serial)) return serial;
-    const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
-    return date.toISOString().split('T')[0];
-  };
-
-  const findHeadersAndData = (rows, sheetName) => {
-    const required = REQUIRED_COLUMNS[sheetName];
-    if (!required) return null;
-    
-    for (let i = 0; i < Math.min(rows.length, 20); i++) {
-      if (!rows[i] || rows[i].length === 0) continue;
-      
-      const potentialRow = rows[i].map(cell => cleanText(cell));
-      
-      const matchCount = required.filter(req => 
-        potentialRow.some(cell => cell.includes(cleanText(req)))
-      ).length;
-      
-      if (matchCount >= required.length - 1) {
-        return { headers: rows[i], data: rows.slice(i + 1) };
-      }
-    }
-    return null;
-  };
+  const [showComingSoon, setShowComingSoon] = useState(false);
 
   const onDrop = useCallback((acceptedFiles) => {
     if (acceptedFiles.length > 0) {
@@ -148,6 +108,13 @@ export default function ExcelUploader() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
+    maxSize: 10 * 1024 * 1024, // 10 MB limit
+    onDropRejected: (rejectedFiles) => {
+      const tooLarge = rejectedFiles.some(f => f.errors.some(e => e.code === 'file-too-large'));
+      if (tooLarge) {
+        setErrorMsg('File is too large. Maximum size is 10 MB.');
+      }
+    },
     accept: { 
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 
       'text/csv': ['.csv'] 
@@ -163,20 +130,8 @@ export default function ExcelUploader() {
   };
 
   const handleProcess = () => {
-    setUploadState('uploading');
-    
-    setTimeout(() => {
-      const totalProcessed = importStats.total;
-      const skipped = Math.floor(totalProcessed * 0.1); 
-      const inserted = totalProcessed - skipped;
-
-      setImportStats({
-        total: totalProcessed,
-        inserted: inserted,
-        skipped: skipped
-      });
-      setUploadState('success');
-    }, 2500);
+    // TODO: Connect to backend import endpoint when auth & API are ready
+    setShowComingSoon(true);
   };
 
   return (
@@ -295,6 +250,27 @@ export default function ExcelUploader() {
             </div>
           )}
         </>
+      )}
+
+      {/* Coming Soon Modal — backend integration pending */}
+      {showComingSoon && (
+        <div className="modal-overlay" onClick={() => setShowComingSoon(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <Clock className="modal-icon" />
+            <h3 className="modal-title">Coming Soon</h3>
+            <p className="modal-description">
+              The import functionality is under development. Your file has been validated and 
+              <strong> {importStats.total} records</strong> are ready to be processed.
+            </p>
+            <p className="modal-hint">Backend integration will be available in the next release.</p>
+            <button 
+              className="modal-close-btn" 
+              onClick={() => setShowComingSoon(false)}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
