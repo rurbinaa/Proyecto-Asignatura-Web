@@ -249,6 +249,9 @@ export default function ExcelUploader() {
 
   return (
     <div className="uploader-container">
+      {/*
+      reportType selector hidden - backend doesn't support filtering by report type yet.
+      All sheets are uploaded regardless of selection.
       <div className="report-selector-group">
         <label className="input-label">Data Import Type:</label>
         <select 
@@ -262,6 +265,7 @@ export default function ExcelUploader() {
           <option value="CONTAINER">Container Inspection</option>
         </select>
       </div>
+      */}
 
       {/* State-based rendering */}
       {uploadState === 'analyzing' && renderAnalyzingState()}
