@@ -15,6 +15,7 @@ from excel_importer.pivot_parsers import (
     parse_enganche,
     parse_top_defects,
     parse_defects_by_style,
+    parse_containers_by_state,
 )
 from excel_importer.handler_service import load_pivot_range
 
@@ -407,3 +408,35 @@ class ParseDefectsByStyleTest(TestCase):
     def test_returns_empty_for_empty_rows(self):
         result = parse_defects_by_style([])
         self.assertEqual(result, [])
+
+
+class ParseContainersByStateTest(TestCase):
+    """Tests for parse_containers_by_state — groups by percentage_pass ranges."""
+
+    @patch('excel_importer.pivot_parsers.load_and_clean')
+    def test_returns_four_ranges(self, mock_load):
+        """Should return exactly 4 range buckets based on percentage_pass."""
+        mock_load.return_value = pd.DataFrame({
+            'container_number': [1, 2, 3, 4, 5],
+            'percentage_pass': [50, 70, 90, 100, 80],
+        })
+
+        result = parse_containers_by_state(io.BytesIO())
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 4)
+        names = [r['name'] for r in result]
+        self.assertIn('< 80%', names)
+        self.assertIn('80-90%', names)
+        self.assertIn('90-95%', names)
+        self.assertIn('> 95%', names)
+        # 50(<80), 70(<80) = 2; 80(80-90) = 1; 90(90-95) = 1; 100(>95) = 1
+        buckets = {r['name']: r['value'] for r in result}
+        self.assertEqual(buckets['< 80%'], 2)
+        self.assertEqual(buckets['80-90%'], 1)
+        self.assertEqual(buckets['90-95%'], 1)
+        self.assertEqual(buckets['> 95%'], 1)
+
+    def test_returns_none_on_empty_file(self):
+        empty_file = io.BytesIO()
+        result = parse_containers_by_state(empty_file)
+        self.assertIsNone(result)

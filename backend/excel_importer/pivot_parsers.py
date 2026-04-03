@@ -3,11 +3,11 @@ Pivot table parsers for KPI Excel dynamic ranges.
 
 These parsers read specific ranges from Excel sheets that contain
 pivot table data for KPIs (seconds rework, cut qty, fabric defects, enganche,
-top defects, defects by style type).
+top defects, defects by style type, containers by state).
 """
 import pandas as pd
-from excel_importer.handler_service import load_pivot_range
-from excel_importer.sheet_configs import PIVOT_RANGES
+from excel_importer.handler_service import load_pivot_range, load_and_clean
+from excel_importer.sheet_configs import PIVOT_RANGES, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS, CONTAINER_NOT_NUMERIC_COLUMNS
 
 
 def _clean_percentage_value(value):
@@ -366,6 +366,39 @@ def parse_defects_by_style(rows):
                     agg[(style, label)] += val
 
         return [{"x": k[0], "y": k[1], "value": v} for k, v in agg.items()]
+
+    except Exception:
+        return None
+
+
+def parse_containers_by_state(file_obj):
+    """
+    Lee el sheet Container del Excel y agrupa por rangos de percentage_pass.
+    Rangos: < 80%, 80-90%, 90-95%, > 95%
+
+    Returns: [{"name": "< 80%", "value": 3}, ...] or None on error.
+    """
+    try:
+        df = load_and_clean(
+            file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
+            CONTAINER_NOT_NUMERIC_COLUMNS, "Container", 2, 24
+        )
+
+        if df.empty:
+            return []
+
+        # Convert percentage_pass to numeric
+        df['percentage_pass'] = pd.to_numeric(df['percentage_pass'], errors='coerce').fillna(0)
+
+        # Group by ranges
+        ranges = [
+            ("< 80%", (df['percentage_pass'] < 80).sum()),
+            ("80-90%", ((df['percentage_pass'] >= 80) & (df['percentage_pass'] < 90)).sum()),
+            ("90-95%", ((df['percentage_pass'] >= 90) & (df['percentage_pass'] < 95)).sum()),
+            ("> 95%", (df['percentage_pass'] >= 95).sum()),
+        ]
+
+        return [{"name": name, "value": int(count)} for name, count in ranges]
 
     except Exception:
         return None

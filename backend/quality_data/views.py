@@ -51,6 +51,7 @@ from excel_importer.pivot_parsers import (
     parse_enganche,
     parse_top_defects,
     parse_defects_by_style,
+    parse_containers_by_state,
 )
 
 def _get_incremental_rows(df, model_class, **filters):
@@ -1142,6 +1143,11 @@ class VolatileKpiView(APIView):
             except Exception:
                 enganche = None
 
+            try:
+                containers = parse_containers_by_state(file_obj)
+            except Exception:
+                containers = None
+
             # Calcular los 14 KPIs usando pandas
             kpis = {
                 "aql_by_style": self._calc_aql_by_style(rows),
@@ -1156,7 +1162,7 @@ class VolatileKpiView(APIView):
                 "defects_by_style_type": parse_defects_by_style(rows),
                 "pass_reject_distribution": self._calc_pass_reject(rows),
                 "rejected_evolution": self._calc_rejected_evolution(rows),
-                "containers_by_state": None,  # Requiere Container
+                "containers_by_state": containers,
                 "defect_rate": self._calc_defect_rate(rows),
             }
 
