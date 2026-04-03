@@ -147,7 +147,7 @@ export default function DefectPopover({ coordinates, onClose, onSave, defectList
       coordinates_y: Number(coordinates.y.toFixed(2)), 
       defectType: selectedDefect.id,
       defectSize: isSize ? extraDetail : null,
-      defectCount : isCount ? extraDetail : null,
+      defectCount: isCount ? extraDetail : null,
       notes: (!isSize && !isCount) ? (extraDetail || 'N/A') : "",
       type_name: selectedDefect.name,
       id: Date.now() 
