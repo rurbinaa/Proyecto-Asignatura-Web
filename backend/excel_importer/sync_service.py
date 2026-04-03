@@ -252,10 +252,11 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
     if not excel_rows:
         return
 
-    # Build DB index
-    db_objects = {obj for obj in model_class.objects.all()}
+    # Build DB index - use .iterator() to stream objects without loading all into memory
+    # Only() defers loading non-essential fields
+    key_field_names = _get_key_field_names(key_builder)
     db_index = {}
-    for obj in db_objects:
+    for obj in model_class.objects.only(*key_field_names).iterator():
         row_dict = _model_to_dict(obj)
         key = key_builder(row_dict)
         db_index[key] = obj
@@ -475,6 +476,27 @@ def reject_session(session):
 # Private Helpers
 # ─────────────────────────────────────────────────────────
 
+def _get_key_field_names(key_builder):
+    """
+    Extract field names used by a key builder function.
+
+    Different key builders use different fields:
+    - build_seconds_a4_key: date, cut_num, color
+    - build_container_key: container_number
+    - build_qc_fa_plant_key: date_1, po, style, team, color
+    - build_qc_fa_customer_key: date_1, po, style, color
+    - build_seconds_general_key: date, week, style, color
+
+    Returns field names as a list.
+    """
+    import inspect
+    sig = inspect.signature(key_builder)
+    # First parameter is 'row' (the dict)
+    param_names = list(sig.parameters.keys())
+    if param_names and param_names[0] == 'row':
+        param_names = param_names[1:]
+    return param_names if param_names else ['id']
+
 def _get_numeric_columns(sheet_key):
     """Get numeric column names for a sheet."""
     from excel_importer.sheet_configs import (
@@ -631,6 +653,9 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields):
     The handler_service.bulk_insert functions already handle creating
     InspectionDefect/ContainerInspectionDefect records. We reuse that logic
     by passing the Excel rows through it.
+
+    For QualityQcFa (time-window strategy): parent records are ALREADY created
+    by apply_timewindow, so we use defects_only=True to only create defects.
     """
     import pandas as pd
     from excel_importer.handler_service import (
@@ -661,14 +686,15 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields):
         # Get QC defect field names
         qc_defect_fields = _get_defect_fields('qc_fa_plant') or defect_fields
         
-        # For QC FA, we need to create QualityQcFa records first, then defects
-        # The handler creates both in one pass
+        # For QC FA time-window: parent records are already created by apply_timewindow.
+        # Use defects_only=True to only create InspectionDefect records.
         handler_bulk_insert_qcfa(
             df,
             numeric_cols,
             not_numeric_cols,
             qc_defect_fields or defect_fields,
-            table_type
+            table_type,
+            defects_only=True  # Parents already exist, only create defects
         )
     elif model_class == Container:
         container_defect_fields = _get_defect_fields('container') or defect_fields

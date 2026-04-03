@@ -10,6 +10,7 @@ from quality_data.models import (
     SecondsA4,
     SecondsGeneral,
 )
+from excel_importer.date_utils import parse_date
 
 
 def _normalize_defects_fields(defeacts_fields):
@@ -66,18 +67,32 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
 
     if "pass_or_fail" in df.columns:
         normalized_pass_or_fail = df["pass_or_fail"].astype(str).str.strip().str.upper()
-        df["pass_or_fail"] = "Pass"
-        df.loc[normalized_pass_or_fail == "FAIL", "pass_or_fail"] = "Fail"
+        df["pass_or_fail"] = "PASS"
+        df.loc[normalized_pass_or_fail == "FAIL", "pass_or_fail"] = "REJECT"
 
     text_cols = df.select_dtypes(include=['object']).columns
     df[text_cols] = df[text_cols].fillna("UNKNOWN")
     
     return df
 
-def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type):
+def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type,
+                defects_only=False):
+    """
+    Bulk insert QualityQcFa records and/or InspectionDefect records.
+
+    Args:
+        defects_only: If True, skip creating QualityQcFa parents and only create
+            InspectionDefect records by querying existing parents. Use this when
+            parent records were already created by apply_timewindow.
+    """
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
     if df.empty:
+        return
+
+    # For defects_only mode, query existing parents instead of creating new ones
+    if defects_only:
+        _bulk_insert_defects_only(df, defeacts_fields, table_type)
         return
 
     quality_instances = []
@@ -92,7 +107,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         production_data['table_type'] = table_type
         production_data['color'] = color_obj
         production_data = _truncate_charfields(QualityQcFa, production_data)
- 
+  
 
         quality_instances.append(QualityQcFa(**production_data))
 
@@ -107,6 +122,64 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         for defect_field in defeacts_fields:
             amount = int(row.get(defect_field, 0) or 0)
 
+            if amount <= 0:
+                continue
+
+            defect_type = defect_type_map.get(defect_field)
+            if defect_type is None:
+                continue
+
+            inspection_defects.append(
+                InspectionDefect(
+                    inspection=quality_instance,
+                    defect_type=defect_type,
+                    amount=amount,
+                )
+            )
+
+    if inspection_defects:
+        InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000)
+
+
+def _bulk_insert_defects_only(df, defeacts_fields, table_type):
+    """
+    Create only InspectionDefect records, querying existing QualityQcFa parents.
+
+    Used when QualityQcFa records were already created by apply_timewindow.
+    Parents are queried by natural key: date_1 + po + style + team + color.
+    """
+    defect_types = DefectType.objects.filter(name__in=defeacts_fields)
+    defect_type_map = {defect.name: defect for defect in defect_types}
+
+    inspection_defects = []
+
+    for _, row in df.iterrows():
+        # Query existing QualityQcFa by natural key
+        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
+        color_obj = Color.objects.filter(name=color_name).first()
+        if color_obj is None:
+            continue
+
+        # Build natural key query - same as build_qc_fa_plant_key in sync_service
+        query = {
+            'table_type': table_type,
+            'date_1': parse_date(row.get('date_1', '')),
+            'po': int(row.get('po', 0)) if row.get('po') else 0,
+            'style': str(row.get('style', '')).strip(),
+            'team': int(row.get('team', 0)) if row.get('team') else 0,
+            'color': color_obj,
+        }
+
+        # Only query if we have valid key values
+        if not query['date_1'] or not query['style']:
+            continue
+
+        quality_instance = QualityQcFa.objects.filter(**query).first()
+        if quality_instance is None:
+            continue
+
+        for defect_field in defeacts_fields:
+            amount = int(row.get(defect_field, 0) or 0)
             if amount <= 0:
                 continue
 
