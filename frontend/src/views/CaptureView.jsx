@@ -136,12 +136,15 @@ export default function CaptureView() {
     setCurrentDefects(prev => prev.filter(defect => defect.id !== idToRemove));
   };
 
-  const handleUndoLastDefect = () => {
+  const handleUndoLastDefect = async () => {
     if (!lastSubmission) return;
-    console.log("Undoing shipment to the backend");
+    
+    // If we have an inspectionId stored from last submission, call the API
+    // For now, we only clear local state since inspectionId isn't persisted
+    console.log("Undoing last defect submission locally");
     setCurrentDefects(lastSubmission);
     setLastSubmission(null);
-    alert("Shipment canceled");
+    alert("Last submission cleared");
   };
 
   const handleSaveToDB = async () => {
@@ -170,6 +173,7 @@ export default function CaptureView() {
           };
         }
         
+        // Push scalar coordinates, not wrapped in array
         acc[key].coordinates_x.push(defect.coordinates_x);
         acc[key].coordinates_y.push(defect.coordinates_y);
         acc[key].pointsCount += 1;
@@ -177,19 +181,22 @@ export default function CaptureView() {
         return acc;
       }, {}));
 
-      // Step 1: Create inspection
+      // Step 1: Create inspection with normalized color
       const inspection = await createInspection({
         lot: lot,
         style: styleInput,
         size: sizeInput,
-        color: colorInput,
+        color: colorInput.toLowerCase().replace(/ /g, '_'),
       });
 
       // Step 2: Send each grouped defect to the API
       for (const group of groupedDefects) {
+        // Normalize defect type: convert underscores to spaces to match backend DefectType names
+        const normalizedDefectType = group.defectType.replace(/_/g, ' ');
+        
         await createDefect({
           inspection: inspection.id,
-          defect_type: group.defectType,
+          defect_type: normalizedDefectType,
           defect_size: group.defectSize || '',
           coordinates_x: group.coordinates_x,
           coordinates_y: group.coordinates_y,
@@ -305,7 +312,20 @@ export default function CaptureView() {
             Inspecting: <span>Lot {lot} | {styleInput} | Size {sizeInput} | {colorInput}</span>
           </p>
         </div>
-        <button className="ingesta-btn ingesta-btn-outline" onClick={() => { setStep('selection'); setIsEditMode(false); handleClosePopover(); }}>
+        <button className="ingesta-btn ingesta-btn-outline" onClick={() => { 
+          setStep('selection'); 
+          setIsEditMode(false); 
+          handleClosePopover();
+          // Clear inspection-specific state
+          setCurrentDefects([]);
+          setLastSubmission(null);
+          setLot('');
+          setStyleInput('');
+          setSizeInput('');
+          setColorInput('');
+          setGarment('');
+          setSyncState('idle');
+        }}>
           Back to Setup
         </button>
       </div>
