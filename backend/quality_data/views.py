@@ -423,12 +423,18 @@ class KpiFilterMixin:
         # week: exact integer match
         week = request.query_params.get('week')
         if week:
-            filters['week__exact'] = int(week)
+            try:
+                filters['week__exact'] = int(week)
+            except ValueError:
+                pass
 
         # team: exact integer match
         team = request.query_params.get('team')
         if team:
-            filters['team__exact'] = int(team)
+            try:
+                filters['team__exact'] = int(team)
+            except ValueError:
+                pass
 
         # style: case-insensitive contains
         style = request.query_params.get('style')
@@ -448,7 +454,10 @@ class KpiFilterMixin:
         # batch: exact integer match
         batch = request.query_params.get('batch')
         if batch:
-            filters['batch__exact'] = int(batch)
+            try:
+                filters['batch__exact'] = int(batch)
+            except ValueError:
+                pass
 
         if filters:
             queryset = queryset.filter(**filters)
@@ -554,30 +563,32 @@ class DefectsByStyleTypeView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        # Get top 5 styles by total defect amount
+        # Get filtered queryset first
+        queryset = self.get_filtered_queryset(InspectionDefect.objects.all())
+
+        # Get top 5 styles by total defect amount (from filtered data)
         top_styles = (
-            InspectionDefect.objects
+            queryset
             .values(style_name=F('inspection__style'))
             .annotate(total=Sum('amount'))
             .order_by('-total')[:5]
         )
         top_style_names = [item['style_name'] for item in top_styles]
 
-        # Get top 5 defect types by total amount
+        # Get top 5 defect types by total amount (from filtered data)
         top_defect_types = (
-            InspectionDefect.objects
+            queryset
             .values(defect_type_name=F('defect_type__name'))
             .annotate(total=Sum('amount'))
             .order_by('-total')[:5]
         )
         top_defect_type_names = [item['defect_type_name'] for item in top_defect_types]
 
-        # Get filtered queryset and filter by top styles and defect types
-        queryset = InspectionDefect.objects.filter(
+        # Filter the filtered queryset by top styles and defect types
+        queryset = queryset.filter(
             inspection__style__in=top_style_names,
             defect_type__name__in=top_defect_type_names,
         )
-        queryset = self.get_filtered_queryset(queryset)
 
         # Aggregate by style × defect_type
         aggregated = (
