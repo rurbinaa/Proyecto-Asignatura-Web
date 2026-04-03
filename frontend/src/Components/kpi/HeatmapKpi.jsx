@@ -10,10 +10,12 @@ export default function HeatmapKpi({ data = [], title }) {
 
   const xLabels = [...new Set(data.map(d => d.x))].sort();
   const yLabels = [...new Set(data.map(d => d.y))].sort();
-  const maxValue = Math.max(...data.map(d => d.value));
-  const minValue = Math.min(...data.map(d => d.value));
+  const validValues = data.map(d => d.value).filter(v => v != null && !isNaN(v));
+  const maxValue = validValues.length > 0 ? Math.max(...validValues) : 0;
+  const minValue = validValues.length > 0 ? Math.min(...validValues) : 0;
 
   const getColor = (value) => {
+    if (value == null) return '#e5e7eb';
     if (maxValue === minValue) return '#22c55e';
     const ratio = (value - minValue) / (maxValue - minValue);
     if (ratio < 0.5) {
@@ -31,7 +33,7 @@ export default function HeatmapKpi({ data = [], title }) {
 
   const getValue = (x, y) => {
     const item = data.find(d => d.x === x && d.y === y);
-    return item ? item.value : 0;
+    return item ? item.value : null;
   };
 
   const cellStyle = {
@@ -66,9 +68,9 @@ export default function HeatmapKpi({ data = [], title }) {
                   return (
                     <td
                       key={x}
-                      style={{ ...cellStyle, background: getColor(value), color: '#fff' }}
+                      style={{ ...cellStyle, background: getColor(value), color: value != null ? '#fff' : '#9ca3af' }}
                     >
-                      {value.toFixed(1)}
+                      {value != null ? value.toFixed(1) : '—'}
                     </td>
                   );
                 })}

@@ -51,7 +51,7 @@ export default function KpiCard({ title, loading = false, error = null, children
           <div style={spinnerStyle}></div>
         )}
         {error && (
-          <div style={errorStyle}>Error: {error}</div>
+          <div style={errorStyle}>Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}</div>
         )}
         {!loading && !error && !children && (
           <div style={emptyStyle}>Sin datos</div>
