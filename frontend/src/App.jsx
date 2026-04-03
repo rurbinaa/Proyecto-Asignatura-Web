@@ -17,17 +17,26 @@ function App() {
       return null;
     }
   }); 
-  const [activeView, setActiveView] = useState('');
+  const [activeView, setActiveView] = useState(() => {
+    try {
+      const stored = localStorage.getItem('rift-activeView');
+      return stored || '';
+    } catch {
+      return '';
+    }
+  });
 
   const handleLogin = (userData) => {
     setUser(userData);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
     setActiveView(userData.role === 'manager' ? 'excel' : 'capture');
+    localStorage.setItem('rift-activeView', userData.role === 'manager' ? 'excel' : 'capture');
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('rift-activeView');
     setActiveView('');
   };
 
