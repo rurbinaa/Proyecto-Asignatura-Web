@@ -8,7 +8,8 @@ import {
   Loader2, 
   CheckCircle, 
   Eye, 
-  AlertTriangle 
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import './ExcelUploader.css';
 
@@ -34,6 +35,7 @@ export default function ExcelUploader() {
   const [sheetPreviews, setSheetPreviews] = useState([]); 
   const [uploadState, setUploadState] = useState('idle');
   const [importStats, setImportStats] = useState({ total: 0, inserted: 0, skipped: 0 });
+  const [showComingSoon, setShowComingSoon] = useState(false);
 
   const cleanText = (text) => String(text || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
@@ -163,20 +165,8 @@ export default function ExcelUploader() {
   };
 
   const handleProcess = () => {
-    setUploadState('uploading');
-    
-    setTimeout(() => {
-      const totalProcessed = importStats.total;
-      const skipped = Math.floor(totalProcessed * 0.1); 
-      const inserted = totalProcessed - skipped;
-
-      setImportStats({
-        total: totalProcessed,
-        inserted: inserted,
-        skipped: skipped
-      });
-      setUploadState('success');
-    }, 2500);
+    // TODO: Connect to backend import endpoint when auth & API are ready
+    setShowComingSoon(true);
   };
 
   return (
@@ -295,6 +285,28 @@ export default function ExcelUploader() {
             </div>
           )}
         </>
+      )}
+    </div>
+
+      {/* Coming Soon Modal — backend integration pending */}
+      {showComingSoon && (
+        <div className="modal-overlay" onClick={() => setShowComingSoon(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <Clock className="modal-icon" />
+            <h3 className="modal-title">Coming Soon</h3>
+            <p className="modal-description">
+              The import functionality is under development. Your file has been validated and 
+              <strong> {importStats.total} records</strong> are ready to be processed.
+            </p>
+            <p className="modal-hint">Backend integration will be available in the next release.</p>
+            <button 
+              className="modal-close-btn" 
+              onClick={() => setShowComingSoon(false)}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
