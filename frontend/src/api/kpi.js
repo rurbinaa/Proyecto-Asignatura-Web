@@ -9,7 +9,12 @@ function buildQueryString(filters = {}) {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
-      params.append(key, value);
+      // Arrays (like date_range) should be joined with comma
+      if (Array.isArray(value)) {
+        params.append(key, value.join(','));
+      } else {
+        params.append(key, value);
+      }
     }
   });
   const qs = params.toString();
