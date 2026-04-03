@@ -42,7 +42,11 @@ coverage.xml
 
 # Archivos generados por Django
 /staticfiles/
-media/
+/media/
+!/media/mockups/
+/media/mockups/*
+!/media/mockups/README.md
+!/media/mockups/.gitkeep
 *.pid
 
 # ============================================
