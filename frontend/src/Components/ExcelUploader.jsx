@@ -240,8 +240,8 @@ export default function ExcelUploader({ onVolatileDashboard }) {
           Confirm & Import All ({Object.values(previewStats || {}).reduce((sum, s) => sum + (s.total || 0), 0)} Records)
         </button>
         {onVolatileDashboard && (
-          <button className="ingesta-btn-outline full-width-btn" onClick={() => onVolatileDashboard(previewStats)}>
-            View Dashboard
+          <button className="ingesta-btn-outline full-width-btn" disabled title="Volatile dashboard requires parsed Excel row data which is not available in the uploader. TODO: implement server-side preview data retrieval or pass parsed rows through the workflow.">
+            View Dashboard (TODO)
           </button>
         )}
         <button className="ingesta-btn-outline full-width-btn" onClick={handleReject}>
