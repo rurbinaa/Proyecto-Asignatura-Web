@@ -1,32 +1,66 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { buildMergedLineData } from './lineChartUtils';
 
 const SERIES_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-export default function LineChartKpi({ series = [], title, showDots = true }) {
-  const chartStyle = { margin: { top: 5, right: 30, left: 20, bottom: 5 } };
+const identity = (value) => value;
 
-  // Merge all series data into a single array keyed by 'x'
-  // Each series contributes its own data points; Lines reference their dataKey
-  const allXValues = [...new Set(series.flatMap(s => s.data?.map(p => p.x) || []))].sort();
-  const mergedData = allXValues.map(x => {
-    const point = { x };
-    series.forEach(s => {
-      const found = s.data?.find(p => p.x === x);
-      point[s.name] = found ? found.y : null;
-    });
-    return point;
-  });
+export default function LineChartKpi({
+  series = [],
+  title,
+  showDots = true,
+  xAxisLabel,
+  showXAxisLabel = false,
+  yAxisLabel,
+  xTickFormatter,
+  yTickFormatter,
+  valueFormatter = identity,
+  tooltipFormatter,
+  tooltipLabelFormatter,
+  legendVerticalAlign = 'top',
+  legendAlign = 'right',
+}) {
+  // Unified chart margin for consistent spacing (same as BarChartKpi)
+  const chartMargin = { top: 12, right: 20, left: 8, bottom: 32 };
+
+  const { mergedData, allXValues, useNumericXAxis } = buildMergedLineData(series);
+
+  const defaultTooltipFormatter = (value, seriesName) => [valueFormatter(value), seriesName];
 
   return (
-    <div style={{ padding: '16px' }}>
-      {title && <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
+    <div className="line-chart-kpi" style={{ padding: '16px', boxSizing: 'border-box' }}>
+      {title && <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={mergedData} margin={chartStyle}>
+        <LineChart data={mergedData} margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="x" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
+          <XAxis
+            dataKey="x"
+            type={useNumericXAxis ? 'number' : 'category'}
+            domain={useNumericXAxis ? ['dataMin', 'dataMax'] : undefined}
+            tickCount={useNumericXAxis ? Math.min(8, Math.max(3, allXValues.length)) : undefined}
+            allowDecimals={false}
+            interval="preserveStartEnd"
+            minTickGap={24}
+            tickFormatter={xTickFormatter}
+            label={showXAxisLabel && xAxisLabel ? { value: xAxisLabel, position: 'bottom', offset: 8 } : undefined}
+          />
+          <YAxis
+            tickFormatter={yTickFormatter}
+            label={
+              yAxisLabel
+                ? { value: yAxisLabel, angle: -90, position: 'insideLeft', dx: -8, style: { textAnchor: 'middle' } }
+                : undefined
+            }
+          />
+          <Tooltip
+            formatter={tooltipFormatter || defaultTooltipFormatter}
+            labelFormatter={tooltipLabelFormatter}
+          />
+          <Legend
+            verticalAlign={legendVerticalAlign}
+            align={legendAlign}
+            wrapperStyle={{ fontSize: '12px', paddingBottom: '4px' }}
+          />
           {series.map((s, index) => (
             <Line
               key={s.name}

@@ -1,8 +1,8 @@
 export default function HeatmapKpi({ data = [], title }) {
   if (!data || data.length === 0) {
     return (
-      <div style={{ padding: '16px' }}>
-        {title && <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
+      <div className="heatmap-kpi" style={{ padding: '16px', boxSizing: 'border-box' }}>
+        {title && <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
         <div style={{ textAlign: 'center', color: '#666' }}>Sin datos</div>
       </div>
     );
@@ -47,8 +47,8 @@ export default function HeatmapKpi({ data = [], title }) {
   };
 
   return (
-    <div style={{ padding: '16px' }}>
-      {title && <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
+    <div className="heatmap-kpi" style={{ padding: '16px', boxSizing: 'border-box' }}>
+      {title && <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse' }}>
           <thead>

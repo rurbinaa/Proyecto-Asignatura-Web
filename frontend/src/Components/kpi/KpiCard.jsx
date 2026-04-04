@@ -3,7 +3,8 @@ export default function KpiCard({ title, loading = false, error = null, children
     background: '#fff',
     borderRadius: '8px',
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    overflow: 'hidden',
+    overflow: 'hidden', // Changed from 'visible' to 'hidden' for better layout containment
+    minWidth: 0,
   };
 
   const headerStyle = {
@@ -15,11 +16,23 @@ export default function KpiCard({ title, loading = false, error = null, children
   };
 
   const bodyStyle = {
-    padding: '16px',
-    minHeight: '200px',
+    padding: '0', // Charts handle their own padding for visual consistency
+    minHeight: '120px',
+    position: 'relative',
+    overflowX: 'auto', // Changed from 'visible' - allows scrolling on overflow instead of shifting
+    overflowY: 'visible',
+  };
+
+  const centerContentStyle = {
+    minHeight: '168px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+  };
+
+  const chartContainerStyle = {
+    width: '100%',
+    minWidth: 0,
   };
 
   const spinnerStyle = {
@@ -48,15 +61,21 @@ export default function KpiCard({ title, loading = false, error = null, children
       {title && <div style={headerStyle}>{title}</div>}
       <div style={bodyStyle}>
         {loading && (
-          <div style={spinnerStyle}></div>
+          <div style={centerContentStyle}>
+            <div style={spinnerStyle}></div>
+          </div>
         )}
         {error && (
-          <div style={errorStyle}>Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}</div>
+          <div style={centerContentStyle}>
+            <div style={errorStyle}>Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}</div>
+          </div>
         )}
         {!loading && !error && !children && (
-          <div style={emptyStyle}>Sin datos</div>
+          <div style={centerContentStyle}>
+            <div style={emptyStyle}>Sin datos</div>
+          </div>
         )}
-        {!loading && !error && children && children}
+        {!loading && !error && children && <div style={chartContainerStyle}>{children}</div>}
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
