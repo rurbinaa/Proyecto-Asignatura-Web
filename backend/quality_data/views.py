@@ -968,10 +968,14 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             return Response({"data": []})
 
         # GROUP BY style: SUM(defects_total) / SUM(sample) * 100
-        annotated = queryset.annotate(
-            total_defects=Sum('defects_total'),
-            total_sample=Sum('sample'),
-        ).values('style', 'total_defects', 'total_sample')
+        annotated = (
+            queryset
+            .values('style')
+            .annotate(
+                total_defects=Sum('defects_total'),
+                total_sample=Sum('sample'),
+            )
+        )
 
         result = []
         for row in annotated:
@@ -1069,9 +1073,12 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             return Response({"data": []})
 
         # GROUP BY week: SUM(sample)
-        annotated = queryset.annotate(
-            total_sample=Sum('sample')
-        ).values('week', 'total_sample').order_by('week')
+        annotated = (
+            queryset
+            .values('week')
+            .annotate(total_sample=Sum('sample'))
+            .order_by('week')
+        )
 
         pieces_data = []
         for row in annotated:

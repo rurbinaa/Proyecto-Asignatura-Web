@@ -264,7 +264,15 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
     new_instances = []
     update_instances = []
 
+    # Dedupe incoming Excel rows by natural key (last row wins).
+    # This prevents unique-key crashes when the same key appears multiple times
+    # in the same uploaded file batch (e.g. duplicate container_number rows).
+    deduped_rows_map = {}
     for row in excel_rows:
+        deduped_rows_map[key_builder(row)] = row
+    deduped_rows = list(deduped_rows_map.values())
+
+    for row in deduped_rows:
         key = key_builder(row)
         if key not in db_index:
             # New record
@@ -290,7 +298,7 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
 
     # Handle defects if applicable
     if defect_fields:
-        _sync_defects(excel_rows, model_class, defect_fields)
+        _sync_defects(deduped_rows, model_class, defect_fields)
 
 
 def apply_timewindow(excel_rows, model_class, date_field, table_type=None,

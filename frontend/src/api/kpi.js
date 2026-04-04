@@ -1,6 +1,43 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
+ * Unwrap a nested KPI value object to a scalar.
+ * Handles { label: string, value: number } -> number, or returns the value as-is if already scalar.
+ * Returns null for invalid/unparseable values.
+ * @param {any} value - The value to unwrap
+ * @returns {number|null} Scalar value or null
+ */
+function unwrapScalarKpiValue(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const innerValue = value.value;
+    if (typeof innerValue === 'number' && Number.isFinite(innerValue)) {
+      return innerValue;
+    }
+    // Try to parse as number if it's a string
+    if (typeof innerValue === 'string') {
+      const parsed = Number(innerValue);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  // Handle numeric strings
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+/**
  * Build query string from filters object.
  * @param {object} filters - Key-value pairs for query params
  * @returns {string} Query string including leading '?'
@@ -116,10 +153,66 @@ export async function getDefectRate(filters) {
 // ─── Volatile (Excel upload) KPIs ─────────────────────────────────────────────
 
 /**
+ * Map snake_case API response keys to camelCase for DashboardView compatibility.
+ * This adapter ensures the volatile KPI response matches the live endpoints contract.
+ * @param {object} response - Raw API response with snake_case keys
+ * @returns {object} Response with camelCase keys (idempotent - existing camelCase keys preserved)
+ */
+function normalizeVolatileResponse(response) {
+  if (!response || typeof response !== 'object') {
+    return response;
+  }
+
+  const snakeToCamel = {
+    aql_by_style: 'aqlByStyle',
+    aql_weekly: 'aqlWeekly',
+    audited_pieces: 'auditedPieces',
+    ac_re_rate_by_line: 'acReRateByLine',
+    seconds_rework: 'secondsRework',
+    performance_by_customer: 'performanceByCustomer',
+    performance_by_line: 'performanceByLine',
+    top_defects: 'topDefects',
+    fabric_defects: 'fabricDefects',
+    defects_by_style_type: 'defectsByStyleType',
+    pass_reject_distribution: 'passRejectDistribution',
+    rejected_evolution: 'rejectedEvolution',
+    containers_by_state: 'containersByState',
+    defect_rate: 'defectRate',
+  };
+
+  const normalized = {};
+
+  for (const [key, value] of Object.entries(response)) {
+    if (snakeToCamel[key]) {
+      const camelKey = snakeToCamel[key];
+      // Special handling for defectRate: unwrap nested object to scalar
+      if (camelKey === 'defectRate') {
+        normalized[camelKey] = unwrapScalarKpiValue(value);
+      } else {
+        normalized[camelKey] = value;
+      }
+    } else if (Object.values(snakeToCamel).includes(key)) {
+      // Already camelCase - keep as-is (idempotent)
+      // Special handling for defectRate: unwrap nested object to scalar
+      if (key === 'defectRate') {
+        normalized[key] = unwrapScalarKpiValue(value);
+      } else {
+        normalized[key] = value;
+      }
+    } else {
+      // Unknown key - preserve as-is
+      normalized[key] = value;
+    }
+  }
+
+  return normalized;
+}
+
+/**
  * Fetch KPIs from an uploaded Excel file via the volatile endpoint.
  * The response has the same format as live KPI endpoints.
  * @param {File} file - The Excel file to process
- * @returns {Promise<object>} KPI results object (same shape as fetchAllKpis)
+ * @returns {Promise<object>} KPI results object (same shape as fetchAllKpis), with camelCase keys
  */
 export async function fetchVolatileKpis(file) {
   const formData = new FormData();
@@ -135,7 +228,8 @@ export async function fetchVolatileKpis(file) {
     throw new Error(error.error || 'Failed to process Excel');
   }
 
-  return response.json();
+  const data = await response.json();
+  return normalizeVolatileResponse(data);
 }
 
 // ─── Bulk fetch ───────────────────────────────────────────────────────────────

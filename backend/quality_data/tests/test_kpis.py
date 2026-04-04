@@ -183,6 +183,41 @@ class AqlByStyleTest(KpiTestMixin, TestCase):
         values = [item["value"] for item in response.data["data"]]
         self.assertEqual(values, sorted(values, reverse=True))
 
+    def test_groups_by_style_with_unique_labels_and_correct_values(self):
+        """Repeated styles are aggregated once with correct AQL."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-02-01",
+            week=6,
+            customer="TestCustomer",
+            team=99,
+            coord="COORD2",
+            po=999,
+            style="Style-0",  # Existing style to force grouping
+            batch=999,
+            color=self.color,
+            qty=100,
+            seconds=30,
+            accepted=80,
+            rejected=20,
+            sample=50,
+            defects_total=5,
+            aql=0,
+            pass_or_fail="REJECT",
+        )
+
+        url = reverse("quality_data:kpi-aql-aql-by-style")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(len(labels), len(set(labels)))  # unique labels only
+
+        style_0 = next(item for item in response.data["data"] if item["label"] == "Style-0")
+        # Original Style-0: defects=3, sample=100; new row: defects=5, sample=50
+        # Expected AQL = (8/150)*100 = 5.33
+        self.assertAlmostEqual(style_0["value"], 5.33, places=2)
+
 
 class AqlWeeklyTest(KpiTestMixin, TestCase):
     """Tests for GET /quality/kpis/aql-weekly/"""
@@ -258,6 +293,41 @@ class AuditedPiecesTest(KpiTestMixin, TestCase):
                 total=Sum("sample")
             )["total"]
             self.assertEqual(y_value, expected)
+
+    def test_returns_one_point_per_week_with_summed_sample(self):
+        """Multiple records in same week collapse into single aggregated point."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-01-11",
+            week=1,  # Existing week to force grouping
+            customer="TestCustomer",
+            team=10,
+            coord="COORD3",
+            po=111,
+            style="Style-extra",
+            batch=111,
+            color=self.color,
+            qty=100,
+            seconds=50,
+            accepted=40,
+            rejected=10,
+            sample=50,
+            defects_total=2,
+            aql=0,
+            pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-aql-audited-pieces")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        points = response.data["data"][0]["data"]
+        weeks = [point["x"] for point in points]
+        self.assertEqual(len(weeks), len(set(weeks)))  # one point per week
+
+        week_1 = next(point for point in points if point["x"] == 1)
+        # Original week 1 sample=100 + new sample=50
+        self.assertEqual(week_1["y"], 150)
 
 
 # ─────────────────────────────────────────────────────────

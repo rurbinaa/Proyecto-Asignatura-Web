@@ -221,7 +221,7 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type):
             )
 
     if inspection_defects:
-        InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000)
+        InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000, ignore_conflicts=True)
 
 
 def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):
@@ -275,13 +275,38 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
 
         container_instances.append(Container(**production_data))
 
-    created_containers = Container.objects.bulk_create(container_instances, batch_size=1000)
+    # Use bulk_create with update_conflicts to handle duplicate container_number
+    # This prevents IntegrityError and allows us to upsert existing containers
+    created_containers = Container.objects.bulk_create(
+        container_instances,
+        batch_size=1000,
+        update_conflicts=True,
+        unique_fields=['container_number'],
+        update_fields=['customer', 'transfer_of_container', 'total_palette', 
+                       'total_palette_pass', 'total_palette_rejected', 
+                       'percentage_pass', 'percentage_reject']
+    )
+
+    # Build a deterministic mapping from container_number to Container instance
+    # by re-querying the database. This ensures we get the actual persisted
+    # container (either newly created or existing) for correct defect linking.
+    container_numbers = [row.get('container_number') for _, row in df.iterrows()]
+    containers_by_number = {
+        c.container_number: c 
+        for c in Container.objects.filter(container_number__in=container_numbers)
+    }
 
     defect_types = ContainerDefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
 
     container_defects = []
-    for (_, row), container_instance in zip(df.iterrows(), created_containers):
+    for _, row in df.iterrows():
+        container_num = row.get('container_number')
+        container_instance = containers_by_number.get(container_num)
+        
+        if container_instance is None:
+            continue
+
         for defect_field in defeacts_fields:
             amount = int(row.get(defect_field, 0) or 0)
 
@@ -301,4 +326,8 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
             )
 
     if container_defects:
-        ContainerInspectionDefect.objects.bulk_create(container_defects, batch_size=2000)
+        ContainerInspectionDefect.objects.bulk_create(
+            container_defects, 
+            batch_size=2000,
+            ignore_conflicts=True  # Skip duplicate (container, defect_type) pairs
+        )
