@@ -1,65 +1,83 @@
-# Proyecto-Asignatura-Web
+# Rift Analytics (Proyecto Asignatura Web)
 
-# Guia de instalacion de Docker
+![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react&logoColor=black)
+![Django](https://img.shields.io/badge/Backend-Django_REST-092E20?logo=django&logoColor=white)
+![Docker](https://img.shields.io/badge/Container-Docker-2496ED?logo=docker&logoColor=white)
 
-## Requisitos previos
-
-Asegurar la instalacion de las siguientes herramientas en el equipo antes de comenzar
-
-1. **[Git](https://git-scm.com/install/): ** Descargar e instalar Git para clonar el repositorio.
-2. **[Docker Desktop](https://www.docker.com/products/docker-desktop/): ** Instalar la herramienta de Docker para levantar los contenedores del entorno de desarrollo. Iniciar el motor de Docker antes de avanzar.
+Rift Analytics es una plataforma web integral diseñada para la digitalización, captura y análisis de calidad (QA) en plantas de manufactura. Permite a los operadores registrar defectos en tiempo real (Touch Capture) y a la gerencia auditar el rendimiento mediante un **Dashboard de Calidad Interactivo** y la carga masiva de lotes vía Excel.
 
 ---
 
-## Intruccion de Instalacion y Ejecucion
+## 📋 Características Principales
 
-### Paso 1: Clonar el repositorio
+- **Dashboard Interactivo de Calidad**: KPIs en tiempo real (AQL, Tasa de Defectos, Rendimiento por Línea/Cliente, Heatmaps de Defectos, etc.) para toma de decisiones gerenciales.
+- **Importación Masiva (Excel Sync)**: Modos *Live DB* (persistencia) y *Fast Mode* (volátil en memoria) para procesar reportes de calidad al instante.
+- **Touch Capture**: Interfaz para operadores en piso de planta para captura rápida de defectos.
+- **Trazabilidad y Auditoría**: Arquitectura de base de datos preparada para manejar cruces de inspecciones de tela, costura y empaque.
 
-Abrir la terminal y ejecutar el siguiente comando para descargar el repositorio:
+Para más detalles operativos, consulta la documentación en `/docs`:
+- [Glosario de Métricas de Calidad](./docs/glosario-metricas-calidad.md)
+- [Manual del Dashboard para Gerencia](./docs/manual-dashboard-gerencia.md)
 
-```powershell
-git clone [https://github.com/rurbinaa/Proyecto-Asignatura-Web](https://github.com/rurbinaa/Proyecto-Asignatura-Web)
-```
+---
 
-Ingresar a la carpeta principal del proyecto una vez finalizada la descarga:
+## 🚀 Guía de Instalación (Entorno Docker)
 
-```powershell
+El proyecto está dockerizado para garantizar que todos los desarrolladores tengan el mismo entorno de ejecución.
+
+### Requisitos Previos
+1. **[Git](https://git-scm.com/install/)**: Para clonar el repositorio.
+2. **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**: Motor de contenedores (Asegúrate de iniciarlo antes de avanzar).
+
+### Paso 1: Clonar el Repositorio
+Abre tu terminal y ejecuta:
+```bash
+git clone https://github.com/rurbinaa/Proyecto-Asignatura-Web.git
 cd Proyecto-Asignatura-Web
 ```
 
-### Paso 2: Configurar variables de entorno
-
-Configurar las credenciales necesarias para el funcionamiento del proyecto creando una copia del archivo de ejemplo:
-
-```powershell
+### Paso 2: Configurar Variables de Entorno
+Crea una copia del archivo `.env.example` y renómbralo a `.env`. Este archivo contiene las credenciales de base de datos y configuración del proyecto.
+```bash
 cp .env.example .env
 ```
+*(Nota: Para el desarrollo local inicial, puedes mantener los valores preconfigurados del `.env.example`).*
 
-*(Nota: Mantener las variables preconfiguradas para el desarrollo local; se recomienda no modificar los valores para el primer arranque).*
-
-### Paso 3: Levantar los servicios con Docker
-
-Comprobar que Docker Desktop se encuentre en ejecución en segundo plano. Ejecutar el siguiente comando en la terminal para construir las imágenes y levantar los contenedores:
-
-```powershell
+### Paso 3: Levantar los Servicios
+Construye las imágenes e inicia los contenedores. La primera vez tomará un par de minutos mientras se descargan las dependencias (Node, Python, PostgreSQL, etc.).
+```bash
 docker compose up --build
 ```
 
-*(Nota: Esperar unos minutos durante la primera ejecución mientras Docker descarga las imágenes base e instala las dependencias necesarias).*
-
-### Paso 4: Acceder a la plataforma
-
-Acceder a la aplicación desde el navegador una vez que la terminal confirme que los servicios están en ejecución:
-
-* **Frontend (Interfaz Gráfica):** Ingresar a [http://localhost:5173](http://localhost:5173)
-* **Backend (API REST):** Ingresar a [http://localhost:8000](http://localhost:8000)
+### Paso 4: Acceder a la Plataforma
+Una vez que la terminal indique que los servicios de React y Django están corriendo, accede desde tu navegador:
+- 💻 **Frontend (Interfaz de Usuario)**: [http://localhost:5173](http://localhost:5173)
+- ⚙️ **Backend (API REST)**: [http://localhost:8000/api/](http://localhost:8000/api/)
 
 ---
 
-## Detener los servicios
+## 🛑 Detener los Servicios
 
-Detener los contenedores de forma segura sin borrar los datos de la base de datos. Abrir una nueva terminal en la raíz del proyecto (o presionar `Ctrl + C` en la terminal en ejecución) y ejecutar el siguiente comando:
-
-```powershell
+Para detener los contenedores de forma segura **sin perder los datos de tu base de datos**, abre una nueva terminal en la raíz del proyecto (o presiona `Ctrl + C` en la terminal que corre los logs) y ejecuta:
+```bash
 docker compose down
+```
+*(Si en algún momento necesitas borrar la base de datos y empezar de cero, puedes usar `docker compose down -v`).*
+
+---
+
+## 🧪 Pruebas (Testing)
+
+El proyecto cuenta con suites de pruebas tanto en Frontend (Vitest) como en Backend (Pytest).
+
+**Backend (Django):**
+```bash
+cd backend
+pytest
+```
+
+**Frontend (React):**
+```bash
+cd frontend
+npm run test:run
 ```
