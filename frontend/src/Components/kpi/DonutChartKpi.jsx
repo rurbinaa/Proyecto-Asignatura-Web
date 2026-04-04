@@ -41,7 +41,7 @@ export default function DonutChartKpi({
             labelLine={!isMonosegment}
           >
             {data.map((entry, index) => (
-              <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+              <Cell key={`${entry?.name ?? 'slice'}-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
           <Tooltip

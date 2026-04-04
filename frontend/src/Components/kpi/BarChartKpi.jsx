@@ -30,7 +30,7 @@ export default function BarChartKpi({
       const current = String(item?.label ?? '').length;
       return Math.max(max, current);
     }, 0);
-    // Allow up to 180px for long labels, minimum 60px
+    // Allow up to 220px for long labels, minimum 88px
     return Math.min(220, Math.max(88, longestLabel * 8 + 30));
   })();
   const categoryWidth = yAxisWidth || computedHorizontalCategoryWidth;

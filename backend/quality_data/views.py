@@ -478,10 +478,7 @@ class KpiFilterMixin:
         # color: foreign key lookup via color__name (case-insensitive contains)
         color = request.query_params.get('color')
         if color:
-            if prefix:
-                filters['color__name__icontains'] = color
-            else:
-                filters['color__name__icontains'] = color
+            filters[f'{prefix}color__name__icontains'] = color
 
         # customer: case-insensitive contains
         customer = request.query_params.get('customer')
@@ -565,7 +562,14 @@ class FabricDefectsView(APIView):
 
         week = request.query_params.get('week')
         if week:
-            queryset = queryset.filter(week__exact=int(week))
+            try:
+                week = int(week)
+            except ValueError:
+                return Response(
+                    {"detail": "Invalid 'week' parameter. It must be an integer."},
+                    status=http_status.HTTP_400_BAD_REQUEST,
+                )
+            queryset = queryset.filter(week__exact=week)
 
         # Aggregate each fabric defect column
         aggregated = queryset.aggregate(
@@ -1218,16 +1222,6 @@ class VolatileKpiView(APIView):
                 fabric_defects = parse_fabric_defects(file_obj)
             except Exception:
                 fabric_defects = None
-
-            try:
-                parse_cut_qty(file_obj)
-            except Exception:
-                pass
-
-            try:
-                parse_enganche(file_obj)
-            except Exception:
-                pass
 
             try:
                 containers = parse_containers_by_state(file_obj)

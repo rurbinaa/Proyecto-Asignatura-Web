@@ -19,6 +19,11 @@ class KpiBarSerializer(serializers.Serializer):
     value = serializers.FloatField()
 
 
+class KpiPointSerializer(serializers.Serializer):
+    """Serializer for a single point in a time series chart."""
+    x = serializers.JSONField()
+    y = serializers.FloatField()
+
 class KpiSeriesSerializer(serializers.Serializer):
     """
     Serializer for time series / line chart data.
@@ -27,11 +32,7 @@ class KpiSeriesSerializer(serializers.Serializer):
         {"name": "Series Name", "data": [{"x": "2025-W01", "y": 42.5}, ...]}
     """
     name = serializers.CharField()
-    data = serializers.ListField(
-        child=serializers.DictField(
-            child=serializers.FloatField()
-        )
-    )
+    data = KpiPointSerializer(many=True)
 
 
 class KpiDonutSerializer(serializers.Serializer):

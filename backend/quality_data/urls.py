@@ -12,10 +12,10 @@ from .views import (
 app_name = 'quality_data'
 
 # Router for ViewSet-based KPI endpoints
-# Both AqlKpiViewSet (Grupo 1) and KpiViewSet (Grupo 2) share /api/kpis/ prefix
+# Use distinct prefixes for each ViewSet to avoid duplicate /kpis/ routes.
 router = DefaultRouter()
-router.register(r'kpis', AqlKpiViewSet, basename='kpi-aql')
-router.register(r'kpis', KpiViewSet, basename='kpi-rendimiento')
+router.register(r'kpis/aql', AqlKpiViewSet, basename='kpi-aql')
+router.register(r'kpis/rendimiento', KpiViewSet, basename='kpi-rendimiento')
 
 urlpatterns = [
     # Legacy endpoints (kept for backward compatibility)

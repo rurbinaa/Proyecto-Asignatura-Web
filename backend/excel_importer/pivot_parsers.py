@@ -9,7 +9,7 @@ import pandas as pd
 from excel_importer.handler_service import load_pivot_range, load_and_clean
 from excel_importer.sheet_configs import (
     PIVOT_RANGES, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
-    CONTAINER_NOT_NUMERIC_COLUMNS, QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS
+    QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS
 )
 
 
@@ -382,7 +382,7 @@ def parse_containers_by_state(file_obj):
     try:
         df = load_and_clean(
             file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
-            CONTAINER_NOT_NUMERIC_COLUMNS, "Container", 2, 24
+            [], "Container", 2, 24
         )
 
         if df.empty:
