@@ -3,7 +3,7 @@ export default function KpiCard({ title, loading = false, error = null, children
     background: '#fff',
     borderRadius: '8px',
     boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    overflow: 'hidden', // Changed from 'visible' to 'hidden' for better layout containment
+    overflow: 'visible',
     minWidth: 0,
   };
 
@@ -19,7 +19,7 @@ export default function KpiCard({ title, loading = false, error = null, children
     padding: '0', // Charts handle their own padding for visual consistency
     minHeight: '120px',
     position: 'relative',
-    overflowX: 'auto', // Changed from 'visible' - allows scrolling on overflow instead of shifting
+    overflowX: 'visible',
     overflowY: 'visible',
   };
 

@@ -75,10 +75,13 @@ function transformPassReject(data) {
 function transformAqlByStyle(data) {
   if (!data || data.error) return null;
   const arr = data.data || data;
-  return arr.map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
+  return arr
+    .map(item => ({
+      label: item.label,
+      value: Number(item.value) || 0,
+    }))
+    .filter((item) => item.value > 0)
+    .slice(0, 12);
 }
 
 /**
@@ -279,13 +282,13 @@ export default function DashboardView({ volatileData, volatileFile }) {
   const [error, setError] = useState(null);
   const [filterOptions, setFilterOptions] = useState(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (activeFilters = filters) => {
     setLoading(true);
     setError(null);
 
     try {
       if (isLiveMode) {
-        const result = await fetchAllKpis(filters);
+        const result = await fetchAllKpis(activeFilters);
         setKpiData(result);
       } else {
         const result = calculateAllKpis(volatileData);
@@ -296,7 +299,7 @@ export default function DashboardView({ volatileData, volatileFile }) {
     } finally {
       setLoading(false);
     }
-  }, [isLiveMode, filters, volatileData]);
+  }, [isLiveMode, volatileData]);
 
   useEffect(() => {
     if (!isVolatileFileMode) {
@@ -348,11 +351,11 @@ export default function DashboardView({ volatileData, volatileFile }) {
   }, []);
 
   const handleApply = useCallback(() => {
-    loadData();
-  }, [loadData]);
+    loadData(filters);
+  }, [loadData, filters]);
 
   const handleReset = useCallback(() => {
-    setFilters({
+    const resetFilters = {
       date_range: ['', ''],
       week: '',
       team: '',
@@ -360,12 +363,16 @@ export default function DashboardView({ volatileData, volatileFile }) {
       color: '',
       customer: '',
       batch: '',
-    });
-  }, []);
+    };
+    setFilters(resetFilters);
+    if (isLiveMode) {
+      loadData(resetFilters);
+    }
+  }, [isLiveMode, loadData]);
 
   const handleRefresh = useCallback(() => {
-    loadData();
-  }, [loadData]);
+    loadData(filters);
+  }, [loadData, filters]);
 
   // Transform data for charts
   const defectRate = normalizeScalarMetric(kpiData?.defectRate);
@@ -471,7 +478,6 @@ export default function DashboardView({ volatileData, volatileFile }) {
               xTickFormatter={(value) => `${value}%`}
               valueFormatter={formatPercent}
               tooltipLabelFormatter={(label) => `Estilo: ${label}`}
-              yAxisWidth={110}
             />
           )}
         </KpiCard>

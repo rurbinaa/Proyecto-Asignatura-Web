@@ -21,7 +21,7 @@ export default function LineChartKpi({
   legendAlign = 'right',
 }) {
   // Unified chart margin for consistent spacing (same as BarChartKpi)
-  const chartMargin = { top: 12, right: 20, left: 8, bottom: 32 };
+  const chartMargin = { top: 12, right: 20, left: 24, bottom: 36 };
 
   const { mergedData, allXValues, useNumericXAxis } = buildMergedLineData(series);
 

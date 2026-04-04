@@ -19,7 +19,7 @@ export default function BarChartKpi({
   chartHeight,
 }) {
   // Unified chart margin for consistent spacing across all bar charts
-  const chartMargin = { top: 12, right: 20, left: 8, bottom: 32 };
+  const chartMargin = { top: 12, right: 20, left: 24, bottom: 36 };
   const defaultTooltipFormatter = (value, name) => [valueFormatter(value), name];
 
   // Compute y-axis width for horizontal bar charts based on actual label content
@@ -31,7 +31,7 @@ export default function BarChartKpi({
       return Math.max(max, current);
     }, 0);
     // Allow up to 180px for long labels, minimum 60px
-    return Math.min(180, Math.max(60, longestLabel * 8 + 24));
+    return Math.min(220, Math.max(88, longestLabel * 8 + 30));
   })();
   const categoryWidth = yAxisWidth || computedHorizontalCategoryWidth;
   const xTickInterval = showAllCategoryTicks ? 0 : 'preserveStartEnd';
