@@ -1,6 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAllKpis, fetchVolatileKpis, getFilterOptions } from '../api/kpi';
 import * as calc from '../utils/kpiCalculations';
+import {
+  transformPassReject,
+  transformAqlByStyle,
+  transformAqlWeekly,
+  transformAuditedPieces,
+  transformRejectedEvolution,
+  transformAcReRateByLine,
+  transformPerformanceByCustomer,
+  transformPerformanceByLine,
+  transformTopDefects,
+  transformFabricDefects,
+  transformContainersByState,
+  transformDefectsByStyleType,
+  transformSecondsRework,
+  formatPercent,
+  formatPieces,
+  formatCount,
+  formatSeconds,
+  formatWeekLabel,
+  formatAcceptanceIndex,
+  trimCategoryLabel,
+  buildLineCountDataByState,
+} from '../utils/chartTransforms';
 import KpiCard from '../Components/kpi/KpiCard';
 import BarChartKpi from '../Components/kpi/BarChartKpi';
 import LineChartKpi from '../Components/kpi/LineChartKpi';
@@ -55,210 +78,6 @@ function calculateAllKpis(rows) {
     defectRate: calc.calculateDefectRate(rows),
   };
 }
-
-/**
- * Transform pass/reject distribution for DonutChart.
- * API returns: [{name: "PASS", value: 85}, {name: "REJECT", value: 15}]
- */
-function transformPassReject(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    name: item.name,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform AQL by style for BarChart horizontal.
- * API returns: {data: [{label: "Style-1", value: 2.34}, ...]}
- */
-function transformAqlByStyle(data) {
-  if (!data || data.error) return null;
-  const arr = data.data || data;
-  return arr
-    .map(item => ({
-      label: item.label,
-      value: Number(item.value) || 0,
-    }))
-    .filter((item) => item.value > 0)
-    .slice(0, 12);
-}
-
-/**
- * Transform AQL weekly for LineChart.
- * API returns: [{name: "AQL", data: [{x: 1, y: 2.3}, ...]}, {name: "Trend", data: [...]}]
- */
-function transformAqlWeekly(data) {
-  if (!data || data.error) return null;
-  const arr = data.data || data;
-  return arr.map(series => ({
-    name: series.name,
-    data: series.data,
-  }));
-}
-
-/**
- * Transform audited pieces for LineChart.
- * API returns: [{name: "Pieces", data: [{x: 1, y: 234}, ...]}]
- */
-function transformAuditedPieces(data) {
-  if (!data || data.error) return null;
-  const arr = data.data || data;
-  return arr.map(series => ({
-    name: series.name,
-    data: series.data,
-  }));
-}
-
-/**
- * Transform rejected evolution for LineChart.
- * API returns: [{name: "Rejected", data: [{x: 1, y: 23}, ...]}]
- */
-function transformRejectedEvolution(data) {
-  if (!data || data.error) return null;
-  const arr = data.data || data;
-  return arr.map(series => ({
-    name: series.name,
-    data: series.data,
-  }));
-}
-
-/**
- * Transform AC/RE rate by line for BarChart.
- * API returns: [{label: "1 - PASS", value: 45}, {label: "1 - REJECT", value: 5}, ...]
- */
-function transformAcReRateByLine(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform performance by customer for BarChart.
- * API returns: [{label: "Customer X", value: 92.5}, ...]
- */
-function transformPerformanceByCustomer(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform performance by line for horizontal BarChart.
- * API returns: [{label: "Line 1", value: 95.2}, ...]
- */
-function transformPerformanceByLine(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform top defects for horizontal BarChart.
- * API returns: [{label: "Loose Thread", value: 234}, ...]
- */
-function transformTopDefects(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform fabric defects for BarChart.
- * API returns: [{label: "Corrido", value: 45}, {label: "Barre", value: 23}, ...]
- */
-function transformFabricDefects(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform containers by state for DonutChart.
- * API returns: [{name: "< 80%", value: 3}, {name: "80-90%", value: 12}, ...]
- */
-function transformContainersByState(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    name: item.name,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform defects by style × type for Heatmap.
- * API returns: [{x: "Style-2", y: "Loose Thread", value: 45}, ...]
- */
-function transformDefectsByStyleType(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    x: item.x,
-    y: item.y,
-    value: item.value,
-  }));
-}
-
-/**
- * Transform seconds rework for double LineChart.
- * API returns: [{name: "Sewing", data: [{x: 1, y: 12.3}, ...]}, {name: "Fabric", data: [...]}]
- */
-function transformSecondsRework(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(series => ({
-    name: series.name,
-    data: series.data,
-  }));
-}
-
-const formatPercent = (value) => `${Number(value).toFixed(2)}%`;
-const formatPieces = (value) => `${Math.round(Number(value))} piezas`;
-const formatCount = (value) => `${Math.round(Number(value))} conteo`;
-const formatSeconds = (value) => `${Number(value).toFixed(1)} seg`;
-const formatWeekLabel = (value) => `Semana ${value}`;
-const formatAcceptanceIndex = (value) => `${Number(value).toFixed(2)} idx`;
-const trimCategoryLabel = (value) => {
-  const text = String(value ?? '');
-  return text.length > 18 ? `${text.slice(0, 18)}…` : text;
-};
-
-const parseLineStateLabel = (label) => {
-  const raw = String(label ?? '');
-  const parts = raw.split(' - ');
-  if (parts.length < 2) {
-    return { line: raw, state: '' };
-  }
-
-  return {
-    line: parts.slice(0, -1).join(' - ').trim(),
-    state: parts[parts.length - 1].trim().toUpperCase(),
-  };
-};
-
-const buildLineCountDataByState = (data, targetState) => {
-  if (!Array.isArray(data)) return [];
-
-  return data
-    .map((item) => {
-      const { line, state } = parseLineStateLabel(item.label);
-      return {
-        line,
-        state,
-        value: Number(item.value) || 0,
-      };
-    })
-    .filter((item) => item.state === targetState)
-    .map((item) => ({ label: item.line, value: item.value }));
-};
 
 export default function DashboardView({ volatileData, volatileFile }) {
   // Live mode = no volatile data, no volatile file
