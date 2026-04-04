@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -89,8 +90,7 @@ DATABASES = {
 }
 
 # DB para test
-import sys
-if 'test' in sys.argv:
+if 'test' in sys.argv or any('pytest' in arg for arg in sys.argv):
     DATABASES['default'] = {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': ':memory:',

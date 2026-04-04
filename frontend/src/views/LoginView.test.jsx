@@ -8,7 +8,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'gerente@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
@@ -26,7 +26,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'gerencia@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
@@ -44,7 +44,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'manager@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
@@ -62,7 +62,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'admin@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
@@ -80,7 +80,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'operator@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
@@ -98,7 +98,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'GERENCIA@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
@@ -141,7 +141,7 @@ describe('LoginView', () => {
       const onLogin = vi.fn();
       render(<LoginView onLogin={onLogin} />);
 
-      fireEvent.change(screen.getByPlaceholderText(/ej. gerente@uniwell.com/i), {
+      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
         target: { value: 'gerente@uniwell.com' },
       });
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));

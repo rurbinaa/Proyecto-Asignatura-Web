@@ -7,7 +7,10 @@ top defects, defects by style type, containers by state).
 """
 import pandas as pd
 from excel_importer.handler_service import load_pivot_range, load_and_clean
-from excel_importer.sheet_configs import PIVOT_RANGES, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS, CONTAINER_NOT_NUMERIC_COLUMNS
+from excel_importer.sheet_configs import (
+    PIVOT_RANGES, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
+    CONTAINER_NOT_NUMERIC_COLUMNS, QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS
+)
 
 
 def _clean_percentage_value(value):
@@ -267,8 +270,6 @@ def parse_enganche(file_obj):
 # ─────────────────────────────────────────────────────────
 # QC FA Plant based parsers (use pre-parsed rows, no Excel read)
 # ─────────────────────────────────────────────────────────
-
-from excel_importer.sheet_configs import QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS
 
 DEFECT_LABEL_MAP = {
     'uneven': 'Uneven', 'broken_stitch': 'Broken Stitch', 'open_seam': 'Open Seam',

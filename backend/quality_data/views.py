@@ -5,12 +5,11 @@ from rest_framework import status as http_status
 from rest_framework.decorators import action
 from rest_framework.viewsets import ViewSet
 from django.shortcuts import get_object_or_404
-from django.db.models import Sum, Avg, Count, FloatField, ExpressionWrapper, Case, When, Value, F
+from django.db.models import Sum, Count, Case, When, F
 import pandas as pd
 import numpy as np
 import datetime
-from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession, InspectionDefect, DefectType, Color
-from quality_data.serializers import KpiBarSerializer
+from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession, InspectionDefect, Color
 from excel_importer.handler_service import (
     load_and_clean,
     bulk_insert,
@@ -117,10 +116,10 @@ class Process(APIView):
     def post (self, request, filename, format = None):
         file_obj = request.data['file']
 
-        # Only qc_fa_plant_df is used for validation in this endpoint.
+        # Only _qc_fa_plant_df is used for validation in this endpoint.
         # The other sheets are parsed but not used here - they will be
         # processed in ExcelConfirmView after user confirms the preview.
-        qc_fa_plant_df = load_and_clean(
+        _qc_fa_plant_df = load_and_clean(
             file_obj,
             QC_FA_PLANT_REMAP,
             QC_FA_PLANT_NUMERIC_COLUMNS,
@@ -731,7 +730,7 @@ class ContainersByStateView(APIView):
             queryset = queryset.filter(customer__icontains=customer)
 
         # Use Case/When for range grouping
-        from django.db.models import Case, When, IntegerField
+        from django.db.models import IntegerField
 
         aggregated = (
             queryset
@@ -1221,14 +1220,14 @@ class VolatileKpiView(APIView):
                 fabric_defects = None
 
             try:
-                cut_qty = parse_cut_qty(file_obj)
+                parse_cut_qty(file_obj)
             except Exception:
-                cut_qty = None
+                pass
 
             try:
-                enganche = parse_enganche(file_obj)
+                parse_enganche(file_obj)
             except Exception:
-                enganche = None
+                pass
 
             try:
                 containers = parse_containers_by_state(file_obj)

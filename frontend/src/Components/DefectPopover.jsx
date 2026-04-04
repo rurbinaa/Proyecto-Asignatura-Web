@@ -1,5 +1,5 @@
 import './DefectPopover.css';
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 
 export default function DefectPopover({ coordinates, onClose, onSave, defectList = [], frequencyMap = {} }) {
   const popoverRef = useRef(null);
@@ -13,27 +13,38 @@ export default function DefectPopover({ coordinates, onClose, onSave, defectList
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-  useEffect(() => {
-    const container = document.querySelector('.garment-container');
-    if (container && popoverRef.current) {
-      const containerRect = container.getBoundingClientRect();
-      const popoverRect = popoverRef.current.getBoundingClientRect();
+  // Use callback ref to set initial position - avoids setState in useEffect
+  const positionedRef = useRef(false);
+  const setInitialPosition = useCallback((node) => {
+    if (node && !positionedRef.current) {
+      const container = document.querySelector('.garment-container');
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const popoverRect = node.getBoundingClientRect();
 
-      let startX = containerRect.left - popoverRect.width - 20; 
-      
-      if (startX < 20) startX = 20; 
+        let startX = containerRect.left - popoverRect.width - 20; 
+        
+        if (startX < 20) startX = 20; 
 
-      let startY = containerRect.top + (coordinates.y / 100) * containerRect.height - (popoverRect.height / 2);
-      
-      if (startY < 20) startY = 20;
-      if (startY + popoverRect.height > window.innerHeight) {
-        startY = window.innerHeight - popoverRect.height - 20;
+        let startY = containerRect.top + (coordinates.y / 100) * containerRect.height - (popoverRect.height / 2);
+        
+        if (startY < 20) startY = 20;
+        if (startY + popoverRect.height > window.innerHeight) {
+          startY = window.innerHeight - popoverRect.height - 20;
+        }
+        
+        setPosition({ x: startX, y: startY });
+        setIsReady(true);
+        positionedRef.current = true;
       }
-      
-      setPosition({ x: startX, y: startY });
-      setIsReady(true);
     }
   }, [coordinates]);
+
+  // Combine refs: popoverRef for dragging, setInitialPosition for positioning
+  const combinedRef = useCallback((node) => {
+    popoverRef.current = node;
+    setInitialPosition(node);
+  }, [setInitialPosition]);
 
   const handleMouseDown = (e) => {
     if (['input', 'button', 'li'].includes(e.target.tagName.toLowerCase())) return;
@@ -158,7 +169,7 @@ export default function DefectPopover({ coordinates, onClose, onSave, defectList
 
   return (
     <div 
-      ref={popoverRef} 
+      ref={combinedRef}
       className={`popover ${isDragging ? 'dragging' : ''}`} 
       style={{ 
         left: `${position.x}px`, 

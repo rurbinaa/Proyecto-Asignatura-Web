@@ -1,8 +1,8 @@
 """
 Tests for handler_service bulk insert functions, specifically the defects-only path.
 """
+import io
 from django.test import TestCase
-from django.db import IntegrityError
 from quality_data.models import (
     Color,
     Container,
@@ -14,9 +14,13 @@ from quality_data.models import (
 )
 from excel_importer.handler_service import (
     _bulk_insert_defects_only,
-    bulk_insert,
     bulk_insert_container,
+    load_and_clean,
+    load_pivot_range,
+    _normalize_defects_fields,
+    _truncate_charfields,
 )
+from quality_data.models import QualityQcFa as QfaModel
 
 
 class BulkInsertDefectsOnlyTest(TestCase):
@@ -126,8 +130,8 @@ class BulkInsertDefectsOnlyTest(TestCase):
 
     def test_multiple_defects_same_inspection(self):
         """Multiple different defect types for same inspection are all created."""
-        defect_type2 = DefectType.objects.create(name="fab_def")
-        quality = QualityQcFa.objects.create(
+        _defect_type2 = DefectType.objects.create(name="fab_def")
+        _quality = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
             week=3,
@@ -205,7 +209,7 @@ class BulkInsertDefectsOnlyDedupeTest(TestCase):
         This is the core bug being fixed.
         """
         # Create parent
-        quality = QualityQcFa.objects.create(
+        _quality = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-02-01",
             week=5,
@@ -487,3 +491,206 @@ class BulkInsertContainerTest(TestCase):
         defect = ContainerInspectionDefect.objects.first()
         self.assertEqual(defect.container, existing_container)
         self.assertEqual(defect.amount, 10)
+
+
+# ─────────────────────────────────────────────────────────
+# Phase 1: load_and_clean Edge Case Tests
+# ─────────────────────────────────────────────────────────
+
+class LoadAndCleanEdgeCasesTest(TestCase):
+    """Edge case tests for load_and_clean function."""
+
+    def test_load_and_clean_empty_file(self):
+        """
+        Empty Excel file (no data rows) returns empty DataFrame
+        instead of crashing.
+        """
+        import pandas as pd
+        # Create an empty Excel file
+        df_empty = pd.DataFrame()
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_empty.to_excel(writer, sheet_name="QC FA Plant", index=False)
+        buffer.seek(0)
+
+        remap_columns = {'PO': 'po'}
+        numeric_columns = ['qty', 'sample']
+        defeacts_fields = ['sew_def']
+
+        df = load_and_clean(
+            buffer,
+            remap_columns,
+            numeric_columns,
+            defeacts_fields,
+            "QC FA Plant",
+            0,  # header at row 0
+            5,
+        )
+
+        self.assertTrue(df.empty)
+
+    def test_load_and_clean_missing_columns(self):
+        """
+        Missing remapped columns should be filled with default values (0 for
+        numeric, ''/UNKNOWN for text) instead of crashing.
+        """
+        import pandas as pd
+        # Excel with PO column only - load_and_clean will add missing numeric/defect columns as 0
+        df_data = pd.DataFrame({'PO': [100, 200, 300]})
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_data.to_excel(writer, sheet_name="QC FA Plant", index=False)
+        buffer.seek(0)
+
+        remap_columns = {'PO': 'po'}
+        numeric_columns = ['qty', 'sample']
+        defeacts_fields = ['sew_def']
+
+        df = load_and_clean(
+            buffer,
+            remap_columns,
+            numeric_columns,
+            defeacts_fields,
+            "QC FA Plant",
+            0,
+            1,  # Only 1 column exists in the file
+        )
+
+        # Missing columns should be added with default values
+        self.assertIn('po', df.columns)
+        self.assertIn('qty', df.columns)
+        self.assertIn('sew_def', df.columns)
+
+    def test_load_and_clean_invalid_extension(self):
+        """
+        File with invalid extension (.csv, .pdf) should raise
+        ValueError or BadZipFile when read as Excel.
+        """
+        # CSV content (not a real Excel file)
+        csv_content = b"col1,col2\n1,2\n3,4"
+
+        remap_columns = {}
+        numeric_columns = []
+        defeacts_fields = []
+
+        # Test CSV content
+        buffer = io.BytesIO(csv_content)
+        with self.assertRaises(Exception):  # Could be ValueError, BadZipFile, or xlrd error
+            load_and_clean(
+                buffer,
+                remap_columns,
+                numeric_columns,
+                defeacts_fields,
+                "QC FA Plant",
+                0,
+                2,
+            )
+
+    def test_load_and_clean_corrupted_file(self):
+        """
+        Non-Excel binary content should raise an exception
+        (BadZipFile, ValueError, or similar) rather than silently processing.
+        """
+        # Random binary content that is not a valid Excel file
+        corrupted_content = b"\x00\x01\x02\x03 NOT AN EXCEL FILE \xff\xfe\xfd"
+
+        remap_columns = {}
+        numeric_columns = []
+        defeacts_fields = []
+
+        buffer = io.BytesIO(corrupted_content)
+        with self.assertRaises(Exception):
+            load_and_clean(
+                buffer,
+                remap_columns,
+                numeric_columns,
+                defeacts_fields,
+                "QC FA Plant",
+                0,
+                5,
+            )
+
+
+class LoadPivotRangeIOTest(TestCase):
+    """Tests for load_pivot_range I/O exception handling."""
+
+    def test_load_pivot_range_file_read_exception(self):
+        """
+        File read exception during upload (e.g., connection reset, timeout)
+        should propagate as exception (as BadZipFile - zipfile's error handling
+        converts I/O errors to BadZipFile when reading zip structure fails).
+        """
+        import pandas as pd
+        import zipfile
+
+        # Create a valid Excel file first
+        df_data = pd.DataFrame({'col_a': [1, 2, 3], 'col_b': [4, 5, 6]})
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_data.to_excel(writer, sheet_name='Sheet1', index=False)
+        buffer.seek(0)
+
+        # Now make the file object raise an I/O error on read
+        class FailingFileObj:
+            def __init__(self, backing):
+                self._backing = backing
+
+            def seek(self, pos, whence=0):
+                return self._backing.seek(pos, whence)
+
+            def tell(self):
+                return self._backing.tell()
+
+            def read(self, size=-1):
+                raise IOError("Connection reset by peer")
+
+        failing_file = FailingFileObj(buffer)
+
+        # Should raise an exception, not silently return empty DataFrame.
+        # Note: zipfile converts I/O errors to BadZipFile when reading fails.
+        with self.assertRaises((IOError, zipfile.BadZipFile)):
+            load_pivot_range(
+                failing_file,
+                sheet='Sheet1',
+                header_row=1,
+                usecols='A:B',
+                nrows=10,
+            )
+
+
+class NormalizeDefectsFieldsTest(TestCase):
+    """Tests for _normalize_defects_fields helper."""
+
+    def test_normalize_defects_fields_none_input(self):
+        """Returns empty list when input is None."""
+        result = _normalize_defects_fields(None)
+        self.assertEqual(result, [])
+
+    def test_normalize_defects_fields_zero_input(self):
+        """Returns empty list when input is 0."""
+        result = _normalize_defects_fields(0)
+        self.assertEqual(result, [])
+
+    def test_normalize_defects_fields_list_input(self):
+        """Returns list unchanged when given a list."""
+        result = _normalize_defects_fields(['sew_def', 'fab_def'])
+        self.assertEqual(result, ['sew_def', 'fab_def'])
+
+
+class TruncateCharFieldsTest(TestCase):
+    """Tests for _truncate_charfields helper."""
+
+    def test_truncate_charfields_under_limit(self):
+        """Strings shorter than max_length are unchanged."""
+        data = {'style': 'N3165', 'customer': 'ACME'}
+        result = _truncate_charfields(QfaModel, data)
+        self.assertEqual(result['style'], 'N3165')
+        self.assertEqual(result['customer'], 'ACME')
+
+    def test_truncate_charfields_over_limit(self):
+        """Strings longer than max_length are truncated."""
+        # Create a model instance to inspect field max_length
+        data = {'style': 'A' * 100, 'customer': 'B' * 200}
+        result = _truncate_charfields(QfaModel, data)
+        # style max_length should truncate the string
+        self.assertLessEqual(len(result['style']), 50)  # Approximate max_length for style

@@ -40,7 +40,7 @@ describe('BarChartKpi Layout Behavior', () => {
       expect(barChartCalls.length).toBeGreaterThan(0);
       const chartProps = barChartCalls[0];
       expect(chartProps.layout).toBe('vertical');
-      expect(chartProps.margin).toEqual({ top: 12, right: 20, left: 8, bottom: 32 });
+      expect(chartProps.margin).toEqual({ top: 12, right: 20, left: 24, bottom: 36 });
     });
 
     it('uses provided yAxisWidth when specified for horizontal charts', () => {
@@ -73,7 +73,7 @@ describe('BarChartKpi Layout Behavior', () => {
 
       // Margins should be consistent
       expect(horizontalMargin).toEqual(verticalMargin);
-      expect(horizontalMargin).toEqual({ top: 12, right: 20, left: 8, bottom: 32 });
+      expect(horizontalMargin).toEqual({ top: 12, right: 20, left: 24, bottom: 36 });
     });
 
     it('renders with bar-chart-kpi class for CSS targeting', () => {

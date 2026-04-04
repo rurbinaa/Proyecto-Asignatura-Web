@@ -1,5 +1,10 @@
 from django.test import TestCase
 from django.db import IntegrityError
+from django.urls import reverse
+from rest_framework.test import APITestCase, APIClient
+from rest_framework import status
+from unittest.mock import patch, MagicMock
+import pandas as pd
 from quality_data.models import (
     Color,
     DefectType,
@@ -286,13 +291,6 @@ class ContainerInspectionDefectModelTest(TestCase):
         self.assertEqual(defect.container, self.container)
         self.assertEqual(defect.defect_type, self.defect_type)
         self.assertEqual(defect.amount, 4)
-
-
-from django.urls import reverse
-from rest_framework.test import APITestCase, APIClient
-from rest_framework import status
-from unittest.mock import patch, MagicMock
-import pandas as pd
 
 
 class ProcessViewTest(APITestCase):

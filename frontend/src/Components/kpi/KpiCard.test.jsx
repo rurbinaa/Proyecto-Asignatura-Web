@@ -62,11 +62,11 @@ describe('KpiCard', () => {
       expect(bodyElement.style.padding).toBe('0px');
     });
 
-    it('card body uses overflow-x auto to prevent shifting on overflow', () => {
+    it('card body uses overflow-x visible to allow natural overflow behavior', () => {
       render(<KpiCard title="Test Card"><span>Content</span></KpiCard>);
       const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
       expect(bodyElement).toBeInTheDocument();
-      expect(bodyElement.style.overflowX).toBe('auto');
+      expect(bodyElement.style.overflowX).toBe('visible');
     });
 
     it('chart container takes full width without dead space', () => {
@@ -80,11 +80,11 @@ describe('KpiCard', () => {
       expect(chartContainer.style.width).toBe('100%');
     });
 
-    it('card has overflow hidden to contain charts properly', () => {
+    it('card has overflow visible for natural flow in masonry layout', () => {
       render(<KpiCard title="Test Card"><span>Content</span></KpiCard>);
       const cardElement = document.querySelector('.kpi-card');
       expect(cardElement).toBeInTheDocument();
-      expect(cardElement.style.overflow).toBe('hidden');
+      expect(cardElement.style.overflow).toBe('visible');
     });
   });
 });

@@ -24,46 +24,6 @@ function sumField(rows, field) {
 }
 
 /**
- * Group rows by a string field and aggregate a numeric field.
- * @param {object[]} rows
- * @param {string} groupKey - Field to group by
- * @param {string} aggField - Numeric field to sum
- * @returns {{ name: string, value: number }[]}
- */
-function groupBySum(rows, groupKey, aggField) {
-  const map = {};
-  for (const row of rows) {
-    const key = String(row[groupKey] ?? 'Desconocido');
-    map[key] = (map[key] ?? 0) + (Number(row[aggField]) || 0);
-  }
-  return Object.entries(map)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-}
-
-/**
- * Group rows by a string field and compute an average of a numeric field.
- * @param {object[]} rows
- * @param {string} groupKey
- * @param {string} aggField
- * @returns {{ name: string, value: number }[]}
- */
-function groupByAvg(rows, groupKey, aggField) {
-  const map = {};
-  const counts = {};
-  for (const row of rows) {
-    const key = String(row[groupKey] ?? 'Desconocido');
-    const val = Number(row[aggField]) || 0;
-    map[key] = (map[key] ?? 0) + val;
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  return Object.entries(map).map(([name, total]) => ({
-    name,
-    value: counts[name] > 0 ? total / counts[name] : 0,
-  }));
-}
-
-/**
  * Group by field and return count of rows.
  * @param {object[]} rows
  * @param {string} groupKey
@@ -177,10 +137,11 @@ export function calculateAcReRateByLine(rows) {
 /**
  * Seconds rework — NOT available in Excel volatile mode.
  *
- * @param {object[]} _rows
+ * @param {object[]} _
  * @returns {null}
  */
-export function calculateSecondsRework(_rows) {
+// eslint-disable-next-line no-unused-vars
+export function calculateSecondsRework(_) {
   return null;
 }
 
@@ -244,20 +205,22 @@ export function calculateTopDefects(rows) {
 /**
  * Fabric defects — NOT available in Excel volatile mode.
  *
- * @param {object[]} _rows
+ * @param {object[]} _
  * @returns {null}
  */
-export function calculateFabricDefects(_rows) {
+// eslint-disable-next-line no-unused-vars
+export function calculateFabricDefects(_) {
   return null;
 }
 
 /**
  * Defects by style type — NOT available in Excel volatile mode.
  *
- * @param {object[]} _rows
+ * @param {object[]} _
  * @returns {null}
  */
-export function calculateDefectsByStyleType(_rows) {
+// eslint-disable-next-line no-unused-vars
+export function calculateDefectsByStyleType(_) {
   return null;
 }
 
@@ -292,10 +255,11 @@ export function calculateRejectedEvolution(rows) {
 /**
  * Containers by state — NOT available in Excel volatile mode.
  *
- * @param {object[]} _rows
+ * @param {object[]} _
  * @returns {null}
  */
-export function calculateContainersByState(_rows) {
+// eslint-disable-next-line no-unused-vars
+export function calculateContainersByState(_) {
   return null;
 }
 

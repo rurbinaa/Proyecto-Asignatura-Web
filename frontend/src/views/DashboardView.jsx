@@ -299,7 +299,7 @@ export default function DashboardView({ volatileData, volatileFile }) {
     } finally {
       setLoading(false);
     }
-  }, [isLiveMode, volatileData]);
+  }, [isLiveMode, volatileData, filters]);
 
   useEffect(() => {
     if (!isVolatileFileMode) {

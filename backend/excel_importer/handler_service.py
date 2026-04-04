@@ -277,7 +277,7 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
 
     # Use bulk_create with update_conflicts to handle duplicate container_number
     # This prevents IntegrityError and allows us to upsert existing containers
-    created_containers = Container.objects.bulk_create(
+    Container.objects.bulk_create(
         container_instances,
         batch_size=1000,
         update_conflicts=True,

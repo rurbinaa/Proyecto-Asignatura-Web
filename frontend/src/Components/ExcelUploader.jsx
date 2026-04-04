@@ -22,7 +22,7 @@ const SHEET_GROUPS_MAP = {
 
 export default function ExcelUploader({ onVolatileDashboard }) {
   const [selectedFile, setSelectedFile] = useState(null);
-  const [reportType, setReportType] = useState('QFA'); 
+  const [reportType] = useState('QFA'); 
   const [errorMsg, setErrorMsg] = useState('');
   
   // State machine: idle, analyzing, preview_ready, confirming, success, error

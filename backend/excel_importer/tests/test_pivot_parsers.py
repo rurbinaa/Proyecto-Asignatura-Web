@@ -3,7 +3,7 @@ Tests for pivot table parsers.
 These tests verify parsing of dynamic ranges from the Excel KPI workbook.
 """
 import io
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.test import TestCase
 import pandas as pd
 

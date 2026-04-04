@@ -14,11 +14,7 @@ from quality_data.models import (
     SecondsA4,
     SecondsGeneral,
     Container,
-    InspectionDefect,
-    ContainerInspectionDefect,
     Color,
-    DefectType,
-    ContainerDefectType,
     ExcelSyncSession,
 )
 from excel_importer.date_utils import parse_date
@@ -718,7 +714,6 @@ def _get_numeric_columns_for_model(model_class):
     """Get numeric columns for a specific model class."""
     from excel_importer.sheet_configs import (
         QC_FA_PLANT_NUMERIC_COLUMNS,
-        QC_FA_CUSTOMER_NUMERIC_COLUMNS,
         CONTAINER_NUMERIC_COLUMNS,
     )
     
@@ -733,7 +728,6 @@ def _get_not_numeric_columns_for_model(model_class):
     """Get non-numeric columns for a specific model class."""
     from excel_importer.sheet_configs import (
         QC_FA_PLANT_NOT_NUMERIC_COLUMNS,
-        QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS,
         CONTAINER_NOT_NUMERIC_COLUMNS,
     )
     

@@ -2,7 +2,6 @@ from django.test import TestCase
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
-    SecondsGeneral,
     Container,
     Color,
     ExcelSyncSession,
@@ -393,7 +392,7 @@ class SessionManagementTest(TestCase):
 
     def test_apply_session_confirms(self):
         """apply_session sets status to confirmed."""
-        color = Color.objects.create(name="red", is_active=True)
+        _color = Color.objects.create(name="red", is_active=True)
         session = ExcelSyncSession.objects.create(
             seconds_a4_data=[{
                 "date": "2025-01-15", "cut_num": 1, "color": "Red",

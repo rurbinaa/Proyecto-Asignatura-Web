@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth.models import User
 
 QUALITY_QC_FA_TABLE_TYPE_CHOICES = [
     ("QFA", "QC FA Plant"),

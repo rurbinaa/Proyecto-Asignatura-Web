@@ -12,7 +12,6 @@ Usage:
     python manage.py seed_mockups
 """
 
-import os
 from pathlib import Path
 
 from django.conf import settings
@@ -73,7 +72,7 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
-            mockup = Mockup.objects.create(
+            Mockup.objects.create(
                 name=name,
                 side=side,
                 image=relative_path,
