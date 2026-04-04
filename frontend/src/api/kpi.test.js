@@ -2,7 +2,10 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchVolatileKpis } from './kpi.js';
+import { fetchVolatileKpis, getFilterOptions } from './kpi.js';
+
+// We need to import buildQueryString but it's not exported
+// So we test it indirectly through the API calls
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -262,5 +265,69 @@ describe('kpi.js - fetchVolatileKpis', () => {
 
     // Should handle non-numeric gracefully
     expect(result.defectRate).toBeNull();
+  });
+
+  it('normalizes filter_options snake_case to camelCase', async () => {
+    const mockResponse = {
+      aql_by_style: [],
+      aql_weekly: [],
+      filter_options: {
+        week: [1, 2, 3],
+        team: [1, 2],
+        style: ['N6165', 'N1234'],
+        color: ['red', 'blue'],
+        customer: ['CustomerA'],
+        batch: [100, 200],
+      },
+    };
+
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+
+    expect(result.filterOptions).toBeDefined();
+    expect(result.filterOptions).toEqual(mockResponse.filter_options);
+  });
+});
+
+describe('kpi.js - getFilterOptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches filter options from correct endpoint', async () => {
+    const mockOptions = {
+      week: [1, 2, 3],
+      team: [1, 2],
+      style: ['N6165', 'N1234'],
+      color: ['red', 'blue'],
+      customer: ['CustomerA'],
+      batch: [100, 200],
+    };
+
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve(mockOptions),
+    });
+
+    const result = await getFilterOptions();
+
+    expect(global.fetch).toHaveBeenCalledOnce();
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toContain('/quality/kpis/filter-options/');
+    expect(result).toEqual(mockOptions);
+  });
+
+  it('throws error on HTTP failure', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ error: 'Not found' }),
+    });
+
+    await expect(getFilterOptions()).rejects.toThrow('Not found');
   });
 });

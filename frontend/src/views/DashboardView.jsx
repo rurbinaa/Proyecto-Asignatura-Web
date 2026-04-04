@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchAllKpis, fetchVolatileKpis } from '../api/kpi';
+import { fetchAllKpis, fetchVolatileKpis, getFilterOptions } from '../api/kpi';
 import * as calc from '../utils/kpiCalculations';
 import KpiCard from '../Components/kpi/KpiCard';
 import BarChartKpi from '../Components/kpi/BarChartKpi';
@@ -277,6 +277,7 @@ export default function DashboardView({ volatileData, volatileFile }) {
   const [kpiData, setKpiData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [filterOptions, setFilterOptions] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -303,6 +304,22 @@ export default function DashboardView({ volatileData, volatileFile }) {
     }
   }, [isVolatileFileMode, loadData]);
 
+  // Fetch filter options for live mode
+  useEffect(() => {
+    if (!isLiveMode) return;
+
+    const fetchOptions = async () => {
+      try {
+        const options = await getFilterOptions();
+        setFilterOptions(options);
+      } catch (err) {
+        console.warn('Failed to fetch filter options:', err.message);
+      }
+    };
+
+    fetchOptions();
+  }, [isLiveMode]);
+
   // Fetch KPIs from volatile file (server-side calculation)
   useEffect(() => {
     if (!volatileFile) return;
@@ -313,6 +330,9 @@ export default function DashboardView({ volatileData, volatileFile }) {
       try {
         const result = await fetchVolatileKpis(volatileFile);
         setKpiData(result);
+        if (result.filterOptions) {
+          setFilterOptions(result.filterOptions);
+        }
       } catch (err) {
         setError(err.message || 'Error al procesar archivo Excel');
       } finally {
@@ -383,6 +403,7 @@ export default function DashboardView({ volatileData, volatileFile }) {
           onFilterChange={handleFilterChange}
           onApply={handleApply}
           onReset={handleReset}
+          filterOptions={filterOptions}
         />
       )}
 

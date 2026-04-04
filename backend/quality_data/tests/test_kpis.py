@@ -513,6 +513,27 @@ class TopDefectsTest(KpiTestMixin, TestCase):
         values = [item["value"] for item in response.data]
         self.assertEqual(values, sorted(values, reverse=True))
 
+    def test_top_defects_style_filter(self):
+        """style filter applies to InspectionDefect via inspection__style."""
+        url = reverse("quality_data:kpi-top-defects")
+        response = self.client.get(f"{url}?style=Style-0")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should return defect data (filtered by inspections with style containing "Style-0")
+        self.assertTrue(len(response.data) > 0)
+
+    def test_top_defects_style_filter_no_match(self):
+        """style filter with non-existent style returns empty."""
+        url = reverse("quality_data:kpi-top-defects")
+        response = self.client.get(f"{url}?style=NONEXISTENT")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_top_defects_team_filter(self):
+        """team filter applies via inspection__team."""
+        url = reverse("quality_data:kpi-top-defects")
+        response = self.client.get(f"{url}?team=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
 
 class FabricDefectsTest(KpiTestMixin, TestCase):
     """Tests for GET /quality/kpis/fabric-defects/"""
@@ -582,6 +603,20 @@ class DefectsByStyleTypeTest(KpiTestMixin, TestCase):
             self.assertIn("x", item)
             self.assertIn("y", item)
             self.assertIn("value", item)
+
+    def test_defects_by_style_type_style_filter(self):
+        """style filter applies via inspection__style."""
+        url = reverse("quality_data:kpi-defects-by-style-type")
+        response = self.client.get(f"{url}?style=Style-0")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        for item in response.data:
+            self.assertIn("Style-0", item["x"])
+
+    def test_defects_by_style_type_team_filter(self):
+        """team filter applies via inspection__team."""
+        url = reverse("quality_data:kpi-defects-by-style-type")
+        response = self.client.get(f"{url}?team=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
 
 
 # ─────────────────────────────────────────────────────────
@@ -970,3 +1005,98 @@ class KpiEdgeCasesTest(TestCase):
         response = self.client.get(f"{url}?date_range=2030-01-01,2030-01-31")
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertEqual(response.data["data"], [])
+
+
+# ─────────────────────────────────────────────────────────
+# Filter Options Endpoint
+# ─────────────────────────────────────────────────────────
+
+class FilterOptionsViewTest(TestCase):
+    """Tests for GET /quality/kpis/filter-options/"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.color = Color.objects.create(name="blue", is_active=True)
+        for i in range(3):
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1=f"2025-01-{i + 10:02d}",
+                week=i + 1,
+                customer="CustomerA" if i == 0 else "CustomerB",
+                team=i + 1,
+                coord="COORD1",
+                po=100 + i,
+                style=f"Style-{i}",
+                batch=100 + i,
+                color=self.color,
+                qty=100,
+                seconds=50,
+                accepted=95 - i,
+                rejected=5 + i,
+                sample=100,
+                defects_total=3 + i,
+                aql=2.5,
+                pass_or_fail="PASS",
+            )
+
+    def test_returns_200_with_filter_options(self):
+        """Returns 200 with distinct values for each filter field."""
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIn("week", response.data)
+        self.assertIn("team", response.data)
+        self.assertIn("style", response.data)
+        self.assertIn("color", response.data)
+        self.assertIn("customer", response.data)
+        self.assertIn("batch", response.data)
+
+    def test_filter_options_contain_expected_values(self):
+        """Returns distinct values from QualityQcFa records."""
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(url)
+        self.assertEqual(set(response.data["week"]), {1, 2, 3})
+        self.assertEqual(set(response.data["team"]), {1, 2, 3})
+        self.assertEqual(set(response.data["style"]), {"Style-0", "Style-1", "Style-2"})
+        self.assertEqual(set(response.data["customer"]), {"CustomerA", "CustomerB"})
+        self.assertEqual(set(response.data["batch"]), {100, 101, 102})
+
+    def test_filter_options_excludes_duplicates(self):
+        """Each field's values are unique."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-02-01",
+            week=4,  # New week
+            customer="CustomerA",  # Duplicate customer
+            team=1,  # Duplicate team
+            coord="COORD2",
+            po=200,
+            style="Style-0",  # Duplicate style
+            batch=100,  # Duplicate batch
+            color=self.color,
+            qty=100,
+            seconds=50,
+            accepted=90,
+            rejected=10,
+            sample=100,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(url)
+        # Should still have unique values (no new unique values added, so counts same)
+        self.assertEqual(len(response.data["week"]), 4)  # 1, 2, 3, 4 (but unique)
+        self.assertEqual(len(response.data["style"]), 3)  # Style-0, Style-1, Style-2
+
+    def test_filter_options_empty_db(self):
+        """Returns empty lists when no QualityQcFa records."""
+        QualityQcFa.objects.all().delete()
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data["week"], [])
+        self.assertEqual(response.data["team"], [])
+        self.assertEqual(response.data["style"], [])
+        self.assertEqual(response.data["customer"], [])
+        self.assertEqual(response.data["batch"], [])

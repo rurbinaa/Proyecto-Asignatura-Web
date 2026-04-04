@@ -1,6 +1,6 @@
 import './FilterBar.css';
 
-export default function FilterBar({ filters, onFilterChange, onApply, onReset }) {
+export default function FilterBar({ filters, onFilterChange, onApply, onReset, filterOptions }) {
   const handleChange = (field, value) => {
     onFilterChange({ ...filters, [field]: value });
   };
@@ -9,6 +9,41 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset })
     const newRange = [...filters.date_range];
     newRange[index] = value;
     onFilterChange({ ...filters, date_range: newRange });
+  };
+
+  const renderSelect = (field, label, placeholder) => {
+    const options = filterOptions?.[field] || [];
+    if (options.length === 0) {
+      return (
+        <input
+          type="text"
+          className="filter-input"
+          value={filters[field]}
+          onChange={(e) => handleChange(field, e.target.value)}
+          placeholder={placeholder}
+          list={`${field}-list`}
+        />
+      );
+    }
+    return (
+      <>
+        <select
+          className="filter-input"
+          value={filters[field]}
+          onChange={(e) => handleChange(field, e.target.value)}
+        >
+          <option value="">{placeholder}</option>
+          {options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+        <datalist id={`${field}-list`}>
+          {options.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+      </>
+    );
   };
 
   return (
@@ -36,70 +71,32 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset })
 
         <div className="filter-group">
           <label className="filter-label">Semana</label>
-          <input
-            type="number"
-            className="filter-input"
-            min="1"
-            max="52"
-            value={filters.week}
-            onChange={(e) => handleChange('week', e.target.value)}
-            placeholder="1-52"
-          />
+          {renderSelect('week', 'Semana', 'Semana')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Team</label>
-          <input
-            type="number"
-            className="filter-input"
-            value={filters.team}
-            onChange={(e) => handleChange('team', e.target.value)}
-            placeholder="#"
-          />
+          {renderSelect('team', 'Team', '#')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Estilo</label>
-          <input
-            type="text"
-            className="filter-input"
-            value={filters.style}
-            onChange={(e) => handleChange('style', e.target.value)}
-            placeholder="Estilo"
-          />
+          {renderSelect('style', 'Estilo', 'Estilo')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Color</label>
-          <input
-            type="text"
-            className="filter-input"
-            value={filters.color}
-            onChange={(e) => handleChange('color', e.target.value)}
-            placeholder="Color"
-          />
+          {renderSelect('color', 'Color', 'Color')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Cliente</label>
-          <input
-            type="text"
-            className="filter-input"
-            value={filters.customer}
-            onChange={(e) => handleChange('customer', e.target.value)}
-            placeholder="Cliente"
-          />
+          {renderSelect('customer', 'Cliente', 'Cliente')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Batch</label>
-          <input
-            type="number"
-            className="filter-input"
-            value={filters.batch}
-            onChange={(e) => handleChange('batch', e.target.value)}
-            placeholder="#"
-          />
+          {renderSelect('batch', 'Batch', '#')}
         </div>
       </div>
 

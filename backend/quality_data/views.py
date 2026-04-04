@@ -9,7 +9,7 @@ from django.db.models import Sum, Avg, Count, FloatField, ExpressionWrapper, Cas
 import pandas as pd
 import numpy as np
 import datetime
-from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession, InspectionDefect, DefectType
+from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession, InspectionDefect, DefectType, Color
 from quality_data.serializers import KpiBarSerializer
 from excel_importer.handler_service import (
     load_and_clean,
@@ -403,7 +403,31 @@ class KpiFilterMixin:
         - color: color__name__icontains
         - customer: customer__icontains
         - batch: batch__exact
+    
+    For InspectionDefect-based querysets, filters are remapped to traverse
+    the inspection FK relation (e.g., style becomes inspection__style).
     """
+
+    # Maps filter names to (QualityQcFa field, is_numeric)
+    FILTER_FIELD_MAP = {
+        'date_range': ('date_1', False),
+        'week': ('week', True),
+        'team': ('team', True),
+        'style': ('style', False),
+        'color': ('color__name', False),
+        'customer': ('customer', False),
+        'batch': ('batch', True),
+    }
+
+    def _get_filter_prefix(self, queryset):
+        """
+        Determine the filter prefix needed based on the queryset model.
+        For InspectionDefect, we need to traverse inspection__ FK.
+        """
+        model_name = queryset.model._meta.model_name
+        if model_name == 'inspectiondefect':
+            return 'inspection__'
+        return ''
 
     def get_filtered_queryset(self, queryset):
         """
@@ -417,6 +441,7 @@ class KpiFilterMixin:
         """
         request = self.request
         filters = {}
+        prefix = self._get_filter_prefix(queryset)
 
         # date_range: "start_date,end_date" → date_1__gte, date_1__lte
         date_range = request.query_params.get('date_range')
@@ -424,16 +449,17 @@ class KpiFilterMixin:
             parts = date_range.split(',')
             if len(parts) == 2:
                 start_date, end_date = parts[0].strip(), parts[1].strip()
+                field = f'{prefix}date_1'
                 if start_date:
-                    filters['date_1__gte'] = start_date
+                    filters[f'{field}__gte'] = start_date
                 if end_date:
-                    filters['date_1__lte'] = end_date
+                    filters[f'{field}__lte'] = end_date
 
         # week: exact integer match
         week = request.query_params.get('week')
         if week:
             try:
-                filters['week__exact'] = int(week)
+                filters[f'{prefix}week__exact'] = int(week)
             except ValueError:
                 pass
 
@@ -441,30 +467,33 @@ class KpiFilterMixin:
         team = request.query_params.get('team')
         if team:
             try:
-                filters['team__exact'] = int(team)
+                filters[f'{prefix}team__exact'] = int(team)
             except ValueError:
                 pass
 
         # style: case-insensitive contains
         style = request.query_params.get('style')
         if style:
-            filters['style__icontains'] = style
+            filters[f'{prefix}style__icontains'] = style
 
         # color: foreign key lookup via color__name (case-insensitive contains)
         color = request.query_params.get('color')
         if color:
-            filters['color__name__icontains'] = color
+            if prefix:
+                filters['color__name__icontains'] = color
+            else:
+                filters['color__name__icontains'] = color
 
         # customer: case-insensitive contains
         customer = request.query_params.get('customer')
         if customer:
-            filters['customer__icontains'] = customer
+            filters[f'{prefix}customer__icontains'] = customer
 
         # batch: exact integer match
         batch = request.query_params.get('batch')
         if batch:
             try:
-                filters['batch__exact'] = int(batch)
+                filters[f'{prefix}batch__exact'] = int(batch)
             except ValueError:
                 pass
 
@@ -1098,6 +1127,57 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
 # Volatile KPIs — In-Memory Excel Processing (No DB)
 # ─────────────────────────────────────────────────────────
 
+class FilterOptionsView(APIView):
+    """
+    GET /api/kpis/filter-options/
+
+    Returns distinct filter choices for week, team, style, color, customer, batch
+    from the QualityQcFa table. Used to populate dynamic filter selects/datalists.
+    """
+
+    def get(self, request):
+        weeks = list(
+            QualityQcFa.objects.values_list('week', flat=True)
+            .distinct()
+            .order_by('week')
+        )
+        teams = list(
+            QualityQcFa.objects.values_list('team', flat=True)
+            .distinct()
+            .order_by('team')
+        )
+        styles = list(
+            QualityQcFa.objects.values_list('style', flat=True)
+            .distinct()
+            .order_by('style')
+        )
+        colors = list(
+            Color.objects.filter(is_active=True)
+            .values_list('name', flat=True)
+            .distinct()
+            .order_by('name')
+        )
+        customers = list(
+            QualityQcFa.objects.values_list('customer', flat=True)
+            .distinct()
+            .order_by('customer')
+        )
+        batches = list(
+            QualityQcFa.objects.values_list('batch', flat=True)
+            .distinct()
+            .order_by('batch')
+        )
+
+        return Response({
+            'week': [w for w in weeks if w is not None],
+            'team': [t for t in teams if t is not None],
+            'style': [s for s in styles if s is not None],
+            'color': [c for c in colors if c is not None],
+            'customer': [c for c in customers if c is not None],
+            'batch': [b for b in batches if b is not None],
+        })
+
+
 class VolatileKpiView(APIView):
     """
     POST /api/kpis/volatile/
@@ -1172,6 +1252,9 @@ class VolatileKpiView(APIView):
                 "containers_by_state": containers,
                 "defect_rate": self._calc_defect_rate(rows),
             }
+
+            filter_options = self._compute_filter_options(rows)
+            kpis["filter_options"] = filter_options
 
             return Response(kpis, status=200)
 
@@ -1352,3 +1435,39 @@ class VolatileKpiView(APIView):
             value = round((total_defects / total_sample) * 100, 2)
 
         return {"label": "Defect Rate", "value": value}
+
+    def _compute_filter_options(self, rows):
+        """
+        Compute distinct filter options from parsed Excel rows.
+        Returns { week, team, style, color, customer, batch }.
+        """
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return {
+                'week': [],
+                'team': [],
+                'style': [],
+                'color': [],
+                'customer': [],
+                'batch': [],
+            }
+
+        options = {}
+        for field in ['week', 'team', 'style', 'customer', 'batch']:
+            if field in df.columns:
+                distinct = df[field].dropna().unique().tolist()
+                if field in ('week', 'team', 'batch'):
+                    options[field] = sorted([int(x) for x in distinct if str(x).isdigit()])
+                else:
+                    options[field] = sorted([str(x) for x in distinct])
+            else:
+                options[field] = []
+
+        if 'color__name' in df.columns:
+            options['color'] = sorted(df['color__name'].dropna().unique().tolist())
+        elif 'color' in df.columns:
+            options['color'] = sorted(df['color'].dropna().unique().tolist())
+        else:
+            options['color'] = []
+
+        return options

@@ -47,8 +47,12 @@ function buildQueryString(filters = {}) {
   Object.entries(filters).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
       // Arrays (like date_range) should be joined with comma
+      // Skip arrays that are empty or contain only empty strings
       if (Array.isArray(value)) {
-        params.append(key, value.join(','));
+        const filtered = value.filter(v => v !== '' && v !== null && v !== undefined);
+        if (filtered.length > 0) {
+          params.append(key, filtered.join(','));
+        }
       } else {
         params.append(key, value);
       }
@@ -79,6 +83,23 @@ export async function fetchKpi(endpoint, filters = {}) {
 }
 
 // ─── Individual KPI helpers ──────────────────────────────────────────────────
+
+/**
+ * Fetch filter options for dashboard filters.
+ * Returns distinct values for week, team, style, color, customer, batch.
+ * @returns {Promise<object>} Filter options object
+ */
+export async function getFilterOptions() {
+  const url = `${API_BASE}/quality/kpis/filter-options/`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || `Filter options fetch failed: ${response.status}`);
+  }
+
+  return response.json();
+}
 
 /** AQL grouped by style (defects/sample % per style). */
 export async function getAqlByStyle(filters) {
@@ -178,6 +199,7 @@ function normalizeVolatileResponse(response) {
     rejected_evolution: 'rejectedEvolution',
     containers_by_state: 'containersByState',
     defect_rate: 'defectRate',
+    filter_options: 'filterOptions',
   };
 
   const normalized = {};
@@ -185,22 +207,18 @@ function normalizeVolatileResponse(response) {
   for (const [key, value] of Object.entries(response)) {
     if (snakeToCamel[key]) {
       const camelKey = snakeToCamel[key];
-      // Special handling for defectRate: unwrap nested object to scalar
       if (camelKey === 'defectRate') {
         normalized[camelKey] = unwrapScalarKpiValue(value);
       } else {
         normalized[camelKey] = value;
       }
     } else if (Object.values(snakeToCamel).includes(key)) {
-      // Already camelCase - keep as-is (idempotent)
-      // Special handling for defectRate: unwrap nested object to scalar
       if (key === 'defectRate') {
         normalized[key] = unwrapScalarKpiValue(value);
       } else {
         normalized[key] = value;
       }
     } else {
-      // Unknown key - preserve as-is
       normalized[key] = value;
     }
   }

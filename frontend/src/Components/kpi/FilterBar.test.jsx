@@ -50,15 +50,14 @@ describe('FilterBar', () => {
       );
 
       const inputs = document.querySelectorAll('.filter-input');
-      // Inputs order: desde, hasta, week, team, style, color, customer, batch
       expect(inputs[0]).toHaveValue('2026-01-01');
       expect(inputs[1]).toHaveValue('2026-01-31');
-      expect(inputs[2]).toHaveValue(5);
-      expect(inputs[3]).toHaveValue(2);
+      expect(inputs[2]).toHaveValue('5');
+      expect(inputs[3]).toHaveValue('2');
       expect(inputs[4]).toHaveValue('Style-X');
       expect(inputs[5]).toHaveValue('Rojo');
       expect(inputs[6]).toHaveValue('Cliente-1');
-      expect(inputs[7]).toHaveValue(10);
+      expect(inputs[7]).toHaveValue('10');
     });
   });
 

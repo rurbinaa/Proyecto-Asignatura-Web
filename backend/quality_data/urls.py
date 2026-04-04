@@ -6,7 +6,7 @@ from .views import (
     KpiViewSet, AqlKpiViewSet,
     PassRejectDistributionView, RejectedEvolutionView,
     ContainersByStateView, DefectRateView,
-    VolatileKpiView,
+    VolatileKpiView, FilterOptionsView,
 )
 
 app_name = 'quality_data'
@@ -43,4 +43,7 @@ urlpatterns = [
 
     # Volatile KPIs — Excel en memoria (sin DB)
     path(r'kpis/volatile/', VolatileKpiView.as_view(), name='kpi-volatile'),
+
+    # Filter options — dynamic choices for filter selects/datalists
+    path(r'kpis/filter-options/', FilterOptionsView.as_view(), name='kpi-filter-options'),
 ]
