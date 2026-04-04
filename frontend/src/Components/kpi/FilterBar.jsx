@@ -21,28 +21,20 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset, f
           value={filters[field]}
           onChange={(e) => handleChange(field, e.target.value)}
           placeholder={placeholder}
-          list={`${field}-list`}
         />
       );
     }
     return (
-      <>
-        <select
-          className="filter-input"
-          value={filters[field]}
-          onChange={(e) => handleChange(field, e.target.value)}
-        >
-          <option value="">{placeholder}</option>
-          {options.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
-        <datalist id={`${field}-list`}>
-          {options.map((opt) => (
-            <option key={opt} value={opt} />
-          ))}
-        </datalist>
-      </>
+      <select
+        className="filter-input"
+        value={filters[field]}
+        onChange={(e) => handleChange(field, e.target.value)}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
     );
   };
 

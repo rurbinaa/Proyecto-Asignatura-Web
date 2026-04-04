@@ -874,13 +874,13 @@ class KpiFilterCustomerTest(KpiTestMixin, TestCase):
         self.assertEqual(total, 6)
 
     def test_customer_filter_performance_by_customer(self):
-        """customer filter (icontains) on performance-by-customer."""
+        """customer filter (iexact) on performance-by-customer."""
         url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
-        response = self.client.get(f"{url}?customer=Test")
+        response = self.client.get(f"{url}?customer=TestCustomer")
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertTrue(len(response.data) > 0)
         for item in response.data:
-            self.assertIn("Test", item["label"])
+            self.assertIn("TestCustomer", item["label"])
 
 
 class KpiFilterWeekTest(KpiTestMixin, TestCase):

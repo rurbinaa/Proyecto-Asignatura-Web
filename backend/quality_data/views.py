@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.decorators import action
 from rest_framework.viewsets import ViewSet
+from rest_framework import exceptions as rest_framework_exceptions
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, Count, Case, When, F
 import pandas as pd
@@ -398,9 +399,9 @@ class KpiFilterMixin:
         - date_range: date_1__gte / date_1__lte (format: "YYYY-MM-DD,YYYY-MM-DD")
         - week: week__exact
         - team: team__exact
-        - style: style__icontains
-        - color: color__name__icontains
-        - customer: customer__icontains
+        - style: style__iexact
+        - color: color__name__iexact
+        - customer: customer__iexact
         - batch: batch__exact
     
     For InspectionDefect-based querysets, filters are remapped to traverse
@@ -460,7 +461,9 @@ class KpiFilterMixin:
             try:
                 filters[f'{prefix}week__exact'] = int(week)
             except ValueError:
-                pass
+                raise rest_framework_exceptions.ValidationError({
+                    'week': 'Invalid value. It must be an integer.'
+                })
 
         # team: exact integer match
         team = request.query_params.get('team')
@@ -468,22 +471,24 @@ class KpiFilterMixin:
             try:
                 filters[f'{prefix}team__exact'] = int(team)
             except ValueError:
-                pass
+                raise rest_framework_exceptions.ValidationError({
+                    'team': 'Invalid value. It must be an integer.'
+                })
 
-        # style: case-insensitive contains
+        # style: exact match (optimized for B-Tree index)
         style = request.query_params.get('style')
         if style:
-            filters[f'{prefix}style__icontains'] = style
+            filters[f'{prefix}style__iexact'] = style
 
-        # color: foreign key lookup via color__name (case-insensitive contains)
+        # color: foreign key lookup via color__name (exact match for B-Tree index)
         color = request.query_params.get('color')
         if color:
-            filters[f'{prefix}color__name__icontains'] = color
+            filters[f'{prefix}color__name__iexact'] = color
 
-        # customer: case-insensitive contains
+        # customer: exact match (optimized for B-Tree index)
         customer = request.query_params.get('customer')
         if customer:
-            filters[f'{prefix}customer__icontains'] = customer
+            filters[f'{prefix}customer__iexact'] = customer
 
         # batch: exact integer match
         batch = request.query_params.get('batch')
@@ -491,7 +496,9 @@ class KpiFilterMixin:
             try:
                 filters[f'{prefix}batch__exact'] = int(batch)
             except ValueError:
-                pass
+                raise rest_framework_exceptions.ValidationError({
+                    'batch': 'Invalid value. It must be an integer.'
+                })
 
         if filters:
             queryset = queryset.filter(**filters)
@@ -1033,7 +1040,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         GET /api/kpis/aql-weekly/
 
         Returns weekly AQL trend with trend line.
-        Formula: AVG(defects_total / sample) * 100
+        Formula: SUM(defects_total) / SUM(sample) * 100
         """
         queryset = self.get_filtered_queryset(self.get_queryset())
 

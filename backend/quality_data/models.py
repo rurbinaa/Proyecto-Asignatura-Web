@@ -48,7 +48,7 @@ class QualityQcFa(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=['week', 'team']),
+            models.Index(fields=['week', 'team'], name='idx_qcfa_team_pof'),
         ]
 
     defects = models.ManyToManyField(

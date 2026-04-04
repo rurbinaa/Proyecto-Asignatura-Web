@@ -3,6 +3,7 @@ import { render } from '@testing-library/react';
 import BarChartKpi from './BarChartKpi';
 
 const barChartCalls = [];
+const yAxisCalls = [];
 
 vi.mock('recharts', () => ({
   BarChart: ({ children, ...props }) => {
@@ -11,7 +12,10 @@ vi.mock('recharts', () => ({
   },
   Bar: vi.fn(() => <div data-testid="bar" />),
   XAxis: vi.fn(() => <div data-testid="x-axis" />),
-  YAxis: vi.fn(() => <div data-testid="y-axis" />),
+  YAxis: vi.fn((props) => {
+    yAxisCalls.push(props);
+    return <div data-testid="y-axis" />;
+  }),
   CartesianGrid: vi.fn(() => <div data-testid="cartesian-grid" />),
   Tooltip: vi.fn(() => <div data-testid="tooltip" />),
   ResponsiveContainer: ({ children }) => (
@@ -22,6 +26,7 @@ vi.mock('recharts', () => ({
 describe('BarChartKpi Layout Behavior', () => {
   beforeEach(() => {
     barChartCalls.length = 0;
+    yAxisCalls.length = 0;
   });
 
   describe('Horizontal bar chart y-axis width', () => {
@@ -36,11 +41,15 @@ describe('BarChartKpi Layout Behavior', () => {
 
       // The YAxis should receive a computed width based on label length
       // 'Very Long Label That Needs More Space' is 38 chars
-      // Expected: min(180, max(60, 38 * 8 + 24)) = min(180, 328) = 180
+      // Expected: min(220, max(88, 38 * 8 + 30)) = min(220, 334) = 220
       expect(barChartCalls.length).toBeGreaterThan(0);
       const chartProps = barChartCalls[0];
       expect(chartProps.layout).toBe('vertical');
       expect(chartProps.margin).toEqual({ top: 12, right: 20, left: 24, bottom: 36 });
+
+      // Assert on YAxis width prop
+      expect(yAxisCalls.length).toBeGreaterThan(0);
+      expect(yAxisCalls[0].width).toBe(220);
     });
 
     it('uses provided yAxisWidth when specified for horizontal charts', () => {

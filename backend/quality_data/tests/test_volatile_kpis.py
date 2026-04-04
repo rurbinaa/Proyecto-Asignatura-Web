@@ -347,6 +347,7 @@ class VolatileKpiViewTest(TestCase):
         """
         import io
         from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
 
         # Create a minimal Excel file with valid structure
         import pandas as pd
@@ -362,11 +363,18 @@ class VolatileKpiViewTest(TestCase):
             df_data.to_excel(writer, sheet_name='QC FA Plant', index=False)
         buffer.seek(0)
 
+        # Wrap buffer in SimpleUploadedFile to correctly simulate DRF multipart upload
+        uploaded_file = SimpleUploadedFile(
+            'kpi.xlsx',
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+
         # When load_and_clean fails, post() should return 400 with error
         with patch('quality_data.views.load_and_clean', side_effect=Exception("Simulated I/O error")):
             response = self.client.post(
                 self.url,
-                {'file': buffer},
+                {'file': uploaded_file},
                 format='multipart'
             )
             # Should return error response, not crash
