@@ -290,7 +290,8 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
     # Build a deterministic mapping from container_number to Container instance
     # by re-querying the database. This ensures we get the actual persisted
     # container (either newly created or existing) for correct defect linking.
-    container_numbers = [row.get('container_number') for _, row in df.iterrows()]
+    container_numbers = df['container_number'].dropna().unique().tolist()
+    container_numbers = [int(num) for num in container_numbers if pd.notna(num)]
     containers_by_number = {
         c.container_number: c 
         for c in Container.objects.filter(container_number__in=container_numbers)

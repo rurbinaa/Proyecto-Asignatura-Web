@@ -478,17 +478,17 @@ class KpiFilterMixin:
         # style: exact match (optimized for B-Tree index)
         style = request.query_params.get('style')
         if style:
-            filters[f'{prefix}style__iexact'] = style
+            filters[f'{prefix}style__exact'] = style
 
         # color: foreign key lookup via color__name (exact match for B-Tree index)
         color = request.query_params.get('color')
         if color:
-            filters[f'{prefix}color__name__iexact'] = color
+            filters[f'{prefix}color__name__exact'] = color
 
         # customer: exact match (optimized for B-Tree index)
         customer = request.query_params.get('customer')
         if customer:
-            filters[f'{prefix}customer__iexact'] = customer
+            filters[f'{prefix}customer__exact'] = customer
 
         # batch: exact integer match
         batch = request.query_params.get('batch')
@@ -738,7 +738,7 @@ class ContainersByStateView(APIView):
         # Apply customer filter if provided (Container has customer field)
         customer = request.query_params.get('customer')
         if customer:
-            queryset = queryset.filter(customer__icontains=customer)
+            queryset = queryset.filter(customer__exact=customer)
 
         # Use Case/When for range grouping
         from django.db.models import IntegerField
@@ -1457,7 +1457,10 @@ class VolatileKpiView(APIView):
             if field in df.columns:
                 distinct = df[field].dropna().unique().tolist()
                 if field in ('week', 'team', 'batch'):
-                    options[field] = sorted([int(x) for x in distinct if str(x).isdigit()])
+                    import numpy as np
+                    numeric_distinct = pd.to_numeric(pd.Series(distinct), errors='coerce')
+                    integer_values = numeric_distinct[numeric_distinct.notna() & np.isfinite(numeric_distinct)]
+                    options[field] = sorted({int(value) for value in integer_values.tolist() if float(value).is_integer()})
                 else:
                     options[field] = sorted([str(x) for x in distinct])
             else:

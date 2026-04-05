@@ -33,7 +33,7 @@ export default function BarChartKpi({
     // Allow up to 220px for long labels, minimum 88px
     return Math.min(220, Math.max(88, longestLabel * 8 + 30));
   })();
-  const categoryWidth = yAxisWidth || computedHorizontalCategoryWidth;
+  const categoryWidth = yAxisWidth ?? computedHorizontalCategoryWidth;
   const xTickInterval = showAllCategoryTicks ? 0 : 'preserveStartEnd';
   const resolvedChartHeight = chartHeight ?? (horizontal
     ? Math.min(560, Math.max(280, data.length * 28 + 140))

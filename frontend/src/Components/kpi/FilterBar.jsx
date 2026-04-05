@@ -25,16 +25,20 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset, f
       );
     }
     return (
-      <select
-        className="filter-input"
-        value={filters[field]}
-        onChange={(e) => handleChange(field, e.target.value)}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
+      <>
+        <label htmlFor={field} className="filter-label">{label}</label>
+        <select
+          id={field}
+          className="filter-input"
+          value={filters[field]}
+          onChange={(e) => handleChange(field, e.target.value)}
+        >
+          <option value="">{placeholder}</option>
+          {options.map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </>
     );
   };
 
