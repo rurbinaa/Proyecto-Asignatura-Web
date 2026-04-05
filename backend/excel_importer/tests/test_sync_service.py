@@ -2,7 +2,6 @@ from django.test import TestCase
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
-    SecondsGeneral,
     Container,
     Color,
     ExcelSyncSession,
@@ -247,6 +246,51 @@ class ApplyUpsertTest(TestCase):
         obj = SecondsA4.objects.get(date="2025-01-15", cut_num=1)
         self.assertEqual(obj.cut_qty, 999)
 
+    def test_container_upsert_dedupes_duplicate_keys_in_same_batch(self):
+        """Duplicate container_number rows in one Excel batch should not crash and last row wins."""
+        excel_rows = [
+            {
+                "container_number": 8,
+                "customer": "A4",
+                "transfer_of_container": 10,
+                "total_palette": 20,
+                "total_palette_pass": 18,
+                "total_palette_rejected": 2,
+                "percentage_pass": 90.0,
+                "percentage_reject": 10.0,
+            },
+            {
+                "container_number": 8,
+                "customer": "A4",
+                "transfer_of_container": 11,
+                "total_palette": 22,
+                "total_palette_pass": 20,
+                "total_palette_rejected": 2,
+                "percentage_pass": 90.9,
+                "percentage_reject": 9.1,
+            },
+        ]
+
+        apply_upsert(
+            excel_rows,
+            Container,
+            build_container_key,
+            not_numeric_columns=["customer", "container_number"],
+            numeric_columns=[
+                "transfer_of_container",
+                "total_palette",
+                "total_palette_pass",
+                "total_palette_rejected",
+                "percentage_pass",
+                "percentage_reject",
+            ],
+        )
+
+        self.assertEqual(Container.objects.count(), 1)
+        obj = Container.objects.get(container_number=8)
+        self.assertEqual(obj.total_palette, 22)
+        self.assertEqual(obj.transfer_of_container, 11)
+
 
 class ApplyTimeWindowTest(TestCase):
     """Tests for apply_timewindow."""
@@ -348,7 +392,7 @@ class SessionManagementTest(TestCase):
 
     def test_apply_session_confirms(self):
         """apply_session sets status to confirmed."""
-        color = Color.objects.create(name="red", is_active=True)
+        _color = Color.objects.create(name="red", is_active=True)
         session = ExcelSyncSession.objects.create(
             seconds_a4_data=[{
                 "date": "2025-01-15", "cut_num": 1, "color": "Red",

@@ -20,9 +20,9 @@ const SHEET_GROUPS_MAP = {
   ALL: ["QC FA Plant", "QC FA Customer", "SecondsA4", "Seconds General", "Container"] 
 };
 
-export default function ExcelUploader() {
+export default function ExcelUploader({ onVolatileDashboard }) {
   const [selectedFile, setSelectedFile] = useState(null);
-  const [reportType, setReportType] = useState('QFA'); 
+  const [reportType] = useState('QFA'); 
   const [errorMsg, setErrorMsg] = useState('');
   
   // State machine: idle, analyzing, preview_ready, confirming, success, error
@@ -239,6 +239,11 @@ export default function ExcelUploader() {
         <button className="ingesta-btn-primary full-width-btn" onClick={handleConfirm}>
           Confirm & Import All ({Object.values(previewStats || {}).reduce((sum, s) => sum + (s.total || 0), 0)} Records)
         </button>
+        {onVolatileDashboard && (
+          <button className="ingesta-btn-outline full-width-btn" onClick={() => onVolatileDashboard(selectedFile)}>
+            View Dashboard (Fast Mode)
+          </button>
+        )}
         <button className="ingesta-btn-outline full-width-btn" onClick={handleReject}>
           <X size={18} />
           Cancel Import

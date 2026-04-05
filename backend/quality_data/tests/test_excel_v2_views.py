@@ -4,8 +4,7 @@ Integration tests for Excel V2 preview/confirm/reject workflow.
 These tests exercise the full flow: upload → preview → confirm/reject.
 """
 
-import io
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -13,8 +12,6 @@ from rest_framework import status
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
-    SecondsGeneral,
-    Container,
     Color,
     ExcelSyncSession,
 )
@@ -108,7 +105,7 @@ class ExcelConfirmViewTest(TestCase):
 
     def test_confirm_applies_changes(self):
         """Confirm applies session and sets status to confirmed."""
-        color = Color.objects.create(name="red", is_active=True)
+        _color = Color.objects.create(name="red", is_active=True)
         session = ExcelSyncSession.objects.create(
             seconds_a4_data=[{
                 "date": "2025-01-15", "cut_num": 1, "color": "Red",

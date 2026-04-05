@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth.models import User
 
 QUALITY_QC_FA_TABLE_TYPE_CHOICES = [
     ("QFA", "QC FA Plant"),
@@ -28,14 +27,14 @@ class QualityQcFa(models.Model):
         max_length=3,
         choices=QUALITY_QC_FA_TABLE_TYPE_CHOICES,
     )
-    date_1 = models.CharField(max_length=20)
-    week = models.IntegerField()
-    customer = models.CharField(max_length=50)
-    team = models.IntegerField()
+    date_1 = models.CharField(max_length=20, db_index=True)
+    week = models.IntegerField(db_index=True)
+    customer = models.CharField(max_length=50, db_index=True)
+    team = models.IntegerField(db_index=True)
     coord = models.CharField(max_length=50)
     date_2 = models.CharField(max_length=20, blank=True, default="")
     po = models.IntegerField()
-    style = models.CharField(max_length=50)
+    style = models.CharField(max_length=50, db_index=True)
     batch = models.IntegerField()
     color = models.ForeignKey(Color, on_delete=models.PROTECT, related_name="quality_qc_fa_records")
     qty = models.IntegerField()
@@ -46,6 +45,12 @@ class QualityQcFa(models.Model):
     defects_total = models.IntegerField(default=0)
     aql = models.FloatField()
     pass_or_fail = models.CharField(max_length=10)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['week', 'team'], name='idx_qcfa_team_pof'),
+        ]
+
     defects = models.ManyToManyField(
         DefectType,
         through="InspectionDefect",
@@ -71,10 +76,10 @@ class InspectionDefect(models.Model):
 
 class SecondsA4(models.Model):
     year = models.IntegerField()
-    week = models.IntegerField()
-    date = models.CharField(max_length=20)
+    week = models.IntegerField(db_index=True)
+    date = models.CharField(max_length=20, db_index=True)
     cut_num = models.IntegerField()
-    style = models.CharField(max_length=50)
+    style = models.CharField(max_length=50, db_index=True)
     cut_qty = models.IntegerField()
     color = models.ForeignKey(Color, on_delete=models.PROTECT, related_name="seconds_a4_records")
     first_quality_qty_sewing = models.IntegerField()
@@ -97,8 +102,8 @@ class SecondsA4(models.Model):
 # Tabla Seconds General
 
 class SecondsGeneral(models.Model):
-    date = models.CharField(max_length=20)
-    week = models.IntegerField()
+    date = models.CharField(max_length=20, db_index=True)
+    week = models.IntegerField(db_index=True)
     corrido_2 = models.IntegerField()
     barre = models.IntegerField()
     otros_3 = models.IntegerField()
@@ -118,7 +123,7 @@ class ContainerDefectType(models.Model):
 
 class Container(models.Model):
     container_number = models.IntegerField(unique=True)
-    customer = models.CharField(max_length=50)
+    customer = models.CharField(max_length=50, db_index=True)
     transfer_of_container = models.IntegerField(default=0)
     total_palette = models.IntegerField()
     total_palette_pass = models.IntegerField()

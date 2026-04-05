@@ -93,6 +93,21 @@ class RevisionDefectViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
+        # Prevent undo on closed inspections
+        try:
+            inspection = InspectionData.objects.get(pk=inspection_id)
+        except InspectionData.DoesNotExist:
+            return Response(
+                {"error": "Inspection not found"},
+                status=404,
+            )
+
+        if inspection.is_closed:
+            return Response(
+                {"error": "Cannot undo on a closed inspection"},
+                status=400,
+            )
+
         last_defect = RevisionDefect.objects.filter(
             inspection_id=inspection_id,
         ).order_by('-timestamp').first()

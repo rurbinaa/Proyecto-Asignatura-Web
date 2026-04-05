@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import './Sidebar.css';
-import { Factory, Hand, Database, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Factory, Hand, Database, LogOut, ChevronLeft, ChevronRight, ChartBar } from 'lucide-react';
 
-export default function Sidebar({ userRole, activeView, setActiveView, onLogout }) {
+export default function Sidebar({ userRole, activeView, setActiveView, setVolatileData = () => {}, onLogout }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -45,6 +45,17 @@ export default function Sidebar({ userRole, activeView, setActiveView, onLogout 
             >
               <Database className="sidebar-nav-icon" />
               {!isCollapsed && <span>Import Batches</span>}
+            </button>
+          )}
+
+          {userRole === 'manager' && (
+            <button 
+              className={`sidebar-nav-item ${activeView === 'dashboard' ? 'active' : ''}`} 
+              title={isCollapsed ? "Dashboard" : ""}
+              onClick={() => { setActiveView('dashboard'); setVolatileData?.(null); }}
+            >
+              <ChartBar className="sidebar-nav-icon" />
+              {!isCollapsed && <span>Dashboard</span>}
             </button>
           )}
           

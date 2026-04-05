@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ExcelUploader from '../Components/ExcelUploader';
 import { cleanText, formatExcelDate, findHeadersAndData } from '../utils/excelParser';
@@ -159,7 +159,9 @@ describe('ExcelUploader Component', () => {
     expect(screen.getByText(/Upload your file for:/)).toBeInTheDocument();
   });
 
-  it('should render the report type selector', () => {
+  // Report type selector is temporarily disabled - backend doesn't support filtering yet
+  // These tests are skipped until the feature is re-enabled
+  it.skip('should render the report type selector', () => {
     render(<ExcelUploader />);
     // The label doesn't have a 'for' attribute, so we look for the select directly
     const select = document.querySelector('.select-field');
@@ -167,7 +169,7 @@ describe('ExcelUploader Component', () => {
     expect(select.tagName).toBe('SELECT');
   });
 
-  it('should change report type on selection', async () => {
+  it.skip('should change report type on selection', async () => {
     const user = userEvent.setup();
     render(<ExcelUploader />);
     
@@ -177,7 +179,7 @@ describe('ExcelUploader Component', () => {
     expect(screen.getByText(/Upload your file for:.*Seconds/)).toBeInTheDocument();
   });
 
-  it('should have all report type options', () => {
+  it.skip('should have all report type options', () => {
     render(<ExcelUploader />);
     expect(screen.getByText('All Sheets (Import All)')).toBeInTheDocument();
     expect(screen.getByText('QC FA (Plant & Customer)')).toBeInTheDocument();
@@ -191,7 +193,7 @@ describe('ExcelUploader Component', () => {
     expect(dropzone).toBeInTheDocument();
   });
 
-  it('should change report type on selection', async () => {
+  it.skip('should change report type on selection', async () => {
     const user = userEvent.setup();
     render(<ExcelUploader />);
     

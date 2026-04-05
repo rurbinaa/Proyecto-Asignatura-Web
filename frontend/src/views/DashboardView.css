@@ -1,0 +1,127 @@
+.dashboard-view {
+  padding: 24px;
+  background-color: #f9fafb;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.dashboard-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+}
+
+.refresh-btn {
+  padding: 10px 20px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.refresh-btn:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+.dashboard-masonry {
+  display: flex;
+  margin-left: -16px;
+  width: auto;
+}
+
+.dashboard-masonry-column {
+  padding-left: 16px;
+  background-attachment: local;
+}
+
+/* Vertical spacing between cards inside each masonry column */
+.dashboard-masonry-column > * {
+  margin-bottom: 16px;
+}
+
+/* Ensure chart KPI containers have no unexpected margins that could cause shifting */
+.bar-chart-kpi,
+.line-chart-kpi,
+.donut-chart-kpi,
+.heatmap-kpi {
+  box-sizing: border-box;
+}
+
+/* Fix for ResponsiveContainer within cards - prevents right-shifting dead space */
+.bar-chart-kpi > div,
+.line-chart-kpi > div,
+.donut-chart-kpi > div {
+  overflow: visible;
+}
+
+.null-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  color: #9ca3af;
+  font-size: 14px;
+  text-align: center;
+}
+
+.volatile-helper {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+  background-color: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Responsive: single column on mobile */
+@media (max-width: 768px) {
+  .dashboard-view {
+    padding: 16px;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .dashboard-title {
+    font-size: 22px;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Ensure horizontal bar charts don't overflow in mobile */
+  .bar-chart-kpi [class*="recharts-responsive-container"] {
+    overflow-x: auto !important;
+  }
+}
