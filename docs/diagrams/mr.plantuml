@@ -1,0 +1,358 @@
+@startuml MR_Logico_3NF
+' ==============================================================================
+' MODELO RELACIONAL (Vista Lógica — 3FN) — Rift Analytics QA
+' ==============================================================================
+' Transformación del MER al modelo relacional:
+'   1. Cada entidad → una relación (tabla)
+'   2. Relaciones 1:N → FK propagada al lado N
+'   3. Relaciones N:M → tabla asociativa con 2 FKs
+'   4. Entidad débil → FK + ON DELETE CASCADE
+'   5. Atributos multivaluados → resueltos (JSONB o tablas)
+'   6. Atributos derivados → almacenados (desnormalización intencional)
+'
+' NO se incluyen: tipos de datos, DEFAULT values, índices.
+' Esos conceptos pertenecen al Modelo Físico.
+'
+' ── VERIFICACIÓN 3FN ──────────────────────────────────────────────────────
+'   ✓ 1FN: Todos los atributos son atómicos.
+'          Los multivaluados del MER ({Coordinates}, {JSON data}) se resolvieron
+'          como columnas JSONB (tipo atómico en PostgreSQL, RFC 8259).
+'   ✓ 2FN: Todas las PKs son simples (SERIAL id), por lo que la dependencia
+'          funcional completa se cumple trivialmente.
+'   ✓ 3FN: Sin dependencias transitivas — con 5 excepciones documentadas
+'          como DESNORMALIZACIONES INTENCIONALES (ver notas en el diagrama):
+'          ⚠️ quality_qc_fa.defects_total   → Σ(inspection_defect.amount)
+'          ⚠️ seconds_a4.percentage_of_2ds  → cálculo aritmético de otros campos
+'          ⚠️ container.percentage_pass      → total_palette_pass / total_palette
+'          ⚠️ container.percentage_reject    → total_palette_rejected / total_palette
+'          ⚠️ inspection_data.week           → ISO week extraído de date
+'          Justificación: evitar JOINs y cálculos en dashboards de tiempo real.
+'          Mitigación: la aplicación (Django ORM) mantiene la consistencia.
+' ─────────────────────────────────────────────────────────────────────────
+' ==============================================================================
+
+skinparam backgroundColor #fafafa
+skinparam defaultFontName "Segoe UI"
+
+skinparam entity {
+  BackgroundColor #ffffff
+  BorderColor #34495e
+  ArrowColor #2980b9
+  FontColor #2c3e50
+}
+skinparam ArrowColor #2980b9
+
+hide circle
+hide methods
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' RELACIONES MAESTRAS (Sin llaves foráneas — entidades independientes)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "auth_user" as user {
+  * <u>id</u> <<PK>>
+  --
+  username  <<UNIQUE>>
+  first_name
+  last_name
+  email
+  password
+  is_staff
+  is_active
+  is_superuser
+  date_joined
+  last_login
+}
+
+entity "color" as color {
+  * <u>id</u> <<PK>>
+  --
+  name  <<UNIQUE>>
+  is_active
+}
+
+entity "defect_type" as defect {
+  * <u>id</u> <<PK>>
+  --
+  name  <<UNIQUE>>
+  is_active
+}
+
+entity "container_defect_type" as c_defect {
+  * <u>id</u> <<PK>>
+  --
+  name  <<UNIQUE>>
+  is_active
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' RELACIONES AISLADAS (Sin FK recibidas ni emitidas)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "mockup" as mockup {
+  * <u>id</u> <<PK>>
+  --
+  name
+  side
+  image
+  width
+  height
+}
+
+entity "seconds_general" as seconds_gen {
+  * <u>id</u> <<PK>>
+  --
+  date
+  week
+  corrido_2
+  barre
+  otros_3
+  degradacion
+  bordados
+  total_de_tela
+}
+
+entity "excel_sync_session" as sync {
+  * <u>id</u> <<PK>>
+  --
+  status
+  created_at
+  qc_fa_plant_data
+  qc_fa_customer_data
+  seconds_a4_data
+  seconds_general_data
+  container_data
+  qc_fa_plant_preview
+  qc_fa_customer_preview
+  seconds_a4_preview
+  seconds_general_preview
+  container_preview
+  warnings
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' RELACIONES CON FK PROPAGADAS (Regla 1:N → FK al lado N)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "quality_qc_fa" as qcfa {
+  * <u>id</u> <<PK>>
+  --
+  table_type
+  date_1
+  week
+  customer
+  team
+  coord
+  date_2
+  po
+  style
+  batch
+  qty
+  seconds
+  accepted
+  rejected
+  sample
+  ⚠️ defects_total  <<DESNORMALIZADO>>
+  aql
+  pass_or_fail
+  ==
+  **color_id** <<FK>> → color(id)
+}
+
+entity "seconds_a4" as sec_a4 {
+  * <u>id</u> <<PK>>
+  --
+  year
+  week
+  date
+  cut_num
+  style
+  cut_qty
+  first_quality_qty_sewing
+  sample
+  pass_field
+  fail_field
+  sew_def
+  fab_def
+  accepted
+  rejected
+  total_of_2ds
+  ⚠️ percentage_of_2ds  <<DESNORMALIZADO>>
+  line
+  seconds_by_sew
+  seconds_by_fab
+  seconds_sew_a4
+  seconds_fab_a4
+  ==
+  **color_id** <<FK>> → color(id)
+}
+
+entity "container" as container {
+  * <u>id</u> <<PK>>
+  --
+  container_number  <<UNIQUE>>
+  customer
+  transfer_of_container
+  total_palette
+  total_palette_pass
+  total_palette_rejected
+  ⚠️ percentage_pass  <<DESNORMALIZADO>>
+  ⚠️ percentage_reject  <<DESNORMALIZADO>>
+}
+
+entity "inspection_data" as insp {
+  * <u>id</u> <<PK>>
+  --
+  date
+  created_at
+  ⚠️ week  <<DESNORMALIZADO>>
+  style
+  size
+  lot
+  is_closed
+  status
+  closed_at
+  ==
+  **inspector_id** <<FK>> → auth_user(id)
+  **color_id** <<FK>> → color(id)
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' TABLAS ASOCIATIVAS (Resolución de relaciones N:M del MER)
+' En el MER estas eran relaciones directas N:M.
+' Aquí se materializan como tablas con dos FKs.
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "inspection_defect" as insp_def {
+  * <u>id</u> <<PK>>
+  --
+  amount
+  ==
+  **inspection_id** <<FK>> → quality_qc_fa(id)
+  **defect_type_id** <<FK>> → defect_type(id)
+  ..
+  <<UNIQUE>> (inspection_id, defect_type_id)
+}
+
+entity "container_inspection_defect" as cont_def {
+  * <u>id</u> <<PK>>
+  --
+  amount
+  ==
+  **container_id** <<FK>> → container(id)
+  **defect_type_id** <<FK>> → container_defect_type(id)
+  ..
+  <<UNIQUE>> (container_id, defect_type_id)
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' RELACIÓN DEPENDIENTE (Entidad débil del MER → FK con CASCADE)
+' El multivaluado {Coordinates} del MER se resuelve como columna JSON.
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "revision_defect" as revdef {
+  * <u>id</u> <<PK>>
+  --
+  defect_size
+  notes
+  defect_count
+  timestamp
+  coordinates_x
+  coordinates_y
+  ==
+  **inspection_id** <<FK>> → inspection_data(id)  [CASCADE]
+  **inspector_id** <<FK>> → auth_user(id)  [NULLABLE]
+  **defect_type_id** <<FK>> → defect_type(id)  [NULLABLE]
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' PROPAGACIÓN DE LLAVES (Líneas FK)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+color ||--o{ qcfa : "color_id"
+color ||--o{ sec_a4 : "color_id"
+color ||--o{ insp : "color_id"
+
+user ||--o{ insp : "inspector_id"
+user ||--o{ revdef : "inspector_id"
+
+qcfa ||--o{ insp_def : "inspection_id"
+defect ||--o{ insp_def : "defect_type_id"
+
+container ||--o{ cont_def : "container_id"
+c_defect ||--o{ cont_def : "defect_type_id"
+
+insp ||--|{ revdef : "inspection_id\n(CASCADE)"
+defect ||--o{ revdef : "defect_type_id"
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' NOTAS DE TRANSFORMACIÓN
+' ═══════════════════════════════════════════════════════════════════════════════
+
+note bottom of insp_def
+  <b>Tabla asociativa</b>
+  Resuelve la relación N:M
+  del MER entre QualityQcFa
+  y DefectType.
+end note
+
+note bottom of cont_def
+  <b>Tabla asociativa</b>
+  Resuelve la relación N:M
+  del MER entre Container
+  y ContainerDefectType.
+end note
+
+note bottom of revdef
+  <b>Entidad débil → CASCADE</b>
+  La FK inspection_id usa
+  ON DELETE CASCADE (se elimina
+  con su padre).
+  Multivaluados del MER
+  resueltos como columnas JSON.
+end note
+
+note as N1
+  <b>Transformaciones del MER → MR:</b>
+  1. Relaciones N:M resueltas en tablas
+     asociativas (inspection_defect,
+     container_inspection_defect)
+  2. FKs propagadas al lado N (1:N)
+  3. Multivaluados resueltos como JSON
+  4. Entidad débil → FK con CASCADE
+end note
+
+note as N2
+  <b>⚠️ Desnormalizaciones intencionales (3FN)</b>
+  Se mantienen 5 campos derivados que
+  estrictamente violan 3FN, justificados
+  por requisitos de rendimiento:
+  ──────────────────────────────────
+  <b>quality_qc_fa.defects_total</b>
+  = Σ(inspection_defect.amount)
+  <i>Evita JOIN + SUM en cada consulta
+  del dashboard. Django lo recalcula
+  al insertar/actualizar defectos.</i>
+  ──────────────────────────────────
+  <b>seconds_a4.percentage_of_2ds</b>
+  = (total_of_2ds / cut_qty) × 100
+  <i>Valor importado desde Excel.
+  Se recalcula en cada sync.</i>
+  ──────────────────────────────────
+  <b>container.percentage_pass</b>
+  = (total_palette_pass / total_palette) × 100
+  <b>container.percentage_reject</b>
+  = (total_palette_rejected / total_palette) × 100
+  <i>Importados desde Excel.
+  Consistencia garantizada en importación.</i>
+  ──────────────────────────────────
+  <b>inspection_data.week</b>
+  = ISO week number de date
+  <i>Calculado en Django save().
+  Evita cálculos de calendario en
+  queries de filtrado semanal.</i>
+end note
+
+title **Modelo Relacional (Vista Lógica — 3FN)** — Rift Analytics QA\nSin tipos de datos · ⚠️ = Desnormalización intencional documentada
+
+@enduml
