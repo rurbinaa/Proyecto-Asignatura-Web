@@ -3,26 +3,22 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LoginView from '../views/LoginView';
 import { useAuth } from '../contexts/AuthContext';
 
-// 1. Hacemos el Mock (simulación) de nuestro AuthContext
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
 describe('LoginView', () => {
-  // Limpiamos las simulaciones antes de cada prueba
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   describe('Authentication Flow', () => {
     it('should call the login function from context with correct credentials', async () => {
-      // Preparamos la función falsa de login para que devuelva "true" (éxito)
       const mockLogin = vi.fn().mockResolvedValue(true);
       useAuth.mockReturnValue({ login: mockLogin });
 
       render(<LoginView />);
 
-      // Llenamos el formulario usando tus placeholders exactos
       fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), {
         target: { value: 'testuser' },
       });
@@ -30,10 +26,8 @@ describe('LoginView', () => {
         target: { value: 'password123' },
       });
       
-      // Enviamos el formulario
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
-      // Verificamos que se haya llamado a la API con los datos
       await waitFor(() => {
         expect(mockLogin).toHaveBeenCalledWith({
           username: 'testuser',
@@ -48,14 +42,12 @@ describe('LoginView', () => {
       useAuth.mockReturnValue({ login: vi.fn() });
       render(<LoginView />);
 
-      // Intentamos enviar el formulario vacío
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
       expect(screen.getByText('Please fill in all fields.')).toBeInTheDocument();
     });
 
     it('should show an error message when credentials are invalid', async () => {
-      // Preparamos la función falsa para que devuelva "false" (credenciales incorrectas)
       const mockLogin = vi.fn().mockResolvedValue(false);
       useAuth.mockReturnValue({ login: mockLogin });
 
@@ -65,7 +57,6 @@ describe('LoginView', () => {
       fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrongpass' } });
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
-      // Verificamos el texto exacto de error que tienes en tu componente
       await waitFor(() => {
         expect(screen.getByText('Invalid credentials or server error.')).toBeInTheDocument();
       });
@@ -89,7 +80,6 @@ describe('LoginView', () => {
 
   describe('UI States', () => {
     it('should change button text to Authenticating while loading', async () => {
-      // Hacemos que la promesa se quede "colgada" para ver el estado de carga
       let resolveLogin;
       const mockPromise = new Promise((resolve) => {
         resolveLogin = resolve;
@@ -105,10 +95,9 @@ describe('LoginView', () => {
       const button = screen.getByRole('button', { name: /log in/i });
       fireEvent.submit(button);
 
-      // Verificamos tu texto de carga exacto
       expect(button).toHaveTextContent('Authenticating...');
 
-      resolveLogin(true); // Limpiamos la promesa
+      resolveLogin(true);
     });
   });
 });
