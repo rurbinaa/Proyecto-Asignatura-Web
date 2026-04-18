@@ -3,12 +3,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchVolatileKpis, getFilterOptions } from './kpi.js';
+import axiosClient from './axiosClient';
 
-// We need to import buildQueryString but it's not exported
-// So we test it indirectly through the API calls
-
-// Mock fetch globally
-global.fetch = vi.fn();
+vi.mock('./axiosClient');
 
 describe('kpi.js - fetchVolatileKpis', () => {
   beforeEach(() => {
@@ -33,11 +30,7 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defect_rate: 2.5,
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
 
     // Verify camelCase keys
@@ -69,11 +62,7 @@ describe('kpi.js - fetchVolatileKpis', () => {
       auditedPieces: 500,
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
 
     expect(result.aqlByStyle).toEqual([{ style: 'B', aql: 1.2 }]);
@@ -87,11 +76,7 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defect_rate: 0,
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
 
     expect(result.aqlByStyle).toBeNull();
@@ -100,12 +85,7 @@ describe('kpi.js - fetchVolatileKpis', () => {
   });
 
   it('throws error on HTTP failure', async () => {
-    global.fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      json: () => Promise.resolve({ error: 'Server error' }),
-    });
-
+    axiosClient.post.mockRejectedValueOnce({ response: { data: { error: 'Server error' }, status: 500 } });
     await expect(fetchVolatileKpis(new File(['test'], 'test.xlsx')))
       .rejects.toThrow('Server error');
   });
@@ -115,18 +95,12 @@ describe('kpi.js - fetchVolatileKpis', () => {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({}),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
     await fetchVolatileKpis(mockFile);
-
-    expect(global.fetch).toHaveBeenCalledOnce();
-    const [url, options] = global.fetch.mock.calls[0];
+    expect(axiosClient.post).toHaveBeenCalledOnce();
+    const [url, formData] = axiosClient.post.mock.calls[0];
     expect(url).toContain('/quality/kpis/volatile/');
-    expect(options.method).toBe('POST');
-    expect(options.body).toBeInstanceOf(FormData);
+    expect(formData).toBeInstanceOf(FormData);
   });
 
   it('contract regression: adapter output matches DashboardView consumer shape', async () => {
@@ -149,11 +123,7 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defect_rate: 2.5,
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(snakeCaseApiResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: snakeCaseApiResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
 
     // DashboardView expects these exact camelCase keys
@@ -200,13 +170,8 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defect_rate: { label: 'Defect Rate', value: 2.5 },
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
-
     // Should unwrap object to scalar
     expect(result.defectRate).toBe(2.5);
     expect(typeof result.defectRate).toBe('number');
@@ -220,13 +185,8 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defectRate: { label: 'Defect Rate', value: 3.2 },
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
-
     // Should unwrap object to scalar
     expect(result.defectRate).toBe(3.2);
     expect(typeof result.defectRate).toBe('number');
@@ -239,13 +199,8 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defect_rate: null,
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
-
     // Should return null without throwing
     expect(result.defectRate).toBeNull();
   });
@@ -256,13 +211,8 @@ describe('kpi.js - fetchVolatileKpis', () => {
       defect_rate: { label: 'Invalid', value: 'not-a-number' },
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
-
     // Should handle non-numeric gracefully
     expect(result.defectRate).toBeNull();
   });
@@ -281,13 +231,8 @@ describe('kpi.js - fetchVolatileKpis', () => {
       },
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
-
     expect(result.filterOptions).toBeDefined();
     expect(result.filterOptions).toEqual(mockResponse.filter_options);
   });
@@ -308,26 +253,16 @@ describe('kpi.js - getFilterOptions', () => {
       batch: [100, 200],
     };
 
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve(mockOptions),
-    });
-
+    axiosClient.get.mockResolvedValueOnce({ data: mockOptions });
     const result = await getFilterOptions();
-
-    expect(global.fetch).toHaveBeenCalledOnce();
-    const [url] = global.fetch.mock.calls[0];
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
     expect(url).toContain('/quality/kpis/filter-options/');
     expect(result).toEqual(mockOptions);
   });
 
   it('throws error on HTTP failure', async () => {
-    global.fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      json: () => Promise.resolve({ error: 'Not found' }),
-    });
-
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
     await expect(getFilterOptions()).rejects.toThrow('Not found');
   });
 });
