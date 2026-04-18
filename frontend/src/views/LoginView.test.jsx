@@ -1,153 +1,114 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LoginView from '../views/LoginView';
+import { useAuth } from '../contexts/AuthContext';
+
+// 1. Hacemos el Mock (simulación) de nuestro AuthContext
+vi.mock('../contexts/AuthContext', () => ({
+  useAuth: vi.fn(),
+}));
 
 describe('LoginView', () => {
-  describe('Role Assignment Logic', () => {
-    it('should assign manager role for gerente email', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
+  // Limpiamos las simulaciones antes de cada prueba
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'gerente@uniwell.com' },
+  describe('Authentication Flow', () => {
+    it('should call the login function from context with correct credentials', async () => {
+      // Preparamos la función falsa de login para que devuelva "true" (éxito)
+      const mockLogin = vi.fn().mockResolvedValue(true);
+      useAuth.mockReturnValue({ login: mockLogin });
+
+      render(<LoginView />);
+
+      // Llenamos el formulario usando tus placeholders exactos
+      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), {
+        target: { value: 'testuser' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
         target: { value: 'password123' },
       });
+      
+      // Enviamos el formulario
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
-      expect(onLogin).toHaveBeenCalledWith({
-        email: 'gerente@uniwell.com',
-        role: 'manager',
-      });
-    });
-
-    it('should assign manager role for gerencia email', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
-
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'gerencia@uniwell.com' },
-      });
-      fireEvent.change(screen.getByPlaceholderText('••••••••'), {
-        target: { value: 'password123' },
-      });
-      fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
-
-      expect(onLogin).toHaveBeenCalledWith({
-        email: 'gerencia@uniwell.com',
-        role: 'manager',
-      });
-    });
-
-    it('should assign manager role for manager email', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
-
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'manager@uniwell.com' },
-      });
-      fireEvent.change(screen.getByPlaceholderText('••••••••'), {
-        target: { value: 'password123' },
-      });
-      fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
-
-      expect(onLogin).toHaveBeenCalledWith({
-        email: 'manager@uniwell.com',
-        role: 'manager',
-      });
-    });
-
-    it('should assign manager role for admin email', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
-
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'admin@uniwell.com' },
-      });
-      fireEvent.change(screen.getByPlaceholderText('••••••••'), {
-        target: { value: 'password123' },
-      });
-      fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
-
-      expect(onLogin).toHaveBeenCalledWith({
-        email: 'admin@uniwell.com',
-        role: 'manager',
-      });
-    });
-
-    it('should assign operator role for operator email', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
-
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'operator@uniwell.com' },
-      });
-      fireEvent.change(screen.getByPlaceholderText('••••••••'), {
-        target: { value: 'password123' },
-      });
-      fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
-
-      expect(onLogin).toHaveBeenCalledWith({
-        email: 'operator@uniwell.com',
-        role: 'operator',
-      });
-    });
-
-    it('should assign manager role case-insensitively for GERENCIA', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
-
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'GERENCIA@uniwell.com' },
-      });
-      fireEvent.change(screen.getByPlaceholderText('••••••••'), {
-        target: { value: 'password123' },
-      });
-      fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
-
-      expect(onLogin).toHaveBeenCalledWith({
-        email: 'GERENCIA@uniwell.com',
-        role: 'manager',
+      // Verificamos que se haya llamado a la API con los datos
+      await waitFor(() => {
+        expect(mockLogin).toHaveBeenCalledWith({
+          username: 'testuser',
+          password: 'password123',
+        });
       });
     });
   });
 
   describe('Error Handling', () => {
     it('should show error message for empty fields', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
+      useAuth.mockReturnValue({ login: vi.fn() });
+      render(<LoginView />);
 
+      // Intentamos enviar el formulario vacío
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
       expect(screen.getByText('Please fill in all fields.')).toBeInTheDocument();
-      expect(onLogin).not.toHaveBeenCalled();
     });
 
-    it('should show error message for empty email only', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
+    it('should show an error message when credentials are invalid', async () => {
+      // Preparamos la función falsa para que devuelva "false" (credenciales incorrectas)
+      const mockLogin = vi.fn().mockResolvedValue(false);
+      useAuth.mockReturnValue({ login: mockLogin });
 
-      fireEvent.change(screen.getByPlaceholderText('••••••••'), {
-        target: { value: 'password123' },
-      });
+      render(<LoginView />);
+
+      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), { target: { value: 'wronguser' } });
+      fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrongpass' } });
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
-      expect(screen.getByText('Please fill in all fields.')).toBeInTheDocument();
-      expect(onLogin).not.toHaveBeenCalled();
+      // Verificamos el texto exacto de error que tienes en tu componente
+      await waitFor(() => {
+        expect(screen.getByText('Invalid credentials or server error.')).toBeInTheDocument();
+      });
     });
 
-    it('should show error message for empty password only', () => {
-      const onLogin = vi.fn();
-      render(<LoginView onLogin={onLogin} />);
+    it('should show an error message when the backend is offline', async () => {
+      const mockLogin = vi.fn().mockRejectedValue(new Error('Network Error'));
+      useAuth.mockReturnValue({ login: mockLogin });
 
-      fireEvent.change(screen.getByPlaceholderText(/e\.g\./i), {
-        target: { value: 'gerente@uniwell.com' },
-      });
+      render(<LoginView />);
+
+      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
-      expect(screen.getByText('Please fill in all fields.')).toBeInTheDocument();
-      expect(onLogin).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(screen.getByText('Connection error. Please try again later.')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('UI States', () => {
+    it('should change button text to Authenticating while loading', async () => {
+      // Hacemos que la promesa se quede "colgada" para ver el estado de carga
+      let resolveLogin;
+      const mockPromise = new Promise((resolve) => {
+        resolveLogin = resolve;
+      });
+      const mockLogin = vi.fn().mockReturnValue(mockPromise);
+      useAuth.mockReturnValue({ login: mockLogin });
+
+      render(<LoginView />);
+
+      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
+      
+      const button = screen.getByRole('button', { name: /log in/i });
+      fireEvent.submit(button);
+
+      // Verificamos tu texto de carga exacto
+      expect(button).toHaveTextContent('Authenticating...');
+
+      resolveLogin(true); // Limpiamos la promesa
     });
   });
 });
