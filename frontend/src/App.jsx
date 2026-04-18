@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
@@ -7,17 +7,11 @@ import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
 import DashboardView from './views/DashboardView.jsx';
 
-const STORAGE_KEY = 'rift-user';
+import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'; 
 
-function App() {
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  }); 
+function AppContent() {
+  const { user, loading, isAuthenticated, logout } = useAuth(); 
+
   const [activeView, setActiveView] = useState(() => {
     try {
       const stored = localStorage.getItem('rift-activeView');
@@ -26,30 +20,38 @@ function App() {
       return '';
     }
   });
+  
   const [volatileData, setVolatileData] = useState(null);
   const [volatileFile, setVolatileFile] = useState(null);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const storedView = localStorage.getItem('rift-activeView');
+      if (!storedView) {
+        const defaultView = user.role === 'manager' ? 'excel' : 'capture';
+        setActiveView(defaultView);
+        localStorage.setItem('rift-activeView', defaultView);
+      }
+    }
+  }, [isAuthenticated, user]);
 
   const handleVolatileDashboard = (file) => {
     setVolatileFile(file);
     setActiveView('dashboard');
   };
 
-  const handleLogin = (userData) => {
-    setUser(userData);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
-    setActiveView(userData.role === 'manager' ? 'excel' : 'capture');
-    localStorage.setItem('rift-activeView', userData.role === 'manager' ? 'excel' : 'capture');
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+  const handleLogout = async () => {
+    await logout();
     localStorage.removeItem('rift-activeView');
     setActiveView('');
   };
 
-  if (!user) {
-    return <LoginView onLogin={handleLogin} />;
+  if (loading) {
+    return <div className="app-layout" style={{ justifyContent: 'center', alignItems: 'center', color: 'white' }}>Verificando sesión...</div>;
+  }
+
+  if (!isAuthenticated || !user) {
+    return <LoginView />;
   }
 
   return (
@@ -58,7 +60,10 @@ function App() {
       <Sidebar 
         userRole={user.role} 
         activeView={activeView} 
-        setActiveView={setActiveView} 
+        setActiveView={(view) => {
+          setActiveView(view);
+          localStorage.setItem('rift-activeView', view);
+        }} 
         setVolatileData={setVolatileData}
         onLogout={handleLogout} 
       />
@@ -91,4 +96,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
