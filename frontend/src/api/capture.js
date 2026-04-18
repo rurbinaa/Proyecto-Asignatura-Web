@@ -1,3 +1,4 @@
+import axiosClient from './axiosClient';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
@@ -11,20 +12,12 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
  * @returns {Promise<object>} Created inspection with ID
  */
 export async function createInspection(data) {
-  const response = await fetch(`${API_BASE}/api/v1/inspections/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Create inspection failed: ${response.status}`);
+  try {
+    const res = await axiosClient.post('/api/v1/inspections/', data);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Create inspection failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 /**
@@ -40,20 +33,12 @@ export async function createInspection(data) {
  * @returns {Promise<object>} Created defect record
  */
 export async function createDefect(data) {
-  const response = await fetch(`${API_BASE}/api/v1/defects/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Create defect failed: ${response.status}`);
+  try {
+    const res = await axiosClient.post('/api/v1/defects/', data);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Create defect failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 /**
@@ -63,19 +48,12 @@ export async function createDefect(data) {
  * @returns {Promise<object>} Result message
  */
 export async function undoDefect(inspectionId) {
-  const response = await fetch(
-    `${API_BASE}/api/v1/defects/undo/?inspection=${inspectionId}`,
-    {
-      method: 'DELETE',
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Undo defect failed: ${response.status}`);
+  try {
+    const res = await axiosClient.delete(`/api/v1/defects/undo/?inspection=${inspectionId}`);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Undo defect failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 /**
@@ -85,22 +63,12 @@ export async function undoDefect(inspectionId) {
  * @returns {Promise<object>} Result with status, result, and sync info
  */
 export async function closeInspection(inspectionId) {
-  const response = await fetch(
-    `${API_BASE}/api/v1/inspections/${inspectionId}/close_inspection/`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Close inspection failed: ${response.status}`);
+  try {
+    const res = await axiosClient.post(`/api/v1/inspections/${inspectionId}/close_inspection/`);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Close inspection failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 /**
@@ -109,12 +77,10 @@ export async function closeInspection(inspectionId) {
  * @returns {Promise<object[]>} List of mockup objects
  */
 export async function getMockups() {
-  const response = await fetch(`${API_BASE}/api/v1/mockups/`);
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Get mockups failed: ${response.status}`);
+  try {
+    const res = await axiosClient.get('/api/v1/mockups/');
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Get mockups failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
