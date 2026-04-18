@@ -1,3 +1,4 @@
+import axiosClient from './axiosClient';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
@@ -11,22 +12,21 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
  */
 export async function uploadForPreview(file) {
   const filename = encodeURIComponent(file.name);
-  const url = `${API_BASE}/quality/excel/preview/${filename}/`;
-
+  const url = `/quality/excel/preview/${filename}/`;
   const formData = new FormData();
   formData.append('file', file, filename);
-
-  const response = await fetch(url, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Preview failed: ${response.status}`);
+  try {
+    const res = await axiosClient.post(url, formData);
+    return res.data;
+  } catch (error) {
+    if (error.response) {
+      throw new Error(error.response.data?.error || `Preview failed: ${error.response.status}`);
+    } else if (error.message) {
+      throw new Error(error.message);
+    } else {
+      throw new Error('Preview failed: unknown error');
+    }
   }
-
-  return response.json();
 }
 
 /**
@@ -36,21 +36,13 @@ export async function uploadForPreview(file) {
  * @returns {Promise<{session_id: number, status: string, message: string}>}
  */
 export async function confirmSession(sessionId) {
-  const url = `${API_BASE}/quality/excel/confirm/${sessionId}/`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Confirm failed: ${response.status}`);
+  const url = `/quality/excel/confirm/${sessionId}/`;
+  try {
+    const res = await axiosClient.post(url);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Confirm failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 /**
@@ -60,16 +52,11 @@ export async function confirmSession(sessionId) {
  * @returns {Promise<{session_id: number, status: string, message: string}>}
  */
 export async function rejectSession(sessionId) {
-  const url = `${API_BASE}/quality/excel/reject/${sessionId}/`;
-
-  const response = await fetch(url, {
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Reject failed: ${response.status}`);
+  const url = `/quality/excel/reject/${sessionId}/`;
+  try {
+    const res = await axiosClient.delete(url);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Reject failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
