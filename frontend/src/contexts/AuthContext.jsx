@@ -7,7 +7,6 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Task 1: Verify session on mount
   const checkSession = useCallback(async () => {
     try {
       const res = await axiosClient.get('auth/me/');
@@ -23,7 +22,6 @@ export const AuthProvider = ({ children }) => {
     checkSession();
   }, [checkSession]);
 
-  // Task 4: Listen to the global 401 event
   useEffect(() => {
     const handleUnauthorized = () => {
       setUser(null);
