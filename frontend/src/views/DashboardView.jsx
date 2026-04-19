@@ -34,6 +34,7 @@ import FilterBar from '../Components/kpi/FilterBar';
 import { normalizeScalarMetric } from './dashboardMetricUtils';
 import Masonry from 'react-masonry-css';
 import './DashboardView.css';
+import { withRoleProtection } from '../hooks/withRoleProtection';
 
 /**
  * Calculate all KPIs from volatile (Excel) data.
@@ -469,5 +470,4 @@ function DashboardView({ volatileData, volatileFile }) {
   );
 }
 
-import { withRoleProtection } from '../hooks/withRoleProtection';
 export default withRoleProtection(DashboardView, ['manager']);
