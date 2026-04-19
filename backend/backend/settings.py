@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'quality_data',
     'media_data',
+    'excel_reports',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

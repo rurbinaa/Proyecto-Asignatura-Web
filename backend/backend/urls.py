@@ -16,9 +16,15 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.http import HttpResponse
+
+def home(request):
+    return HttpResponse("Bienvenido al backend de Proyecto Asignatura Web. Endpoints disponibles: /admin/, /api/v1/, /quality/, /excel/")
 
 urlpatterns = [
+    path('', home, name='home'),
     path('admin/', admin.site.urls),
     path('', include('media_data.urls', namespace='media_data')),
     path('quality/', include('quality_data.urls', namespace='quality_data')),
+    path('excel/', include('excel_reports.urls', namespace='excel_reports')),
 ]
