@@ -1,3 +1,4 @@
+import axiosClient from './axiosClient';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
@@ -70,16 +71,13 @@ function buildQueryString(filters = {}) {
  */
 export async function fetchKpi(endpoint, filters = {}) {
   const queryString = buildQueryString(filters);
-  const url = `${API_BASE}/quality/kpis/${endpoint}${queryString}`;
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `KPI fetch failed: ${response.status}`);
+  const url = `/quality/kpis/${endpoint}${queryString}`;
+  try {
+    const res = await axiosClient.get(url);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `KPI fetch failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 // ─── Individual KPI helpers ──────────────────────────────────────────────────
@@ -90,15 +88,13 @@ export async function fetchKpi(endpoint, filters = {}) {
  * @returns {Promise<object>} Filter options object
  */
 export async function getFilterOptions() {
-  const url = `${API_BASE}/quality/kpis/filter-options/`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `Filter options fetch failed: ${response.status}`);
+  const url = `/quality/kpis/filter-options/`;
+  try {
+    const res = await axiosClient.get(url);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Filter options fetch failed: ${error.response?.status}`);
   }
-
-  return response.json();
 }
 
 /** AQL grouped by style (defects/sample % per style). */
@@ -235,19 +231,12 @@ function normalizeVolatileResponse(response) {
 export async function fetchVolatileKpis(file) {
   const formData = new FormData();
   formData.append('file', file);
-
-  const response = await fetch(`${API_BASE}/quality/kpis/volatile/`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(error.error || 'Failed to process Excel');
+  try {
+    const res = await axiosClient.post('/quality/kpis/volatile/', formData);
+    return normalizeVolatileResponse(res.data);
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to process Excel');
   }
-
-  const data = await response.json();
-  return normalizeVolatileResponse(data);
 }
 
 // ─── Bulk fetch ───────────────────────────────────────────────────────────────
