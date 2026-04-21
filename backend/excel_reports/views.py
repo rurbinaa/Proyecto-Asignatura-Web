@@ -4,12 +4,12 @@ import io
 from media_data.models import RevisionDefect
 from datetime import datetime
 
-def prueba_carga(request):
+def load_test(request):
     service = ExcelService('plantilla_corporativa.xlsx')
     wb = service.load_workbook()
     return HttpResponse("Template loaded successfully")
 
-def generar_reporte(request):
+def generate_excel(request):
     start_date_str = request.GET.get('start_date')
     end_date_str = request.GET.get('end_date')
     
