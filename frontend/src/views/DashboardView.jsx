@@ -34,6 +34,7 @@ import FilterBar from '../Components/kpi/FilterBar';
 import { normalizeScalarMetric } from './dashboardMetricUtils';
 import Masonry from 'react-masonry-css';
 import './DashboardView.css';
+import { withRoleProtection } from '../hooks/withRoleProtection';
 
 /**
  * Calculate all KPIs from volatile (Excel) data.
@@ -79,7 +80,7 @@ function calculateAllKpis(rows) {
   };
 }
 
-export default function DashboardView({ volatileData, volatileFile }) {
+function DashboardView({ volatileData, volatileFile }) {
   // Live mode = no volatile data, no volatile file
   // Volatile mode (file) = volatileFile provided (server-side calculation)
   // Volatile mode (data) = volatileData provided (client-side calculation)
@@ -468,3 +469,5 @@ export default function DashboardView({ volatileData, volatileFile }) {
     </div>
   );
 }
+
+export default withRoleProtection(DashboardView, ['manager']);

@@ -1,28 +1,37 @@
 import { useState } from 'react';
 import { Factory } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import './LoginView.css';
 
-export default function LoginView({ onLogin }) {
-  const [email, setEmail] = useState('');
+export default function LoginView() {
+  const { login } = useAuth(); 
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!email || !password) {
+    if (!username || !password) {
       setError('Please fill in all fields.');
       return;
     }
 
-    const userRole = /gerente|gerencia|manager|admin/i.test(email) ? 'manager' : 'operator';
-    
-    const userData = {
-      email: email,
-      role: userRole,
-    };
+    setError('');
+    setIsLoading(true);
 
-    onLogin(userData); 
+    try {
+      const success = await login({ username, password });
+      
+      if (!success) {
+        setError('Invalid credentials or server error.');
+      }
+    } catch (err) {
+      setError('Connection error. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -36,13 +45,13 @@ export default function LoginView({ onLogin }) {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="input-group">
-            <label className="input-label">Email</label>
+            <label className="input-label">Username</label>
             <input 
-              type="email" 
+              type="text" 
               className="input-field" 
-              placeholder="e.g. manager@uniwell.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g. operator_01"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
             />
           </div>
 
@@ -59,8 +68,8 @@ export default function LoginView({ onLogin }) {
 
           {error && <p className="error-text">{error}</p>}
 
-          <button type="submit" className="login-button">
-            Log In
+          <button type="submit" className="login-button" disabled={isLoading}>
+            {isLoading ? 'Authenticating...' : 'Log In'}
           </button>
         </form>
       </div>
