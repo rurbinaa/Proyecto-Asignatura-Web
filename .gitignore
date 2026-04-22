@@ -132,3 +132,7 @@ pytest_cache/
 # archivos confidenciales
 *.xlsx
 /.atl
+# ============================================
+#  ARCHIVOS BASURA / ACCIDENTALES
+# ============================================
+react-router-dom
