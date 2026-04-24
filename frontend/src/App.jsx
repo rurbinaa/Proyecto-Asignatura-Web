@@ -46,6 +46,10 @@ function AppContent() {
     setActiveView('');
   };
 
+  if (loading) {
+    return <div className="app-loading">Verificando sesión...</div>;
+  }
+
   if (!isAuthenticated || !user) {
     return <LoginView />;
   }
