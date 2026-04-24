@@ -1,0 +1,107 @@
+schema: spec-driven
+
+context: |
+  Tech stack: React 19 + Vite (frontend), Django 5 + DRF + Channels (backend)
+  Architecture: Full-stack web app, Docker containerized, PostgreSQL + Redis
+  Domain: Quality data management (Excel imports, KPI dashboards, container tracking)
+  Testing: Vitest + @testing-library/react (frontend), pytest-django (backend)
+  Style: ESLint + Prettier conventions
+
+strict_tdd: true
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages (frontend/backend/both)
+    - Note Docker/containerization impact if applicable
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Cover both frontend (React components) and backend (Django views/models)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document API contract changes between frontend/backend
+    - Note WebSocket/Channels interactions if applicable
+  tasks:
+    - Group tasks by phase (infrastructure, backend, frontend, integration)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+    - Separate backend and frontend concerns
+  apply:
+    - Follow existing code patterns and conventions
+    - Run tests before and after changes (strict TDD)
+    - Update both sides of API contracts when changing interfaces
+  verify:
+    - Run full test suite: `npm run test:run` (frontend) + `pytest` (backend)
+    - Compare implementation against every spec scenario
+    - Verify Docker builds if Dockerfile changed
+  archive:
+    - Warn before merging destructive deltas (large removals)
+    - Preserve exploration insights for future reference
+
+testing:
+  strict_tdd_mode: enabled
+  detected: 2025-04-03
+
+  runner:
+    frontend:
+      command: npm run test:run
+      framework: Vitest
+      workspace: frontend/
+    backend:
+      command: pytest
+      framework: pytest-django
+      workspace: backend/
+
+  layers:
+    frontend:
+      unit:
+        available: true
+        tool: Vitest
+      integration:
+        available: true
+        tool: "@testing-library/react + jest-dom"
+      e2e:
+        available: false
+        tool: null
+    backend:
+      unit:
+        available: true
+        tool: pytest
+      integration:
+        available: true
+        tool: "Django TestCase + DRF APIClient"
+      e2e:
+        available: false
+        tool: null
+
+  coverage:
+    frontend:
+      available: true
+      command: npm run test:run -- --coverage
+    backend:
+      available: true
+      command: pytest --cov
+
+  quality:
+    frontend:
+      linter:
+        available: true
+        tool: ESLint
+        command: npm run lint
+      type_checker:
+        available: true
+        tool: TypeScript (via Vite/ESLint)
+      formatter:
+        available: true
+        tool: Prettier (implied by standard setup)
+    backend:
+      linter:
+        available: true
+        tool: ruff/flake8 (Python standard)
+      type_checker:
+        available: false
+        tool: null
+      formatter:
+        available: true
+        tool: black (Python standard)
