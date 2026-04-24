@@ -227,7 +227,9 @@ The system MUST handle edge cases gracefully.
 
 - GIVEN a login request
 - WHEN the password field is empty string ""
-- THEN the response status MUST be 401 Unauthorized
+- THEN the response status MUST be 400 Bad Request
+- AND the response MUST indicate the password field validation error
+- NOTE: Empty string fails DRF field validation before authentication, so it is a 400 (validation error) rather than a 401 (authentication error)
 
 #### Scenario: Login with very long password
 
