@@ -10,6 +10,8 @@ Tests cover:
 - Protected route with valid token succeeds
 """
 
+import jwt
+from django.conf import settings
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
@@ -40,6 +42,15 @@ class LoginSuccessTest(APITestCase):
         self.assertIn('refresh', response.data)
         self.assertIn('role', response.data)
         self.assertEqual(response.data['role'], 'manager')
+        
+        # Verify role claim is embedded in the token payload
+        decoded = jwt.decode(
+            response.data['access'],
+            settings.SECRET_KEY,
+            algorithms=['HS256'],
+            options={'verify_exp': False},
+        )
+        self.assertEqual(decoded['role'], 'manager')
 
 
 class LoginFailureTest(APITestCase):
@@ -199,6 +210,15 @@ class OperatorRoleTest(APITestCase):
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['role'], 'operator')
+        
+        # Verify role claim is embedded in the token payload
+        decoded = jwt.decode(
+            response.data['access'],
+            settings.SECRET_KEY,
+            algorithms=['HS256'],
+            options={'verify_exp': False},
+        )
+        self.assertEqual(decoded['role'], 'operator')
     
     def test_operator_me_endpoint_shows_operator_role(self):
         """GET /me/ as operator shows is_operator=True."""

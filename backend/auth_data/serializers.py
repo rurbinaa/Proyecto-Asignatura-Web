@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, PasswordField
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
 User = get_user_model()
@@ -10,7 +10,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Custom token serializer that:
     - Accepts email field instead of username
-    - Includes the user's role in the token response
+    - Includes the user's role in the token payload and response
     """
     
     def __init__(self, *args, **kwargs):
@@ -18,6 +18,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Replace username field with email field
         self.fields['email'] = serializers.CharField(write_only=True)
         del self.fields['username']
+    
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['role'] = user.profile.role
+        return token
     
     def validate(self, attrs):
         email = attrs.get('email')
