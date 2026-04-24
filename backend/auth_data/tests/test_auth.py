@@ -18,6 +18,14 @@ from rest_framework import status
 from auth_data.models import UserProfile
 
 
+def assert_www_authenticate_bearer(response):
+    """Assert the response includes a WWW-Authenticate header with Bearer scheme."""
+    header = response.get('WWW-Authenticate', '')
+    assert 'Bearer' in header, (
+        f"Expected 'WWW-Authenticate' header with 'Bearer' scheme, got: {header!r}"
+    )
+
+
 class LoginSuccessTest(APITestCase):
     """Scenario: Successful login returns JWT tokens and role."""
     
@@ -73,6 +81,7 @@ class LoginFailureTest(APITestCase):
         })
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
     
     def test_login_nonexistent_user_returns_401(self):
         """Login with non-existent email returns 401."""
@@ -82,6 +91,7 @@ class LoginFailureTest(APITestCase):
         })
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
 
 
 class CurrentUserTest(APITestCase):
@@ -119,6 +129,7 @@ class CurrentUserTest(APITestCase):
         response = self.client.get('/api/auth/me/')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
 
 
 class ProtectedRouteTest(APITestCase):
@@ -146,6 +157,7 @@ class ProtectedRouteTest(APITestCase):
         response = self.client.get('/api/auth/me/')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
     
     def test_protected_route_with_valid_token_succeeds(self):
         """GET protected route with valid token returns 200."""
@@ -187,6 +199,7 @@ class LogoutTest(APITestCase):
         response = self.client.post('/api/auth/logout/')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
 
 
 class OperatorRoleTest(APITestCase):
@@ -257,6 +270,7 @@ class InvalidTokenTest(APITestCase):
         response = self.client.get('/api/auth/me/')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
     
     def test_malformed_auth_header_returns_401(self):
         """Malformed Authorization header returns 401."""
@@ -265,6 +279,7 @@ class InvalidTokenTest(APITestCase):
         response = self.client.get('/api/auth/me/')
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
     
     def test_empty_password_returns_400(self):
         """Login with empty password returns 400 (bad request, not 401)."""
@@ -285,6 +300,7 @@ class InvalidTokenTest(APITestCase):
         })
         
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert_www_authenticate_bearer(response)
 
 
 class MissingCredentialsTest(APITestCase):
