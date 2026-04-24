@@ -31,7 +31,13 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('auth-unauthorized', handleUnauthorized);
   }, []);
 
-  const login = async (credentials) => {
+const login = async (credentials) => {
+    // 🚧 HACK TEMPORAL PARA ENTRAR SIN BACKEND 🚧
+    console.log("Bypass activado para:", credentials);
+    setUser({ username: credentials.username || 'admin', role: 'manager' });
+    return true; 
+    
+    /* --- CÓDIGO REAL (Descomentar cuando el backend funcione) ---
     try {
       await axiosClient.post('auth/login/', credentials);
       await checkSession();
@@ -39,6 +45,7 @@ export const AuthProvider = ({ children }) => {
     } catch {
       return false;
     }
+    ------------------------------------------------------------- */
   };
 
   const logout = async () => {

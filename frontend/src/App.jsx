@@ -46,10 +46,6 @@ function AppContent() {
     setActiveView('');
   };
 
-  if (loading) {
-    return <div className="app-layout" style={{ justifyContent: 'center', alignItems: 'center', color: 'white' }}>Verificando sesión...</div>;
-  }
-
   if (!isAuthenticated || !user) {
     return <LoginView />;
   }
