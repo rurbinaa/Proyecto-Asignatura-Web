@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect, useContext, useCallback } from 'react';
-import axiosClient from '../api/axiosClient';
+import axiosClient, { tokenStorage } from '../api/axiosClient';
 
 const AuthContext = createContext();
 
@@ -8,6 +8,12 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const checkSession = useCallback(async () => {
+    if (!tokenStorage.getAccessToken()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await axiosClient.get('auth/me/');
       setUser(res.data);
@@ -24,6 +30,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      tokenStorage.clear();
       setUser(null);
     };
 
@@ -33,10 +40,18 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     try {
-      await axiosClient.post('auth/login/', credentials);
+      const response = await axiosClient.post('auth/login/', credentials);
+      tokenStorage.setTokens({
+        access: response.data.access,
+        refresh: response.data.refresh,
+      });
+      setLoading(true);
       await checkSession();
       return true;
     } catch {
+      tokenStorage.clear();
+      setUser(null);
+      setLoading(false);
       return false;
     }
 
@@ -46,6 +61,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await axiosClient.post('auth/logout/');
     } catch {}
+    tokenStorage.clear();
     setUser(null);
   };
 
