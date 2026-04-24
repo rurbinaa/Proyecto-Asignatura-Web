@@ -70,7 +70,7 @@ export default function Sidebar({ userRole, activeView, setActiveView, setVolati
         <button 
           className="sidebar-toggle bottom-toggle" 
           onClick={() => setIsCollapsed(false)}
-          title="Ampliar menú"
+          title="Expand menu"
         >
           <ChevronRight className="sidebar-nav-icon" />
         </button>
