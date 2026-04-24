@@ -19,8 +19,8 @@ describe('LoginView', () => {
 
       render(<LoginView />);
 
-      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), {
-        target: { value: 'testuser' },
+      fireEvent.change(screen.getByPlaceholderText('e.g. manager@uniwell.com'), {
+        target: { value: 'manager@uniwell.com' },
       });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), {
         target: { value: 'password123' },
@@ -30,7 +30,7 @@ describe('LoginView', () => {
 
       await waitFor(() => {
         expect(mockLogin).toHaveBeenCalledWith({
-          username: 'testuser',
+          email: 'manager@uniwell.com',
           password: 'password123',
         });
       });
@@ -53,7 +53,7 @@ describe('LoginView', () => {
 
       render(<LoginView />);
 
-      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), { target: { value: 'wronguser' } });
+      fireEvent.change(screen.getByPlaceholderText('e.g. manager@uniwell.com'), { target: { value: 'wrong@uniwell.com' } });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrongpass' } });
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
@@ -68,7 +68,7 @@ describe('LoginView', () => {
 
       render(<LoginView />);
 
-      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByPlaceholderText('e.g. manager@uniwell.com'), { target: { value: 'manager@uniwell.com' } });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
       fireEvent.submit(screen.getByRole('button', { name: /log in/i }));
 
@@ -89,7 +89,7 @@ describe('LoginView', () => {
 
       render(<LoginView />);
 
-      fireEvent.change(screen.getByPlaceholderText('e.g. operator_01'), { target: { value: 'testuser' } });
+      fireEvent.change(screen.getByPlaceholderText('e.g. manager@uniwell.com'), { target: { value: 'manager@uniwell.com' } });
       fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password123' } });
       
       const button = screen.getByRole('button', { name: /log in/i });
