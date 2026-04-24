@@ -15,7 +15,7 @@ class Command(BaseCommand):
         ('GERENCIA@uniwell.com', 'manager'),
     ]
     
-    DEFAULT_PASSWORD = '1234'
+    DEFAULT_PASSWORD = 'password123'
     
     def handle(self, *args, **options):
         created_count = 0

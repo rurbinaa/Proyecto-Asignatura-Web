@@ -510,7 +510,7 @@ class SeedCommandTest(APITestCase):
         self.assertIn('Skipped', second_output)
     
     def test_seed_command_password_authentication(self):
-        """All seeded users can authenticate with password 1234."""
+        """All seeded users can authenticate with password password123."""
         from django.core.management import call_command
         
         # Run seed command
@@ -520,7 +520,7 @@ class SeedCommandTest(APITestCase):
         for email in ['gerente@uniwell.com', 'operator@uniwell.com']:
             response = self.client.post('/api/auth/login/', {
                 'email': email,
-                'password': '1234'
+                'password': 'password123'
             })
             
             self.assertEqual(response.status_code, status.HTTP_200_OK)
