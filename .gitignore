@@ -136,3 +136,8 @@ pytest_cache/
 #  ARCHIVOS BASURA / ACCIDENTALES
 # ============================================
 react-router-dom
+
+# ============================================
+#  OPENSPEC (solo local)
+# ============================================
+openspec/
