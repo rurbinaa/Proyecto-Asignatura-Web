@@ -77,17 +77,17 @@ The system MUST provide a management command to seed 6 hardcoded users with spec
 
 - GIVEN the seed command has been executed
 - THEN the following users MUST exist with role "manager":
-  - manager1@uniwell.com
-  - manager2@uniwell.com
-  - manager3@uniwell.com
-  - manager4@uniwell.com
+  - gerente@uniwell.com
+  - gerencia@uniwell.com
+  - manager@uniwell.com
+  - admin@uniwell.com
+  - GERENCIA@uniwell.com
 
 #### Scenario: Operator users are created correctly
 
 - GIVEN the seed command has been executed
 - THEN the following users MUST exist with role "operator":
-  - operator1@uniwell.com
-  - operator2@uniwell.com
+  - operator@uniwell.com
 
 #### Scenario: All seeded users have default password
 
@@ -104,7 +104,7 @@ The system MUST provide a management command to seed 6 hardcoded users with spec
 
 #### Scenario: Partial seed handling
 
-- GIVEN some of the 6 users already exist (e.g., manager1@uniwell.com)
+- GIVEN some of the 6 users already exist (e.g., gerente@uniwell.com)
 - WHEN running the seed command
 - THEN the existing users MUST be skipped
 - AND the remaining users MUST be created
