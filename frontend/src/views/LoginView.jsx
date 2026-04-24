@@ -5,7 +5,7 @@ import './LoginView.css';
 
 export default function LoginView() {
   const { login } = useAuth(); 
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -13,7 +13,7 @@ export default function LoginView() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!username || !password) {
+    if (!email || !password) {
       setError('Please fill in all fields.');
       return;
     }
@@ -22,7 +22,7 @@ export default function LoginView() {
     setIsLoading(true);
 
     try {
-      const success = await login({ username, password });
+      const success = await login({ email, password });
       
       if (!success) {
         setError('Invalid credentials or server error.');
@@ -45,13 +45,13 @@ export default function LoginView() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="input-group">
-            <label className="input-label">Username</label>
+            <label className="input-label">Email</label>
             <input 
-              type="text" 
+              type="email" 
               className="input-field" 
-              placeholder="e.g. operator_01"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. manager@uniwell.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
