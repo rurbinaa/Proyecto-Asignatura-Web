@@ -782,6 +782,124 @@ class ContainersByStateTest(KpiTestMixin, TestCase):
         total = sum(item["value"] for item in response.data)
         self.assertEqual(total, 1)
 
+    def test_date_range_filters_inclusive(self):
+        container_a = Container.objects.get(container_number=200)
+        container_b = Container.objects.get(container_number=201)
+        container_c = Container.objects.get(container_number=202)
+        container_a.date = "2025-01-10"
+        container_b.date = "2025-01-11"
+        container_c.date = "2025-01-12"
+        container_a.save()
+        container_b.save()
+        container_c.save()
+
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=2025-01-10,2025-01-11")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 2)
+
+    def test_date_range_takes_precedence_over_from_to(self):
+        container_a = Container.objects.get(container_number=200)
+        container_b = Container.objects.get(container_number=201)
+        container_a.date = "2025-01-10"
+        container_b.date = "2025-01-12"
+        container_a.save()
+        container_b.save()
+
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(
+            f"{url}?date_range=2025-01-10,2025-01-10&from_date=2025-01-01&to_date=2025-01-31"
+        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 1)
+
+    def test_blank_date_range_falls_back_to_from_to_filters(self):
+        container_a = Container.objects.get(container_number=200)
+        container_b = Container.objects.get(container_number=201)
+        container_c = Container.objects.get(container_number=202)
+        container_a.date = "2025-01-10"
+        container_b.date = "2025-01-11"
+        container_c.date = "2025-01-12"
+        container_a.save()
+        container_b.save()
+        container_c.save()
+
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(
+            f"{url}?date_range=&from_date=2025-01-10&to_date=2025-01-11"
+        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 2)
+
+    def test_blank_date_range_without_legacy_filters_behaves_as_omitted(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 6)
+
+    def test_partial_date_range_start_only_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=2025-01-10,")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
+
+    def test_partial_date_range_end_only_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=,2025-01-10")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
+
+    def test_comma_only_date_range_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=,")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
+
+    def test_reversed_date_range_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=2025-01-12,2025-01-10")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
+
+    def test_reversed_legacy_from_to_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?from_date=2025-01-12&to_date=2025-01-10")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("from_date", response.data)
+        self.assertIn("to_date", response.data)
+
+    def test_bucket_gt_95_excludes_exactly_95(self):
+        container_95 = Container.objects.get(container_number=205)
+        container_95.percentage_pass = 95.0
+        container_95.percentage_reject = 5.0
+        container_95.save()
+
+        container_over_95 = Container.objects.get(container_number=204)
+        container_over_95.percentage_pass = 95.1
+        container_over_95.percentage_reject = 4.9
+        container_over_95.save()
+
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        counts = {item["name"]: item["value"] for item in response.data}
+        self.assertEqual(counts["90-95%"], 2)
+        self.assertEqual(counts["> 95%"], 1)
+
     def test_invalid_date_filters_return_400(self):
         url = reverse("quality_data:kpi-containers-by-state")
         response = self.client.get(f"{url}?from_date=10-01-2025&to_date=2025-01-31")
@@ -795,6 +913,20 @@ class ContainersByStateTest(KpiTestMixin, TestCase):
 
         self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
         self.assertIn("to_date", response.data)
+
+    def test_invalid_date_range_format_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=2025-01-10")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
+
+    def test_invalid_date_range_value_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?date_range=2025-01-10,31-01-2025")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
 
     def test_no_date_filters_preserves_legacy_behavior(self):
         url = reverse("quality_data:kpi-containers-by-state")
@@ -881,6 +1013,20 @@ class KpiFilterDateRangeTest(KpiTestMixin, TestCase):
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         weeks = {point["x"] for s in response.data for point in s["data"]}
         self.assertEqual(weeks, {1})
+
+    def test_date_range_partial_value_returns_400_for_mixin_endpoint(self):
+        url = reverse("quality_data:kpi-aql-audited-pieces")
+        response = self.client.get(f"{url}?date_range=2025-01-10,")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
+
+    def test_date_range_reversed_bounds_returns_400_for_mixin_endpoint(self):
+        url = reverse("quality_data:kpi-aql-audited-pieces")
+        response = self.client.get(f"{url}?date_range=2025-01-11,2025-01-10")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("date_range", response.data)
 
 
 class KpiFilterTeamTest(KpiTestMixin, TestCase):
