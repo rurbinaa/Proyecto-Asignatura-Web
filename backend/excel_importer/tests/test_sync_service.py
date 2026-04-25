@@ -1,4 +1,5 @@
 from django.test import TestCase
+import datetime
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
@@ -291,6 +292,96 @@ class ApplyUpsertTest(TestCase):
         self.assertEqual(obj.total_palette, 22)
         self.assertEqual(obj.transfer_of_container, 11)
 
+    def test_container_upsert_preserves_existing_date_when_reimport_date_empty(self):
+        Container.objects.create(
+            container_number=15,
+            customer="A4",
+            transfer_of_container=10,
+            total_palette=20,
+            total_palette_pass=18,
+            total_palette_rejected=2,
+            percentage_pass=90.0,
+            percentage_reject=10.0,
+            date=datetime.date(2025, 1, 20),
+        )
+
+        excel_rows = [
+            {
+                "container_number": 15,
+                "customer": "A4",
+                "transfer_of_container": 11,
+                "total_palette": 21,
+                "total_palette_pass": 19,
+                "total_palette_rejected": 2,
+                "percentage_pass": 90.4,
+                "percentage_reject": 9.6,
+                "date": "",
+            }
+        ]
+
+        apply_upsert(
+            excel_rows,
+            Container,
+            build_container_key,
+            not_numeric_columns=["customer", "container_number", "date"],
+            numeric_columns=[
+                "transfer_of_container",
+                "total_palette",
+                "total_palette_pass",
+                "total_palette_rejected",
+                "percentage_pass",
+                "percentage_reject",
+            ],
+        )
+
+        obj = Container.objects.get(container_number=15)
+        self.assertEqual(obj.date, datetime.date(2025, 1, 20))
+
+    def test_container_upsert_updates_date_when_reimport_has_valid_date(self):
+        Container.objects.create(
+            container_number=16,
+            customer="A4",
+            transfer_of_container=10,
+            total_palette=20,
+            total_palette_pass=18,
+            total_palette_rejected=2,
+            percentage_pass=90.0,
+            percentage_reject=10.0,
+            date=datetime.date(2025, 1, 20),
+        )
+
+        excel_rows = [
+            {
+                "container_number": 16,
+                "customer": "A4",
+                "transfer_of_container": 11,
+                "total_palette": 21,
+                "total_palette_pass": 19,
+                "total_palette_rejected": 2,
+                "percentage_pass": 90.4,
+                "percentage_reject": 9.6,
+                "date": "2025-02-22",
+            }
+        ]
+
+        apply_upsert(
+            excel_rows,
+            Container,
+            build_container_key,
+            not_numeric_columns=["customer", "container_number", "date"],
+            numeric_columns=[
+                "transfer_of_container",
+                "total_palette",
+                "total_palette_pass",
+                "total_palette_rejected",
+                "percentage_pass",
+                "percentage_reject",
+            ],
+        )
+
+        obj = Container.objects.get(container_number=16)
+        self.assertEqual(obj.date, datetime.date(2025, 2, 22))
+
 
 class ApplyTimeWindowTest(TestCase):
     """Tests for apply_timewindow."""
@@ -408,3 +499,20 @@ class SessionManagementTest(TestCase):
         apply_session(session)
         session.refresh_from_db()
         self.assertEqual(session.status, "confirmed")
+
+    def test_create_session_container_preview_tracks_dates_and_invalid_warnings(self):
+        dataframes = {
+            "qc_fa_plant": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "qc_fa_customer": [],
+            "container": [
+                {"container_number": 33, "date": "2025-02-01"},
+                {"container_number": 34, "date": "INVALID-DATE"},
+            ],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+
+        self.assertEqual(session.container_preview["dates"], ["2025-02-01"])
+        self.assertTrue(any("container" in warning.lower() for warning in session.warnings))

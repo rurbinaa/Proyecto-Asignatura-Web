@@ -17,7 +17,7 @@ from quality_data.models import (
     Color,
     ExcelSyncSession,
 )
-from excel_importer.date_utils import parse_date
+from excel_importer.date_utils import normalize_container_date, parse_date
 
 
 # ─────────────────────────────────────────────────────────
@@ -423,7 +423,9 @@ def create_session_from_dataframes(dataframes):
     session.qc_fa_customer_data = dataframes.get("qc_fa_customer", [])
     session.seconds_a4_data = dataframes.get("seconds_a4", [])
     session.seconds_general_data = dataframes.get("seconds_general", [])
-    session.container_data = dataframes.get("container", [])
+    raw_container_rows = dataframes.get("container", [])
+    container_rows, container_warnings = _normalize_container_rows(raw_container_rows)
+    session.container_data = container_rows
 
     # Compute previews
     session.qc_fa_plant_preview = compute_preview_timewindow(
@@ -464,6 +466,7 @@ def create_session_from_dataframes(dataframes):
                           "seconds_general_preview"]:
         preview = getattr(session, preview_field)
         all_warnings.extend(preview.get("warnings", []))
+    all_warnings.extend(container_warnings)
     session.warnings = all_warnings
 
     session.save()
@@ -574,6 +577,9 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
         color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
         data["color"] = color_obj
 
+    if model_class == Container:
+        data["date"] = normalize_container_date(row.get("date"))
+
     return model_class(**data)
 
 
@@ -586,6 +592,8 @@ def _update_instance(instance, row, numeric_columns, not_numeric_columns):
             setattr(instance, field, row[field])
     for field in (not_numeric_columns or []):
         if field in row and field not in fk_fields:
+            if isinstance(instance, Container) and field == "date":
+                continue
             setattr(instance, field, row[field])
 
     # Handle FK fields
@@ -593,6 +601,11 @@ def _update_instance(instance, row, numeric_columns, not_numeric_columns):
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
         instance.color = color_obj
+
+    if isinstance(instance, Container) and "date" in row:
+        normalized = normalize_container_date(row.get("date"))
+        if normalized is not None:
+            instance.date = normalized
 
 
 def _model_to_dict(obj):
@@ -736,3 +749,29 @@ def _get_not_numeric_columns_for_model(model_class):
     elif model_class == Container:
         return CONTAINER_NOT_NUMERIC_COLUMNS
     return []
+
+
+def _normalize_container_rows(rows):
+    """Normalize container date values and emit warnings for invalid input."""
+    normalized_rows = []
+    warnings = []
+
+    for row in rows:
+        normalized_row = dict(row)
+        raw_date = normalized_row.get("date")
+        normalized_date = normalize_container_date(raw_date)
+
+        if normalized_date is not None:
+            normalized_row["date"] = normalized_date.isoformat()
+        else:
+            normalized_row["date"] = None
+            raw_text = str(raw_date).strip() if raw_date is not None else ""
+            if raw_text:
+                container_number = normalized_row.get("container_number", "unknown")
+                warnings.append(
+                    f"Container {container_number}: invalid date '{raw_text}' stored as NULL."
+                )
+
+        normalized_rows.append(normalized_row)
+
+    return normalized_rows, warnings

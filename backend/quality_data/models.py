@@ -123,6 +123,7 @@ class ContainerDefectType(models.Model):
 
 class Container(models.Model):
     container_number = models.IntegerField(unique=True)
+    date = models.DateField(null=True, blank=True, db_index=True)
     customer = models.CharField(max_length=50, db_index=True)
     transfer_of_container = models.IntegerField(default=0)
     total_palette = models.IntegerField()

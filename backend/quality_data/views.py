@@ -419,6 +419,63 @@ class KpiFilterMixin:
         'batch': ('batch', True),
     }
 
+    @staticmethod
+    def _parse_date_param(raw_value, field_name):
+        if raw_value is None:
+            return None
+
+        value = str(raw_value).strip()
+        if not value:
+            return None
+
+        try:
+            return datetime.date.fromisoformat(value)
+        except ValueError:
+            raise rest_framework_exceptions.ValidationError({
+                field_name: 'Invalid date. Use YYYY-MM-DD.'
+            })
+
+    @classmethod
+    def _parse_date_range_param(cls, raw_value, field_name='date_range'):
+        value = (raw_value or '').strip()
+        if not value:
+            return None, None
+
+        parts = [part.strip() for part in value.split(',')]
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise rest_framework_exceptions.ValidationError({
+                field_name: 'Invalid date_range. Use YYYY-MM-DD,YYYY-MM-DD.'
+            })
+
+        from_date = cls._parse_date_param(parts[0], field_name)
+        to_date = cls._parse_date_param(parts[1], field_name)
+        cls._validate_date_order(from_date, to_date, field_name)
+        return from_date, to_date
+
+    @staticmethod
+    def _validate_date_order(from_date, to_date, field_name='date_range'):
+        if from_date and to_date and from_date > to_date:
+            if isinstance(field_name, (tuple, list)):
+                raise rest_framework_exceptions.ValidationError({
+                    name: "Invalid date range. Start date must be on or before end date."
+                    for name in field_name
+                })
+            raise rest_framework_exceptions.ValidationError({
+                field_name: "Invalid date range. Start date must be on or before end date."
+            })
+
+    def _apply_date_range_filter(self, queryset, field_name):
+        date_range = self.request.query_params.get('date_range')
+        if date_range is None:
+            return queryset
+
+        from_date, to_date = self._parse_date_range_param(date_range, 'date_range')
+        if from_date:
+            queryset = queryset.filter(**{f'{field_name}__gte': from_date.isoformat()})
+        if to_date:
+            queryset = queryset.filter(**{f'{field_name}__lte': to_date.isoformat()})
+        return queryset
+
     def _get_filter_prefix(self, queryset):
         """
         Determine the filter prefix needed based on the queryset model.
@@ -445,15 +502,13 @@ class KpiFilterMixin:
 
         # date_range: "start_date,end_date" → date_1__gte, date_1__lte
         date_range = request.query_params.get('date_range')
-        if date_range:
-            parts = date_range.split(',')
-            if len(parts) == 2:
-                start_date, end_date = parts[0].strip(), parts[1].strip()
-                field = f'{prefix}date_1'
-                if start_date:
-                    filters[f'{field}__gte'] = start_date
-                if end_date:
-                    filters[f'{field}__lte'] = end_date
+        if date_range is not None:
+            start_date, end_date = self._parse_date_range_param(date_range, 'date_range')
+            field = f'{prefix}date_1'
+            if start_date:
+                filters[f'{field}__gte'] = start_date.isoformat()
+            if end_date:
+                filters[f'{field}__lte'] = end_date.isoformat()
 
         # week: exact integer match
         week = request.query_params.get('week')
@@ -539,7 +594,7 @@ class TopDefectsView(KpiFilterMixin, APIView):
         return Response(result, status=http_status.HTTP_200_OK)
 
 
-class FabricDefectsView(APIView):
+class FabricDefectsView(KpiFilterMixin, APIView):
     """
     GET /api/kpis/fabric-defects/
 
@@ -556,16 +611,7 @@ class FabricDefectsView(APIView):
     def get(self, request):
         queryset = SecondsGeneral.objects.all()
 
-        # Apply date filters if provided
-        date_range = request.query_params.get('date_range')
-        if date_range:
-            parts = date_range.split(',')
-            if len(parts) == 2:
-                start_date, end_date = parts[0].strip(), parts[1].strip()
-                if start_date:
-                    queryset = queryset.filter(date__gte=start_date)
-                if end_date:
-                    queryset = queryset.filter(date__lte=end_date)
+        queryset = self._apply_date_range_filter(queryset, 'date')
 
         week = request.query_params.get('week')
         if week:
@@ -718,7 +764,7 @@ class RejectedEvolutionView(KpiFilterMixin, APIView):
         return Response(result, status=http_status.HTTP_200_OK)
 
 
-class ContainersByStateView(APIView):
+class ContainersByStateView(KpiFilterMixin, APIView):
     """
     GET /api/kpis/containers-by-state/
 
@@ -740,6 +786,19 @@ class ContainersByStateView(APIView):
         if customer:
             queryset = queryset.filter(customer__exact=customer)
 
+        date_range_raw = request.query_params.get('date_range')
+        if date_range_raw is not None and date_range_raw.strip():
+            from_date, to_date = self._parse_date_range_param(date_range_raw, 'date_range')
+        else:
+            from_date = self._parse_date_param(request.query_params.get('from_date'), 'from_date')
+            to_date = self._parse_date_param(request.query_params.get('to_date'), 'to_date')
+            self._validate_date_order(from_date, to_date, ('from_date', 'to_date'))
+
+        if from_date:
+            queryset = queryset.filter(date__gte=from_date)
+        if to_date:
+            queryset = queryset.filter(date__lte=to_date)
+
         # Use Case/When for range grouping
         from django.db.models import IntegerField
 
@@ -749,8 +808,8 @@ class ContainersByStateView(APIView):
                 range_bucket=Case(
                     When(percentage_pass__lt=80, then=1),
                     When(percentage_pass__gte=80, percentage_pass__lt=90, then=2),
-                    When(percentage_pass__gte=90, percentage_pass__lt=95, then=3),
-                    When(percentage_pass__gte=95, then=4),
+                    When(percentage_pass__gte=90, percentage_pass__lte=95, then=3),
+                    When(percentage_pass__gt=95, then=4),
                     output_field=IntegerField(),
                 )
             )
@@ -777,7 +836,6 @@ class ContainersByStateView(APIView):
         result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
 
         return Response(result, status=http_status.HTTP_200_OK)
-
 
 class DefectRateView(KpiFilterMixin, APIView):
     """
@@ -873,16 +931,7 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         """
         queryset = SecondsA4.objects.all()
 
-        # Apply date filters if provided
-        date_range = request.query_params.get('date_range')
-        if date_range:
-            parts = date_range.split(',')
-            if len(parts) == 2:
-                start_date, end_date = parts[0].strip(), parts[1].strip()
-                if start_date:
-                    queryset = queryset.filter(date__gte=start_date)
-                if end_date:
-                    queryset = queryset.filter(date__lte=end_date)
+        queryset = self._apply_date_range_filter(queryset, 'date')
 
         aggregated = (
             queryset
