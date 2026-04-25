@@ -54,6 +54,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       return false;
     }
+
   };
 
   const logout = async () => {

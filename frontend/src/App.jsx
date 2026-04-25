@@ -47,7 +47,7 @@ function AppContent() {
   };
 
   if (loading) {
-    return <div className="app-layout" style={{ justifyContent: 'center', alignItems: 'center', color: 'white' }}>Verificando sesión...</div>;
+    return <div className="app-loading">Verificando sesión...</div>;
   }
 
   if (!isAuthenticated || !user) {

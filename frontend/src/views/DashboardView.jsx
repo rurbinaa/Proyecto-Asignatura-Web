@@ -31,6 +31,7 @@ import DonutChartKpi from '../Components/kpi/DonutChartKpi';
 import HeatmapKpi from '../Components/kpi/HeatmapKpi';
 import KpiNumberCard from '../Components/kpi/KpiNumberCard';
 import FilterBar from '../Components/kpi/FilterBar';
+import ReportGenerator from '../Components/ReportGenerator';
 import { normalizeScalarMetric } from './dashboardMetricUtils';
 import Masonry from 'react-masonry-css';
 import './DashboardView.css';
@@ -115,7 +116,7 @@ function DashboardView({ volatileData, volatileFile }) {
         setKpiData(result);
       }
     } catch (err) {
-      setError(err.message || 'Error al cargar datos');
+      setError(err.message || 'Error loading data');
     } finally {
       setLoading(false);
     }
@@ -157,7 +158,7 @@ function DashboardView({ volatileData, volatileFile }) {
           setFilterOptions(result.filterOptions);
         }
       } catch (err) {
-        setError(err.message || 'Error al procesar archivo Excel');
+        setError(err.message || 'Error processing Excel file');
       } finally {
         setLoading(false);
       }
@@ -218,9 +219,9 @@ function DashboardView({ volatileData, volatileFile }) {
   return (
     <div className="dashboard-view">
       <div className="dashboard-header">
-        <h1 className="dashboard-title">Dashboard de KPIs</h1>
+        <h1 className="dashboard-title">KPIs Dashboard</h1>
         <button className="refresh-btn" onClick={handleRefresh} disabled={loading}>
-          {loading ? 'Cargando...' : 'Actualizar'}
+          {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
@@ -234,10 +235,12 @@ function DashboardView({ volatileData, volatileFile }) {
         />
       )}
 
+      <ReportGenerator />
+
       {!isLiveMode && (
         <div className="volatile-helper" role="status" aria-live="polite">
-          <strong>Modo rápido:</strong> no aplica filtros live y algunos KPIs pueden no estar
-          disponibles por depender de tablas de base de datos.
+          <strong>Fast mode:</strong> does not apply live filters and some KPIs may not be
+          available as they depend on database tables.
         </div>
       )}
 
@@ -247,34 +250,34 @@ function DashboardView({ volatileData, volatileFile }) {
         columnClassName="dashboard-masonry-column"
       >
         {/* Row 1: Defect Rate, Pass/Reject, AQL Weekly */}
-        <KpiCard title="Tasa de Defectos (AQL %)" loading={loading} error={error}>
+        <KpiCard title="Defect Rate (AQL %)" loading={loading} error={error}>
           <KpiNumberCard
             title="AQL"
             value={defectRate !== null && !isNullOrError(defectRate) ? defectRate : null}
             unit="%"
-            label="defectos / muestra × 100"
+            label="defects / sample × 100"
           />
         </KpiCard>
 
-        <KpiCard title="Distribución Pass / Reject" loading={loading} error={error}>
+        <KpiCard title="Pass / Reject Distribution" loading={loading} error={error}>
           {isNullOrError(passRejectData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <DonutChartKpi
               data={passRejectData}
               valueFormatter={formatPieces}
-              tooltipLabelFormatter={(label) => `Estado: ${label}`}
+              tooltipLabelFormatter={(label) => `Status: ${label}`}
             />
           )}
         </KpiCard>
 
-        <KpiCard title="AQL semanal (%)" loading={loading} error={error}>
+        <KpiCard title="Weekly AQL (%)" loading={loading} error={error}>
           {isNullOrError(aqlWeeklySeries) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <LineChartKpi
               series={aqlWeeklySeries}
-              xAxisLabel="Semana"
+              xAxisLabel="Week"
               yAxisLabel="AQL (%)"
               xTickFormatter={formatWeekLabel}
               yTickFormatter={(value) => `${value}%`}
@@ -285,7 +288,7 @@ function DashboardView({ volatileData, volatileFile }) {
         </KpiCard>
 
         {/* Row 2: AQL by Style, Top Defects */}
-        <KpiCard title="AQL por Estilo" loading={loading} error={error}>
+        <KpiCard title="AQL by Style" loading={loading} error={error}>
           {isNullOrError(aqlByStyleData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -294,15 +297,15 @@ function DashboardView({ volatileData, volatileFile }) {
               horizontal
               color="#3b82f6"
               xAxisLabel="AQL (%)"
-              yAxisLabel="Estilo"
+              yAxisLabel="Style"
               xTickFormatter={(value) => `${value}%`}
               valueFormatter={formatPercent}
-              tooltipLabelFormatter={(label) => `Estilo: ${label}`}
+              tooltipLabelFormatter={(label) => `Style: ${label}`}
             />
           )}
         </KpiCard>
 
-        <KpiCard title="Top Defectos" loading={loading} error={error}>
+        <KpiCard title="Top Defects" loading={loading} error={error}>
           {isNullOrError(topDefectsData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -311,14 +314,14 @@ function DashboardView({ volatileData, volatileFile }) {
         </KpiCard>
 
         {/* Row 3: Audited Pieces, Rejected Evolution */}
-        <KpiCard title="Piezas auditadas por semana" loading={loading} error={error}>
+        <KpiCard title="Weekly Audited Pieces" loading={loading} error={error}>
           {isNullOrError(auditedPiecesSeries) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <LineChartKpi
               series={auditedPiecesSeries}
-              xAxisLabel="Semana"
-              yAxisLabel="Piezas"
+              xAxisLabel="Week"
+              yAxisLabel="Pieces"
               xTickFormatter={formatWeekLabel}
               valueFormatter={formatPieces}
               tooltipLabelFormatter={formatWeekLabel}
@@ -326,14 +329,14 @@ function DashboardView({ volatileData, volatileFile }) {
           )}
         </KpiCard>
 
-        <KpiCard title="Piezas rechazadas por semana" loading={loading} error={error}>
+        <KpiCard title="Weekly Rejected Pieces" loading={loading} error={error}>
           {isNullOrError(rejectedEvolutionSeries) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <LineChartKpi
               series={rejectedEvolutionSeries}
-              xAxisLabel="Semana"
-              yAxisLabel="Piezas rechazadas"
+              xAxisLabel="Week"
+              yAxisLabel="Rejected Pieces"
               xTickFormatter={formatWeekLabel}
               valueFormatter={formatPieces}
               tooltipLabelFormatter={formatWeekLabel}
@@ -342,7 +345,7 @@ function DashboardView({ volatileData, volatileFile }) {
         </KpiCard>
 
         {/* Row 4: Acceptance/Reject counts by line, Perf by Customer */}
-        <KpiCard title="Aceptadas por línea (conteo)" loading={loading} error={error}>
+        <KpiCard title="Accepted by Line (count)" loading={loading} error={error}>
           {isNullOrError(acReRateByLineData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -350,17 +353,17 @@ function DashboardView({ volatileData, volatileFile }) {
               data={acceptedByLineData}
               color="#10b981"
               horizontal
-              xAxisLabel="Conteo (piezas)"
-              yAxisLabel="Línea"
+              xAxisLabel="Count (pieces)"
+              yAxisLabel="Line"
               xTickFormatter={formatPieces}
               yTickFormatter={trimCategoryLabel}
               valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Línea (aceptadas): ${label}`}
+              tooltipLabelFormatter={(label) => `Line (accepted): ${label}`}
             />
           )}
         </KpiCard>
 
-        <KpiCard title="Rechazadas por línea (conteo)" loading={loading} error={error}>
+        <KpiCard title="Rejected by Line (count)" loading={loading} error={error}>
           {isNullOrError(acReRateByLineData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -368,35 +371,35 @@ function DashboardView({ volatileData, volatileFile }) {
               data={rejectedByLineData}
               color="#ef4444"
               horizontal
-              xAxisLabel="Conteo (piezas)"
-              yAxisLabel="Línea"
+              xAxisLabel="Count (pieces)"
+              yAxisLabel="Line"
               xTickFormatter={formatPieces}
               yTickFormatter={trimCategoryLabel}
               valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Línea (rechazadas): ${label}`}
+              tooltipLabelFormatter={(label) => `Line (rejected): ${label}`}
             />
           )}
         </KpiCard>
 
         {/* Row 5: Perf by Customer, Perf by Line */}
-        <KpiCard title="Índice de aceptación por cliente (accepted/sample × 100)" loading={loading} error={error}>
+        <KpiCard title="Acceptance Rate by Customer (accepted/sample × 100)" loading={loading} error={error}>
           {isNullOrError(perfByCustomerData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <BarChartKpi
               data={perfByCustomerData}
               color="#8b5cf6"
-              xAxisLabel="Cliente"
-              yAxisLabel="Índice de aceptación (accepted/sample × 100)"
+              xAxisLabel="Customer"
+              yAxisLabel="Acceptance Rate (accepted/sample × 100)"
               xTickFormatter={trimCategoryLabel}
               yTickFormatter={(value) => Number(value).toFixed(0)}
               valueFormatter={formatAcceptanceIndex}
-              tooltipLabelFormatter={(label) => `Cliente: ${label}`}
+              tooltipLabelFormatter={(label) => `Customer: ${label}`}
             />
           )}
         </KpiCard>
 
-        <KpiCard title="Índice de aceptación por línea (accepted/sample × 100)" loading={loading} error={error}>
+        <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
           {isNullOrError(perfByLineData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -404,24 +407,24 @@ function DashboardView({ volatileData, volatileFile }) {
               data={perfByLineData}
               horizontal
               color="#f59e0b"
-              xAxisLabel="Índice de aceptación (accepted/sample × 100)"
-              yAxisLabel="Línea"
+              xAxisLabel="Acceptance Rate (accepted/sample × 100)"
+              yAxisLabel="Line"
               xTickFormatter={(value) => Number(value).toFixed(0)}
               valueFormatter={formatAcceptanceIndex}
-              tooltipLabelFormatter={(label) => `Línea: ${label}`}
+              tooltipLabelFormatter={(label) => `Line: ${label}`}
             />
           )}
         </KpiCard>
 
         {/* Row 6: Seconds Rework, Fabric Defects */}
-        <KpiCard title="Rework en segundos por semana" loading={loading} error={error}>
+        <KpiCard title="Weekly Rework (seconds)" loading={loading} error={error}>
           {isNullOrError(secondsReworkSeries) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <LineChartKpi
               series={secondsReworkSeries}
-              xAxisLabel="Semana"
-              yAxisLabel="Segundos"
+              xAxisLabel="Week"
+              yAxisLabel="Seconds"
               xTickFormatter={formatWeekLabel}
               valueFormatter={formatSeconds}
               tooltipLabelFormatter={formatWeekLabel}
@@ -429,7 +432,7 @@ function DashboardView({ volatileData, volatileFile }) {
           )}
         </KpiCard>
 
-        <KpiCard title="Defectos de Tela" loading={loading} error={error}>
+        <KpiCard title="Fabric Defects" loading={loading} error={error}>
           {isNullOrError(fabricDefectsData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -438,27 +441,27 @@ function DashboardView({ volatileData, volatileFile }) {
               color="#ec4899"
               showAllCategoryTicks
               chartHeight={340}
-              xAxisLabel="Tipo de defecto"
-              yAxisLabel="Conteo"
+              xAxisLabel="Defect Type"
+              yAxisLabel="Count"
             />
           )}
         </KpiCard>
 
         {/* Row 7: Containers by State, Defects Heatmap */}
-        <KpiCard title="Contenedores por Estado" loading={loading} error={error}>
+        <KpiCard title="Containers by Status" loading={loading} error={error}>
           {isNullOrError(containersByStateData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
             <DonutChartKpi
               data={containersByStateData}
               valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Rango: ${label}`}
+              tooltipLabelFormatter={(label) => `Range: ${label}`}
               showSliceLabels
             />
           )}
         </KpiCard>
 
-        <KpiCard title="Defectos por Estilo × Tipo" loading={loading} error={error}>
+        <KpiCard title="Defects by Style × Type" loading={loading} error={error}>
           {isNullOrError(defectsByStyleTypeData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (

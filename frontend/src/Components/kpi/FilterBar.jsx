@@ -1,3 +1,4 @@
+import DateRangePicker from '../DateRangePicker';
 import './FilterBar.css';
 
 export default function FilterBar({ filters, onFilterChange, onApply, onReset, filterOptions }) {
@@ -5,10 +6,8 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset, f
     onFilterChange({ ...filters, [field]: value });
   };
 
-  const handleDateRangeChange = (index, value) => {
-    const newRange = [...filters.date_range];
-    newRange[index] = value;
-    onFilterChange({ ...filters, date_range: newRange });
+  const handleDateRangeChange = (range) => {
+    onFilterChange({ ...filters, date_range: [range.startDate || '', range.endDate || ''] });
   };
 
   const renderSelect = (field, label, placeholder) => {
@@ -46,62 +45,52 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset, f
     <div className="filter-bar">
       <div className="filter-row">
         <div className="filter-group date-range-group">
-          <label className="filter-label">Desde</label>
-          <input
-            type="date"
-            className="filter-input"
-            value={filters.date_range[0] || ''}
-            onChange={(e) => handleDateRangeChange(0, e.target.value)}
-          />
-        </div>
-
-        <div className="filter-group date-range-group">
-          <label className="filter-label">Hasta</label>
-          <input
-            type="date"
-            className="filter-input"
-            value={filters.date_range[1] || ''}
-            onChange={(e) => handleDateRangeChange(1, e.target.value)}
+          <label className="filter-label">Date</label>
+          <DateRangePicker
+            startDate={filters.date_range?.[0] || ''}
+            endDate={filters.date_range?.[1] || ''}
+            onChange={handleDateRangeChange}
+            size="small"
           />
         </div>
 
         <div className="filter-group">
-          <label className="filter-label">Semana</label>
-          {renderSelect('week', 'Semana', 'Semana')}
+          <label className="filter-label">Week</label>
+          {renderSelect('week', 'Week', 'Week')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Team</label>
-          {renderSelect('team', 'Team', '#')}
+          {renderSelect('team', 'Team', 'Select Team')}
         </div>
 
         <div className="filter-group">
-          <label className="filter-label">Estilo</label>
-          {renderSelect('style', 'Estilo', 'Estilo')}
+          <label className="filter-label">Style</label>
+          {renderSelect('style', 'Style', 'Select Style')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Color</label>
-          {renderSelect('color', 'Color', 'Color')}
+          {renderSelect('color', 'Color', 'Select Color')}
         </div>
 
         <div className="filter-group">
-          <label className="filter-label">Cliente</label>
-          {renderSelect('customer', 'Cliente', 'Cliente')}
+          <label className="filter-label">Customer</label>
+          {renderSelect('customer', 'Customer', 'Select Customer')}
         </div>
 
         <div className="filter-group">
           <label className="filter-label">Batch</label>
-          {renderSelect('batch', 'Batch', '#')}
+          {renderSelect('batch', 'Batch', 'Select Batch')}
         </div>
       </div>
 
       <div className="filter-actions">
         <button className="filter-btn-primary" onClick={onApply}>
-          Aplicar Filtros
+          Apply Filters
         </button>
         <button className="filter-btn-outline" onClick={onReset}>
-          Limpiar
+          Clear
         </button>
       </div>
     </div>

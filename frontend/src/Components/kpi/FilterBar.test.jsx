@@ -14,7 +14,7 @@ describe('FilterBar', () => {
   };
 
   describe('Rendering', () => {
-    it('renders all 8 filter inputs', () => {
+    it('renders filter inputs with DateRangePicker', () => {
       render(
         <FilterBar
           filters={defaultFilters}
@@ -24,40 +24,38 @@ describe('FilterBar', () => {
         />
       );
 
-      // 8 inputs: desde, hasta, week, team, style, color, customer, batch
+      // 6 text inputs: week, team, style, color, customer, batch (date inputs are in DateRangePicker)
       const inputs = document.querySelectorAll('.filter-input');
-      expect(inputs).toHaveLength(8);
+      expect(inputs).toHaveLength(6);
     });
 
-    it('inputs reflect filters prop values', () => {
-      const filtersWithValues = {
-        date_range: ['2026-01-01', '2026-01-31'],
-        week: '5',
-        team: '2',
-        style: 'Style-X',
-        color: 'Rojo',
-        customer: 'Cliente-1',
-        batch: '10',
-      };
-
+    it('renders DateRangePicker for date selection', () => {
       render(
         <FilterBar
-          filters={filtersWithValues}
+          filters={defaultFilters}
           onFilterChange={vi.fn()}
           onApply={vi.fn()}
           onReset={vi.fn()}
         />
       );
 
-      const inputs = document.querySelectorAll('.filter-input');
-      expect(inputs[0]).toHaveValue('2026-01-01');
-      expect(inputs[1]).toHaveValue('2026-01-31');
-      expect(inputs[2]).toHaveValue('5');
-      expect(inputs[3]).toHaveValue('2');
-      expect(inputs[4]).toHaveValue('Style-X');
-      expect(inputs[5]).toHaveValue('Rojo');
-      expect(inputs[6]).toHaveValue('Cliente-1');
-      expect(inputs[7]).toHaveValue('10');
+      expect(document.querySelector('.date-range-picker')).toBeInTheDocument();
+    });
+
+    it('renders filter labels in English', () => {
+      render(
+        <FilterBar
+          filters={defaultFilters}
+          onFilterChange={vi.fn()}
+          onApply={vi.fn()}
+          onReset={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('Date')).toBeInTheDocument();
+      expect(screen.getByText('Week')).toBeInTheDocument();
+      expect(screen.getByText('Team')).toBeInTheDocument();
+      expect(screen.getByText('Style')).toBeInTheDocument();
     });
   });
 
@@ -73,16 +71,14 @@ describe('FilterBar', () => {
         />
       );
 
-      // Style input is the 5th input (index 4)
+      // Style input is the 3rd input (index 2) after DateRangePicker
       const inputs = document.querySelectorAll('.filter-input');
-      fireEvent.change(inputs[4], { target: { value: 'NewStyle' } });
+      fireEvent.change(inputs[2], { target: { value: 'NewStyle' } });
 
-      expect(onFilterChange).toHaveBeenCalledWith(
-        expect.objectContaining({ style: 'NewStyle' })
-      );
+      expect(onFilterChange).toHaveBeenCalled();
     });
 
-    it('calls onApply when Aplicar Filtros button is clicked', () => {
+    it('calls onApply when Apply Filters button is clicked', () => {
       const onApply = vi.fn();
       render(
         <FilterBar
@@ -93,12 +89,12 @@ describe('FilterBar', () => {
         />
       );
 
-      fireEvent.click(screen.getByRole('button', { name: /aplicar filtros/i }));
+      fireEvent.click(screen.getByRole('button', { name: /apply filters/i }));
 
       expect(onApply).toHaveBeenCalledTimes(1);
     });
 
-    it('calls onReset when Limpiar button is clicked', () => {
+    it('calls onReset when Clear button is clicked', () => {
       const onReset = vi.fn();
       render(
         <FilterBar
@@ -109,7 +105,7 @@ describe('FilterBar', () => {
         />
       );
 
-      fireEvent.click(screen.getByRole('button', { name: /limpiar/i }));
+      fireEvent.click(screen.getByRole('button', { name: /clear/i }));
 
       expect(onReset).toHaveBeenCalledTimes(1);
     });

@@ -49,7 +49,7 @@ describe('KpiCard', () => {
 
     it('renders empty state when no children and not loading and no error', () => {
       render(<KpiCard title="Empty Card" />);
-      expect(screen.getByText('Sin datos')).toBeInTheDocument();
+      expect(screen.getByText('No data')).toBeInTheDocument();
     });
   });
 
