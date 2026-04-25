@@ -16,6 +16,7 @@ from quality_data.models import (
     Container,
     ContainerInspectionDefect,
 )
+from excel_importer.handler_service import bulk_insert_container
 
 
 class ColorModelTest(TestCase):
@@ -230,6 +231,54 @@ class ContainerModelTest(TestCase):
         )
 
         self.assertIsNone(container.date)
+
+    def test_legacy_reimport_invalid_date_is_recoverable_and_preserves_existing_date(self):
+        """
+        Legacy importer should treat invalid/non-parseable date as recoverable:
+        it must preserve the existing persisted date instead of crashing.
+        """
+        Container.objects.create(
+            container_number=9100,
+            customer="Legacy Recoverable Date",
+            transfer_of_container=1,
+            total_palette=50,
+            total_palette_pass=49,
+            total_palette_rejected=1,
+            percentage_pass=98.0,
+            percentage_reject=2.0,
+            date="2025-03-20",
+        )
+
+        df = pd.DataFrame([
+            {
+                "container_number": 9100,
+                "customer": "Legacy Recoverable Date",
+                "transfer_of_container": 2,
+                "total_palette": 55,
+                "total_palette_pass": 52,
+                "total_palette_rejected": 3,
+                "percentage_pass": 94.5,
+                "percentage_reject": 5.5,
+                "date": "INVALID-DATE",
+            }
+        ])
+
+        bulk_insert_container(
+            df,
+            [
+                "transfer_of_container",
+                "total_palette",
+                "total_palette_pass",
+                "total_palette_rejected",
+                "percentage_pass",
+                "percentage_reject",
+            ],
+            ["customer", "container_number", "date"],
+            defeacts_fields=[],
+        )
+
+        container = Container.objects.get(container_number=9100)
+        self.assertEqual(str(container.date), "2025-03-20")
 
 
 class ContainerDefectTypeModelTest(TestCase):

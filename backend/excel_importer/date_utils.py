@@ -7,6 +7,7 @@ for comparison during Time-Window Sync.
 """
 
 import datetime
+import numbers
 import re
 
 import pandas as pd
@@ -47,7 +48,7 @@ def parse_date(value):
         return value.strftime("%Y-%m-%d")
 
     # Handle numeric values (Excel serial dates)
-    if isinstance(value, (int, float)):
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
         return _parse_excel_serial(value)
 
     # Handle strings
@@ -91,7 +92,7 @@ def _parse_date_string(value):
     ]
 
     for pattern in month_name_patterns:
-        match = re.match(pattern, value)
+        match = re.fullmatch(pattern, value)
         if match:
             groups = match.groups()
             try:
@@ -115,12 +116,22 @@ def _parse_excel_serial(serial):
     """
     Convert an Excel serial date number to 'YYYY-MM-DD' string.
 
-    Excel uses a serial number system where day 1 is December 30, 1899.
+    Excel uses a serial number system where day 1 maps to 1900-01-01,
+    with a historical leap-year bug at serial 60 (1900-02-29, non-existent).
+    We collapse serial 60 to 1900-02-28 so Python date conversion stays valid.
     """
     try:
-        # Excel epoch is 1899-12-30
-        epoch = datetime.date(1899, 12, 30)
-        result_date = epoch + datetime.timedelta(days=int(serial))
+        serial_int = int(serial)
+
+        if serial_int <= 0:
+            return None
+
+        # Serial 60 represents Excel's fake 1900-02-29; collapse to 1900-02-28.
+        if serial_int >= 60:
+            serial_int -= 1
+
+        epoch = datetime.date(1899, 12, 31)
+        result_date = epoch + datetime.timedelta(days=serial_int)
         return result_date.strftime("%Y-%m-%d")
     except (ValueError, OverflowError, TypeError):
         return None

@@ -15,7 +15,10 @@ from quality_data.models import (
 )
 from excel_importer.handler_service import (
     _bulk_insert_defects_only,
+    bulk_insert,
     bulk_insert_container,
+    bulk_insert_seconds_a4,
+    bulk_insert_seconds_general,
     load_and_clean,
     load_pivot_range,
     _normalize_defects_fields,
@@ -194,6 +197,89 @@ class BulkInsertDefectsOnlyTest(TestCase):
         # Should not raise - missing parents are skipped
         _bulk_insert_defects_only(df, ["sew_def"], "QFA")
 
+        self.assertEqual(InspectionDefect.objects.count(), 0)
+
+    def test_missing_color_skips_row_without_crashing(self):
+        quality = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-01-15",
+            week=3,
+            customer="A4",
+            team=1,
+            coord="JAVIER",
+            po=195221,
+            style="N3165",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=50,
+            accepted=40,
+            rejected=10,
+            sample=5,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="Pass",
+        )
+        self.assertIsNotNone(quality)
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-01-15",
+                "po": 195221,
+                "style": "N3165",
+                "team": 1,
+                "color": "missing-color",
+                "sew_def": 5,
+            }
+        ])
+
+        _bulk_insert_defects_only(df, ["sew_def"], "QFA")
+        self.assertEqual(InspectionDefect.objects.count(), 0)
+
+    def test_missing_style_or_date_skips_row(self):
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-01-15",
+            week=3,
+            customer="A4",
+            team=1,
+            coord="JAVIER",
+            po=195221,
+            style="N3165",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=50,
+            accepted=40,
+            rejected=10,
+            sample=5,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="Pass",
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "",
+                "po": 195221,
+                "style": "N3165",
+                "team": 1,
+                "color": "red",
+                "sew_def": 5,
+            },
+            {
+                "date_1": "2025-01-15",
+                "po": 195221,
+                "style": "",
+                "team": 1,
+                "color": "red",
+                "sew_def": 5,
+            },
+        ])
+
+        _bulk_insert_defects_only(df, ["sew_def"], "QFA")
         self.assertEqual(InspectionDefect.objects.count(), 0)
 
 
@@ -571,6 +657,239 @@ class BulkInsertContainerTest(TestCase):
 
         container = Container.objects.get(container_number=2002)
         self.assertEqual(container.date, datetime.date(2025, 3, 1))
+
+    def test_reimport_with_invalid_date_preserves_existing_non_null_date(self):
+        Container.objects.create(
+            container_number=2003,
+            customer="CUST_KEEP_INVALID",
+            transfer_of_container=1,
+            total_palette=10,
+            total_palette_pass=9,
+            total_palette_rejected=1,
+            percentage_pass=90.0,
+            percentage_reject=10.0,
+            date=datetime.date(2025, 4, 2),
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "container_number": 2003,
+                "customer": "CUST_KEEP_INVALID",
+                "transfer_of_container": 2,
+                "total_palette": 11,
+                "total_palette_pass": 10,
+                "total_palette_rejected": 1,
+                "percentage_pass": 91.0,
+                "percentage_reject": 9.0,
+                "date": "NOT_A_DATE",
+                "cont_sew_def": 0,
+            }
+        ])
+
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass", "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number", "date"],
+            ["cont_sew_def"],
+        )
+
+        container = Container.objects.get(container_number=2003)
+        self.assertEqual(container.date, datetime.date(2025, 4, 2))
+
+
+class BulkInsertCoverageTest(TestCase):
+    def setUp(self):
+        self.color = Color.objects.create(name="teal", is_active=True)
+        self.defect_type = DefectType.objects.create(name="sew_def")
+
+    def test_bulk_insert_returns_when_dataframe_is_empty(self):
+        import pandas as pd
+        df = pd.DataFrame([])
+
+        bulk_insert(
+            df,
+            numeric_columns=["qty", "seconds"],
+            not_numeric_columns=["customer", "style", "date_1", "table_type", "coord", "pass_or_fail"],
+            defeacts_fields=["sew_def"],
+            table_type="QFA",
+        )
+
+        self.assertEqual(QualityQcFa.objects.count(), 0)
+
+    def test_bulk_insert_creates_quality_and_defects(self):
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-01-15",
+                "week": 3,
+                "customer": "A4",
+                "team": 1,
+                "coord": "JAVIER",
+                "po": 195221,
+                "style": "N3165",
+                "batch": 1,
+                "color": "teal",
+                "qty": 100,
+                "seconds": 50,
+                "accepted": 40,
+                "rejected": 10,
+                "sample": 5,
+                "defects_total": 5,
+                "aql": 2.5,
+                "pass_or_fail": "PASS",
+                "sew_def": 3,
+            }
+        ])
+
+        bulk_insert(
+            df,
+            numeric_columns=["week", "team", "po", "batch", "qty", "seconds", "accepted", "rejected", "sample", "defects_total", "aql"],
+            not_numeric_columns=["date_1", "customer", "coord", "style", "pass_or_fail"],
+            defeacts_fields=["sew_def"],
+            table_type="QFA",
+        )
+
+        self.assertEqual(QualityQcFa.objects.count(), 1)
+        created = QualityQcFa.objects.first()
+        self.assertEqual(created.table_type, "QFA")
+        self.assertEqual(created.color.name, "teal")
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        self.assertEqual(InspectionDefect.objects.first().amount, 3)
+
+    def test_bulk_insert_defects_only_uses_existing_parents(self):
+        quality = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-02-01",
+            week=1,
+            customer="A4",
+            team=1,
+            coord="TEST",
+            po=123,
+            style="STYLE",
+            batch=1,
+            color=self.color,
+            qty=10,
+            seconds=2,
+            accepted=8,
+            rejected=2,
+            sample=2,
+            defects_total=0,
+            aql=1.0,
+            pass_or_fail="PASS",
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-02-01",
+                "po": 123,
+                "style": "STYLE",
+                "team": 1,
+                "color": "teal",
+                "sew_def": 4,
+            }
+        ])
+
+        bulk_insert(
+            df,
+            numeric_columns=[],
+            not_numeric_columns=[],
+            defeacts_fields=["sew_def"],
+            table_type="QFA",
+            defects_only=True,
+        )
+
+        defect = InspectionDefect.objects.get()
+        self.assertEqual(defect.inspection, quality)
+        self.assertEqual(defect.amount, 4)
+
+
+class BulkInsertSecondsCoverageTest(TestCase):
+    def setUp(self):
+        self.color = Color.objects.create(name="orange", is_active=True)
+
+    def test_bulk_insert_seconds_a4_noop_with_empty_dataframe(self):
+        import pandas as pd
+        from quality_data.models import SecondsA4
+
+        bulk_insert_seconds_a4(pd.DataFrame([]), ["year"], ["date"])
+        self.assertEqual(SecondsA4.objects.count(), 0)
+
+    def test_bulk_insert_seconds_general_noop_with_empty_dataframe(self):
+        import pandas as pd
+        from quality_data.models import SecondsGeneral
+
+        bulk_insert_seconds_general(pd.DataFrame([]), ["week"], ["date"])
+        self.assertEqual(SecondsGeneral.objects.count(), 0)
+
+    def test_bulk_insert_seconds_a4_creates_records(self):
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "year": 2025,
+                "week": 10,
+                "date": "2025-03-01",
+                "cut_num": 10,
+                "style": "STYLE-A",
+                "cut_qty": 200,
+                "color": "orange",
+                "first_quality_qty_sewing": 150,
+                "sample": 10,
+                "pass_field": 140,
+                "fail_field": 10,
+                "sew_def": 4,
+                "fab_def": 6,
+                "accepted": 180,
+                "rejected": 20,
+                "total_of_2ds": 5,
+                "percentage_of_2ds": 2.5,
+                "line": "L1",
+                "seconds_by_sew": 3,
+                "seconds_by_fab": 2,
+                "seconds_sew_a4": 1,
+                "seconds_fab_a4": 1,
+            }
+        ])
+
+        bulk_insert_seconds_a4(
+            df,
+            [
+                "year", "week", "cut_num", "cut_qty", "first_quality_qty_sewing", "sample", "pass_field", "fail_field",
+                "sew_def", "fab_def", "accepted", "rejected", "total_of_2ds", "percentage_of_2ds",
+                "seconds_by_sew", "seconds_by_fab", "seconds_sew_a4", "seconds_fab_a4",
+            ],
+            ["date", "style", "line", "color"],
+        )
+
+        from quality_data.models import SecondsA4
+        self.assertEqual(SecondsA4.objects.count(), 1)
+        self.assertEqual(SecondsA4.objects.first().style, "STYLE-A")
+
+    def test_bulk_insert_seconds_general_creates_records(self):
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "corrido_2": 5,
+                "barre": 3,
+                "otros_3": 2,
+                "degradacion": 1,
+                "bordados": 0,
+                "total_de_tela": 11,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "corrido_2", "barre", "otros_3", "degradacion", "bordados", "total_de_tela"],
+            ["date"],
+        )
+
+        from quality_data.models import SecondsGeneral
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        self.assertEqual(SecondsGeneral.objects.first().total_de_tela, 11)
 
 
 # ─────────────────────────────────────────────────────────
