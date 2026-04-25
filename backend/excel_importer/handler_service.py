@@ -10,7 +10,7 @@ from quality_data.models import (
     SecondsA4,
     SecondsGeneral,
 )
-from excel_importer.date_utils import parse_date
+from excel_importer.date_utils import normalize_container_date, parse_date
 
 
 def _normalize_defects_fields(defeacts_fields):
@@ -267,10 +267,25 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
         return
 
     container_instances = []
+    container_numbers = df['container_number'].dropna().unique().tolist()
+    container_numbers = [int(num) for num in container_numbers if pd.notna(num)]
+    existing_dates = {
+        c.container_number: c.date
+        for c in Container.objects.filter(container_number__in=container_numbers)
+    }
 
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        container_number = row.get('container_number')
+        if pd.notna(container_number):
+            container_number = int(container_number)
+            production_data['container_number'] = container_number
+
+        production_data['date'] = _resolve_container_date(
+            row.get('date'),
+            existing_dates.get(container_number),
+        )
         production_data = _truncate_charfields(Container, production_data)
 
         container_instances.append(Container(**production_data))
@@ -284,14 +299,12 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
         unique_fields=['container_number'],
         update_fields=['customer', 'transfer_of_container', 'total_palette', 
                        'total_palette_pass', 'total_palette_rejected', 
-                       'percentage_pass', 'percentage_reject']
+                       'percentage_pass', 'percentage_reject', 'date']
     )
 
     # Build a deterministic mapping from container_number to Container instance
     # by re-querying the database. This ensures we get the actual persisted
     # container (either newly created or existing) for correct defect linking.
-    container_numbers = df['container_number'].dropna().unique().tolist()
-    container_numbers = [int(num) for num in container_numbers if pd.notna(num)]
     containers_by_number = {
         c.container_number: c 
         for c in Container.objects.filter(container_number__in=container_numbers)
@@ -332,3 +345,11 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
             batch_size=2000,
             ignore_conflicts=True  # Skip duplicate (container, defect_type) pairs
         )
+
+
+def _resolve_container_date(raw_date, existing_date):
+    """Preserve existing non-null date when import date is empty/invalid."""
+    normalized = normalize_container_date(raw_date)
+    if normalized is not None:
+        return normalized
+    return existing_date

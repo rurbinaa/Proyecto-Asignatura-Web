@@ -243,6 +243,7 @@ SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
 
 
 CONTAINER_REMAP = {
+    'Date': 'date',
     '# Container': 'container_number',
     'Customer': 'customer',
     '# Transfert of Container': 'transfer_of_container',
@@ -274,7 +275,7 @@ CONTAINER_NUMERIC_COLUMNS = [
 ]
 
 CONTAINER_NOT_NUMERIC_COLUMNS = [
-    'customer'
+    'customer', 'date'
 ]
 
 CONTAINER_AMOUNT_DEFEACTS_FIELDS = [

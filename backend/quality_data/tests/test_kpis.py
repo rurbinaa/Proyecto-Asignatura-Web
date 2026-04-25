@@ -752,6 +752,58 @@ class ContainersByStateTest(KpiTestMixin, TestCase):
         total = sum(item["value"] for item in response.data)
         self.assertEqual(total, Container.objects.count())
 
+    def test_from_date_to_date_filters_inclusive(self):
+        container_a = Container.objects.get(container_number=200)
+        container_b = Container.objects.get(container_number=201)
+        container_c = Container.objects.get(container_number=202)
+        container_a.date = "2025-01-10"
+        container_b.date = "2025-01-11"
+        container_c.date = "2025-01-12"
+        container_a.save()
+        container_b.save()
+        container_c.save()
+
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?from_date=2025-01-10&to_date=2025-01-11")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 2)
+
+    def test_date_filter_excludes_null_dates(self):
+        dated_container = Container.objects.get(container_number=200)
+        dated_container.date = "2025-01-10"
+        dated_container.save()
+
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?from_date=2025-01-01&to_date=2025-01-31")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 1)
+
+    def test_invalid_date_filters_return_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?from_date=10-01-2025&to_date=2025-01-31")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("from_date", response.data)
+
+    def test_invalid_to_date_returns_400(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(f"{url}?from_date=2025-01-01&to_date=31-01-2025")
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("to_date", response.data)
+
+    def test_no_date_filters_preserves_legacy_behavior(self):
+        url = reverse("quality_data:kpi-containers-by-state")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        total = sum(item["value"] for item in response.data)
+        self.assertEqual(total, 6)
+
 
 class DefectRateTest(KpiTestMixin, TestCase):
     """Tests for GET /quality/kpis/defect-rate/"""

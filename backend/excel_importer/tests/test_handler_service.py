@@ -2,6 +2,7 @@
 Tests for handler_service bulk insert functions, specifically the defects-only path.
 """
 import io
+import datetime
 from django.test import TestCase
 from quality_data.models import (
     Color,
@@ -20,6 +21,7 @@ from excel_importer.handler_service import (
     _normalize_defects_fields,
     _truncate_charfields,
 )
+from excel_importer.sheet_configs import CONTAINER_REMAP, CONTAINER_NOT_NUMERIC_COLUMNS
 from quality_data.models import QualityQcFa as QfaModel
 
 
@@ -492,6 +494,84 @@ class BulkInsertContainerTest(TestCase):
         self.assertEqual(defect.container, existing_container)
         self.assertEqual(defect.amount, 10)
 
+    def test_reimport_updates_container_date_when_valid_date_is_present(self):
+        Container.objects.create(
+            container_number=2001,
+            customer="CUST_DATE",
+            transfer_of_container=1,
+            total_palette=10,
+            total_palette_pass=9,
+            total_palette_rejected=1,
+            percentage_pass=90.0,
+            percentage_reject=10.0,
+            date=datetime.date(2025, 1, 10),
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "container_number": 2001,
+                "customer": "CUST_DATE",
+                "transfer_of_container": 1,
+                "total_palette": 10,
+                "total_palette_pass": 9,
+                "total_palette_rejected": 1,
+                "percentage_pass": 90.0,
+                "percentage_reject": 10.0,
+                "date": "2025-02-15",
+                "cont_sew_def": 0,
+            }
+        ])
+
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass", "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number", "date"],
+            ["cont_sew_def"],
+        )
+
+        container = Container.objects.get(container_number=2001)
+        self.assertEqual(container.date, datetime.date(2025, 2, 15))
+
+    def test_reimport_with_empty_date_preserves_existing_non_null_date(self):
+        Container.objects.create(
+            container_number=2002,
+            customer="CUST_KEEP_DATE",
+            transfer_of_container=1,
+            total_palette=10,
+            total_palette_pass=9,
+            total_palette_rejected=1,
+            percentage_pass=90.0,
+            percentage_reject=10.0,
+            date=datetime.date(2025, 3, 1),
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "container_number": 2002,
+                "customer": "CUST_KEEP_DATE",
+                "transfer_of_container": 2,
+                "total_palette": 11,
+                "total_palette_pass": 10,
+                "total_palette_rejected": 1,
+                "percentage_pass": 91.0,
+                "percentage_reject": 9.0,
+                "date": "",
+                "cont_sew_def": 0,
+            }
+        ])
+
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass", "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number", "date"],
+            ["cont_sew_def"],
+        )
+
+        container = Container.objects.get(container_number=2002)
+        self.assertEqual(container.date, datetime.date(2025, 3, 1))
+
 
 # ─────────────────────────────────────────────────────────
 # Phase 1: load_and_clean Edge Case Tests
@@ -609,6 +689,10 @@ class LoadAndCleanEdgeCasesTest(TestCase):
                 0,
                 5,
             )
+
+    def test_container_sheet_config_maps_date_column(self):
+        self.assertEqual(CONTAINER_REMAP.get("Date"), "date")
+        self.assertIn("date", CONTAINER_NOT_NUMERIC_COLUMNS)
 
 
 class LoadPivotRangeIOTest(TestCase):

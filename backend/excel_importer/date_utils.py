@@ -124,3 +124,15 @@ def _parse_excel_serial(serial):
         return result_date.strftime("%Y-%m-%d")
     except (ValueError, OverflowError, TypeError):
         return None
+
+
+def normalize_container_date(value):
+    """Return a Python date for Container.date or None when unparseable."""
+    normalized = parse_date(value)
+    if not normalized:
+        return None
+
+    try:
+        return datetime.date.fromisoformat(normalized)
+    except (TypeError, ValueError):
+        return None

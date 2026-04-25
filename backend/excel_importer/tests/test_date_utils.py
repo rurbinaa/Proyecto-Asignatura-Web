@@ -1,5 +1,7 @@
 from django.test import TestCase
-from excel_importer.date_utils import parse_date
+import datetime
+
+from excel_importer.date_utils import parse_date, normalize_container_date
 
 
 class ParseDateTest(TestCase):
@@ -80,3 +82,13 @@ class ParseDateTest(TestCase):
         """Given 'January 15, 2025', returns normalized '2025-01-15'."""
         result = parse_date("January 15, 2025")
         self.assertEqual(result, "2025-01-15")
+
+
+class NormalizeContainerDateTest(TestCase):
+    def test_returns_python_date_for_valid_input(self):
+        result = normalize_container_date("2025-03-12")
+        self.assertEqual(result, datetime.date(2025, 3, 12))
+
+    def test_returns_none_for_invalid_or_empty_input(self):
+        self.assertIsNone(normalize_container_date("UNKNOWN"))
+        self.assertIsNone(normalize_container_date(""))

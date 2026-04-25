@@ -202,6 +202,35 @@ class ContainerModelTest(TestCase):
         self.assertEqual(container.container_defects.count(), 1)
         self.assertEqual(defect.amount, 3)
 
+    def test_create_container_allows_null_date(self):
+        container = Container.objects.create(
+            container_number=9001,
+            customer="Date Customer",
+            transfer_of_container=1,
+            total_palette=50,
+            total_palette_pass=49,
+            total_palette_rejected=1,
+            percentage_pass=98.0,
+            percentage_reject=2.0,
+            date=None,
+        )
+
+        self.assertIsNone(container.date)
+
+    def test_container_date_defaults_to_null(self):
+        container = Container.objects.create(
+            container_number=9002,
+            customer="Default Date Customer",
+            transfer_of_container=2,
+            total_palette=60,
+            total_palette_pass=54,
+            total_palette_rejected=6,
+            percentage_pass=90.0,
+            percentage_reject=10.0,
+        )
+
+        self.assertIsNone(container.date)
+
 
 class ContainerDefectTypeModelTest(TestCase):
     def test_create_container_defect_type(self):

@@ -12,6 +12,7 @@ from rest_framework import status
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
+    Container,
     Color,
     ExcelSyncSession,
 )
@@ -142,6 +143,28 @@ class ExcelConfirmViewTest(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_confirm_persists_container_date(self):
+        session = ExcelSyncSession.objects.create(
+            container_data=[{
+                "container_number": 500,
+                "customer": "TEST",
+                "transfer_of_container": 1,
+                "total_palette": 10,
+                "total_palette_pass": 9,
+                "total_palette_rejected": 1,
+                "percentage_pass": 90.0,
+                "percentage_reject": 10.0,
+                "date": "2025-04-10",
+            }],
+        )
+
+        url = reverse('quality_data:excel-confirm', kwargs={'session_id': session.pk})
+        response = self.client.post(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        container = Container.objects.get(container_number=500)
+        self.assertEqual(str(container.date), "2025-04-10")
+
 
 class ExcelRejectViewTest(TestCase):
     """Tests for DELETE /excel/reject/<session_id>/"""
@@ -236,3 +259,24 @@ class FullWorkflowTest(TestCase):
         self.assertEqual(reject_response.status_code, status.HTTP_200_OK)
         session = ExcelSyncSession.objects.get(pk=session_id)
         self.assertEqual(session.status, 'rejected')
+
+    @patch('quality_data.views.load_and_clean')
+    def test_preview_returns_container_dates_and_invalid_date_warning(self, mock_load_and_clean):
+        mock_load_and_clean.side_effect = [
+            _make_mock_dataframe([]),
+            _make_mock_dataframe([]),
+            _make_mock_dataframe([]),
+            _make_mock_dataframe([]),
+            _make_mock_dataframe([
+                {"container_number": 777, "date": "2025-05-01"},
+                {"container_number": 778, "date": "BAD-DATE"},
+            ]),
+        ]
+
+        preview_url = reverse('quality_data:excel-preview', kwargs={'filename': 'test.xlsx'})
+        with open('/dev/null', 'rb') as f:
+            response = self.client.post(preview_url, {'file': f}, format='multipart')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["preview"]["container"]["dates"], ["2025-05-01"])
+        self.assertTrue(any("invalid date" in warning.lower() for warning in response.data["warnings"]))

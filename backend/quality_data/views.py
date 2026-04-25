@@ -740,6 +740,22 @@ class ContainersByStateView(APIView):
         if customer:
             queryset = queryset.filter(customer__exact=customer)
 
+        from_date_raw = request.query_params.get('from_date')
+        to_date_raw = request.query_params.get('to_date')
+
+        from_date, from_error = self._parse_date_param(from_date_raw, 'from_date')
+        if from_error:
+            return from_error
+
+        to_date, to_error = self._parse_date_param(to_date_raw, 'to_date')
+        if to_error:
+            return to_error
+
+        if from_date:
+            queryset = queryset.filter(date__gte=from_date)
+        if to_date:
+            queryset = queryset.filter(date__lte=to_date)
+
         # Use Case/When for range grouping
         from django.db.models import IntegerField
 
@@ -777,6 +793,19 @@ class ContainersByStateView(APIView):
         result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
 
         return Response(result, status=http_status.HTTP_200_OK)
+
+    @staticmethod
+    def _parse_date_param(raw_value, field_name):
+        if not raw_value:
+            return None, None
+
+        try:
+            return datetime.date.fromisoformat(raw_value), None
+        except ValueError:
+            return None, Response(
+                {field_name: "Invalid date. Use YYYY-MM-DD."},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class DefectRateView(KpiFilterMixin, APIView):
