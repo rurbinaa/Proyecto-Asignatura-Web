@@ -15,6 +15,7 @@ export default function ReportGenerator() {
 
   const handleDateChange = (newRange) => {
     setDateRange(newRange);
+    setStatus('idle');
     setError(null);
     setSuccess(null);
   };
@@ -22,6 +23,7 @@ export default function ReportGenerator() {
   const handleGenerate = async () => {
     const validation = validateDateRange(dateRange.startDate, dateRange.endDate);
     if (!validation.valid) {
+      setStatus('error');
       setError(validation.message);
       return;
     }
