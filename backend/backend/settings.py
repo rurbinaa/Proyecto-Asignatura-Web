@@ -49,6 +49,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'django.middleware.gzip.GZipMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -163,7 +164,9 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
-# Redis cache settings
+# Cache settings
+# Production: Redis via docker service 'redis'
+# Test: local memory backend (no Redis dependency)
 
 CACHES = {
     "default": {
@@ -174,6 +177,12 @@ CACHES = {
         }
     }
 }
+
+if 'test' in sys.argv or any('pytest' in arg for arg in sys.argv):
+    CACHES['default'] = {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "test-kpi-cache",
+    }
 
 # Media files settings
 MEDIA_URL = 'media/'

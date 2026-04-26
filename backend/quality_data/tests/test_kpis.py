@@ -46,6 +46,8 @@ class KpiTestMixin:
     """Mixin that provides common setup for KPI tests."""
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client = APIClient()
         # Create shared test fixtures
         self.color = Color.objects.create(name="red", is_active=True)
@@ -1268,6 +1270,8 @@ class FilterOptionsViewTest(TestCase):
     """Tests for GET /quality/kpis/filter-options/"""
 
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.client = APIClient()
         self.color = Color.objects.create(name="blue", is_active=True)
         for i in range(3):
