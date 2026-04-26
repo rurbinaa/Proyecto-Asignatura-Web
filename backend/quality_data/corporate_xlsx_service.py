@@ -115,7 +115,7 @@ class CorporateXlsxReportService:
     def _populate_workbook(self, workbook, datasets):
         for dataset_config in CORPORATE_XLSX_EXPORT_CONFIG:
             queryset = datasets[dataset_config["dataset"]]
-            rows = self._queryset_to_rows(queryset, dataset_config["columns"])
+            rows = self._queryset_to_rows(queryset, dataset_config)
             self._write_dataset_table(
                 workbook,
                 sheet_name=dataset_config["sheet_name"],
@@ -124,12 +124,133 @@ class CorporateXlsxReportService:
             )
 
     @staticmethod
-    def _queryset_to_rows(queryset, columns):
+    def _queryset_to_rows(queryset, dataset_config):
+        columns = dataset_config["columns"]
+        row_builder = dataset_config.get("row_builder")
+
+        if row_builder == "qc_fa":
+            return CorporateXlsxReportService._build_qc_fa_rows(
+                queryset=queryset,
+                columns=columns,
+                defect_columns=dataset_config.get("defect_columns", []),
+            )
+
+        if row_builder == "seconds_general":
+            return CorporateXlsxReportService._build_seconds_general_rows(
+                queryset=queryset,
+                columns=columns,
+            )
+
+        if row_builder == "container":
+            return CorporateXlsxReportService._build_container_rows(
+                queryset=queryset,
+                columns=columns,
+                defect_columns=dataset_config.get("defect_columns", []),
+            )
+
         values = queryset.order_by("pk").values_list(*columns)
         return [
             [CorporateXlsxReportService._normalize_cell_value(value) for value in row]
             for row in values
         ]
+
+    @staticmethod
+    def _build_qc_fa_rows(*, queryset, columns, defect_columns):
+        rows = []
+        defect_columns = set(defect_columns)
+        inspections = queryset.select_related("color").prefetch_related(
+            "inspection_defects__defect_type"
+        ).order_by("pk")
+
+        for inspection in inspections:
+            defect_amounts = {
+                defect.defect_type.name: defect.amount
+                for defect in inspection.inspection_defects.all()
+            }
+
+            row = []
+            for column in columns:
+                if column == "color":
+                    value = inspection.color.name if inspection.color_id else None
+                elif column in defect_columns:
+                    value = defect_amounts.get(column, 0)
+                else:
+                    value = getattr(inspection, column, None)
+
+                row.append(CorporateXlsxReportService._normalize_cell_value(value))
+
+            rows.append(row)
+
+        return rows
+
+    @staticmethod
+    def _build_seconds_general_rows(*, queryset, columns):
+        rows = []
+        inspections = queryset.order_by("pk")
+
+        for inspection in inspections:
+            values = {
+                column: CorporateXlsxReportService._normalize_cell_value(
+                    getattr(inspection, column, None)
+                )
+                for column in columns
+            }
+
+            rows.append(
+                [
+                    values.get("date"),
+                    values.get("week"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    values.get("total_de_tela"),
+                    values.get("corrido_2"),
+                    values.get("barre"),
+                    values.get("otros_3"),
+                    values.get("degradacion"),
+                    values.get("bordados"),
+                ]
+            )
+
+        return rows
+
+    @staticmethod
+    def _build_container_rows(*, queryset, columns, defect_columns):
+        rows = []
+        defect_columns = set(defect_columns)
+        containers = queryset.prefetch_related("container_defects__defect_type").order_by("pk")
+
+        for container in containers:
+            defect_amounts = {
+                defect.defect_type.name: defect.amount
+                for defect in container.container_defects.all()
+            }
+            fallback_total_defects = sum(
+                amount for name, amount in defect_amounts.items() if name != "total_defects"
+            )
+
+            row = []
+            for column in columns:
+                if column in defect_columns:
+                    value = defect_amounts.get(column)
+                    if column == "total_defects" and value is None:
+                        value = fallback_total_defects
+                    if value is None:
+                        value = 0
+                else:
+                    value = getattr(container, column, None)
+
+                row.append(CorporateXlsxReportService._normalize_cell_value(value))
+
+            rows.append(row)
+
+        return rows
 
     @staticmethod
     def _normalize_cell_value(value):

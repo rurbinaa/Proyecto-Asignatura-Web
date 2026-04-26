@@ -308,6 +308,11 @@ CORPORATE_XLSX_PLACEHOLDER_TEMPLATE_RELATIVE_PATH = (
     "plantilla_corporativa.xlsx",
 )
 
+QC_FA_PLANT_EXPORT_COLUMNS = list(QC_FA_PLANT_REMAP.values())
+QC_FA_CUSTOMER_EXPORT_COLUMNS = list(QC_FA_CUSTOMER_REMAP.values())
+SECONDS_GENERAL_EXPORT_COLUMNS = list(SECONDS_GENERAL_REMAP.values())
+CONTAINER_EXPORT_COLUMNS = list(CONTAINER_REMAP.values())
+
 CORPORATE_XLSX_EXPORT_CONFIG = [
     {
         "dataset": "qfa",
@@ -317,25 +322,9 @@ CORPORATE_XLSX_EXPORT_CONFIG = [
         "date_field": "date_1",
         "date_field_type": "char",
         "queryset_filters": {"table_type": "QFA"},
-        "columns": [
-            "date_1",
-            "week",
-            "customer",
-            "team",
-            "coord",
-            "date_2",
-            "po",
-            "style",
-            "batch",
-            "qty",
-            "seconds",
-            "accepted",
-            "rejected",
-            "sample",
-            "defects_total",
-            "aql",
-            "pass_or_fail",
-        ],
+        "columns": QC_FA_PLANT_EXPORT_COLUMNS,
+        "defect_columns": QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
+        "row_builder": "qc_fa",
     },
     {
         "dataset": "qfc",
@@ -345,24 +334,9 @@ CORPORATE_XLSX_EXPORT_CONFIG = [
         "date_field": "date_1",
         "date_field_type": "char",
         "queryset_filters": {"table_type": "QFC"},
-        "columns": [
-            "date_1",
-            "week",
-            "customer",
-            "team",
-            "coord",
-            "po",
-            "style",
-            "batch",
-            "qty",
-            "seconds",
-            "accepted",
-            "rejected",
-            "sample",
-            "defects_total",
-            "aql",
-            "pass_or_fail",
-        ],
+        "columns": QC_FA_CUSTOMER_EXPORT_COLUMNS,
+        "defect_columns": QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
+        "row_builder": "qc_fa",
     },
     {
         "dataset": "seconds_a4",
@@ -404,16 +378,8 @@ CORPORATE_XLSX_EXPORT_CONFIG = [
         "date_field": "date",
         "date_field_type": "char",
         "queryset_filters": {},
-        "columns": [
-            "date",
-            "week",
-            "corrido_2",
-            "barre",
-            "otros_3",
-            "degradacion",
-            "bordados",
-            "total_de_tela",
-        ],
+        "columns": SECONDS_GENERAL_EXPORT_COLUMNS,
+        "row_builder": "seconds_general",
     },
     {
         "dataset": "container",
@@ -423,16 +389,8 @@ CORPORATE_XLSX_EXPORT_CONFIG = [
         "date_field": "date",
         "date_field_type": "date",
         "queryset_filters": {},
-        "columns": [
-            "date",
-            "container_number",
-            "customer",
-            "transfer_of_container",
-            "total_palette",
-            "total_palette_pass",
-            "total_palette_rejected",
-            "percentage_pass",
-            "percentage_reject",
-        ],
+        "columns": CONTAINER_EXPORT_COLUMNS,
+        "defect_columns": CONTAINER_AMOUNT_DEFEACTS_FIELDS,
+        "row_builder": "container",
     },
 ]
