@@ -5,6 +5,8 @@
   justify-content: center;
   background-color: var(--bg-light);
   padding: 20px;
+  position: relative;
+  overflow: hidden;
 }
 
 .login-card {
@@ -14,30 +16,53 @@
   padding: 48px;
   width: 100%;
   max-width: 420px;
+  position: relative;
+  z-index: 10;
 }
 
 .login-header {
   text-align: center;
   margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.login-icon {
-  width: 48px;
-  height: 48px;
-  color: var(--primary);
+.login-logo-img {
+  width: 120px;
+  height: auto;
+  object-fit: contain;
   margin-bottom: 16px;
 }
 
 .login-title {
   font-size: 28px;
   font-weight: 700;
-  color: var(--bg-dark);
-  margin-bottom: 8px;
+  color: #163451;
+  margin-bottom: 0px;
+  display: inline;
 }
 
 .login-subtitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: #6484a0;
+  opacity: 0.62;
+  margin-left: 0px;
+}
+
+.login-company {
+  font-size: 28px;
+  font-weight: 700;
+  color: #6484a0;
+  opacity: 0.62;
+  margin-bottom: 8px;
+}
+
+.login-credentials {
   font-size: 14px;
-  color: var(--text-muted);
+  color: #58748e;
+  margin-top: 8px;
 }
 
 .login-form {
@@ -55,22 +80,25 @@
 .input-label {
   font-size: 14px;
   font-weight: 500;
-  color: var(--bg-dark);
+  color: #1d3c59;
 }
 
 .input-field {
   padding: 12px 16px;
-  border: 1px solid #d1d5db;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(135, 176, 212, 0.38);
   border-radius: 8px;
   font-size: 14px;
   font-family: 'Inter', sans-serif;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  color: #163451;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
 }
 
 .input-field:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(86, 126, 187, 0.15);
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #6b9dd2;
+  box-shadow: 0 0 0 3px rgba(107, 157, 210, 0.16);
 }
 
 .error-text {
@@ -82,7 +110,7 @@
 .login-button {
   margin-top: 8px;
   padding: 14px 24px;
-  background-color: var(--primary);
+  background: linear-gradient(135deg, #5d8fca 0%, #416ea9 100%);
   color: var(--white);
   border: none;
   border-radius: 8px;
@@ -90,9 +118,12 @@
   font-weight: 600;
   font-family: 'Inter', sans-serif;
   cursor: pointer;
-  transition: background-color 0.2s;
+  box-shadow: 0 12px 24px rgba(46, 88, 139, 0.24);
+  transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
 }
 
 .login-button:hover {
-  background-color: var(--primary-hover);
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px rgba(46, 88, 139, 0.28);
 }
