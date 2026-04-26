@@ -659,28 +659,20 @@ class TopDefectsView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("top_defects", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
-
-        queryset = InspectionDefect.objects.all()
-        queryset = self.get_filtered_queryset(queryset)
-
-        aggregated = (
-            queryset
-            .values(defect_type_name=F('defect_type__name'))
-            .annotate(total=Sum('amount'))
-            .order_by('-total')[:10]
-        )
-
-        result = [
-            {"label": item['defect_type_name'], "value": item['total']}
-            for item in aggregated
-        ]
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+        def _compute():
+            queryset = InspectionDefect.objects.all()
+            queryset = self.get_filtered_queryset(queryset)
+            aggregated = (
+                queryset
+                .values(defect_type_name=F('defect_type__name'))
+                .annotate(total=Sum('amount'))
+                .order_by('-total')[:10]
+            )
+            return [
+                {"label": item['defect_type_name'], "value": item['total']}
+                for item in aggregated
+            ]
+        return _get_cached_kpi_response("top_defects", request, _compute)
 
 
 class FabricDefectsView(KpiFilterMixin, APIView):
@@ -693,57 +685,38 @@ class FabricDefectsView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("fabric_defects", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
-
-        from quality_data.models import SecondsGeneralDefect
-        from django.db.models import Sum
-
-        queryset = SecondsGeneral.objects.all()
-        queryset = self._apply_date_range_filter(queryset, 'date')
-
-        week = request.query_params.get('week')
-        if week:
-            try:
-                week = int(week)
-            except ValueError:
-                return Response(
-                    {"detail": "Invalid 'week' parameter. It must be an integer."},
-                    status=http_status.HTTP_400_BAD_REQUEST,
-                )
-            queryset = queryset.filter(week__exact=week)
-
-        fabric_defect_names = ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]
-
-        aggregated = (
-            SecondsGeneralDefect.objects
-            .filter(
-                seconds_general__in=queryset,
-                defect_type__name__in=fabric_defect_names,
+        def _compute():
+            from quality_data.models import SecondsGeneralDefect
+            from django.db.models import Sum
+            queryset = SecondsGeneral.objects.all()
+            queryset = self._apply_date_range_filter(queryset, 'date')
+            week = request.query_params.get('week')
+            if week:
+                try:
+                    week = int(week)
+                except ValueError:
+                    return Response(
+                        {"detail": "Invalid 'week' parameter. It must be an integer."},
+                        status=http_status.HTTP_400_BAD_REQUEST,
+                    )
+                queryset = queryset.filter(week__exact=week)
+            fabric_defect_names = ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]
+            aggregated = (
+                SecondsGeneralDefect.objects
+                .filter(seconds_general__in=queryset, defect_type__name__in=fabric_defect_names)
+                .values(defect_name=F("defect_type__name"))
+                .annotate(total=Sum("amount"))
             )
-            .values(defect_name=F("defect_type__name"))
-            .annotate(total=Sum("amount"))
-        )
-
-        result_map = {item["defect_name"]: item["total"] or 0 for item in aggregated}
-
-        label_map = {
-            "corrido_2": "Corrido",
-            "barre": "Barre",
-            "otros_3": "Otros",
-            "degradacion": "Degradación",
-            "bordados": "Bordados",
-        }
-
-        result = [
-            {"label": label_map[name], "value": result_map.get(name, 0)}
-            for name in fabric_defect_names
-        ]
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+            result_map = {item["defect_name"]: item["total"] or 0 for item in aggregated}
+            label_map = {
+                "corrido_2": "Corrido", "barre": "Barre", "otros_3": "Otros",
+                "degradacion": "Degradación", "bordados": "Bordados",
+            }
+            return [
+                {"label": label_map[name], "value": result_map.get(name, 0)}
+                for name in fabric_defect_names
+            ]
+        return _get_cached_kpi_response("fabric_defects", request, _compute)
 
 
 class DefectsByStyleTypeView(KpiFilterMixin, APIView):
@@ -757,46 +730,31 @@ class DefectsByStyleTypeView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("defects_by_style", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
-
-        queryset = self.get_filtered_queryset(InspectionDefect.objects.all())
-
-        top_styles = (
-            queryset
-            .values(style_name=F('inspection__style'))
-            .annotate(total=Sum('amount'))
-            .order_by('-total')[:5]
-        )
-        top_style_names = [item['style_name'] for item in top_styles]
-
-        top_defect_types = (
-            queryset
-            .values(defect_type_name=F('defect_type__name'))
-            .annotate(total=Sum('amount'))
-            .order_by('-total')[:5]
-        )
-        top_defect_type_names = [item['defect_type_name'] for item in top_defect_types]
-
-        aggregated = (
-            queryset.filter(
-                inspection__style__in=top_style_names,
-                defect_type__name__in=top_defect_type_names,
+        def _compute():
+            queryset = self.get_filtered_queryset(InspectionDefect.objects.all())
+            top_styles = (
+                queryset.values(style_name=F('inspection__style'))
+                .annotate(total=Sum('amount')).order_by('-total')[:5]
             )
-            .values(style_name=F('inspection__style'), defect_type_name=F('defect_type__name'))
-            .annotate(total=Sum('amount'))
-            .order_by('-total')
-        )
-
-        result = [
-            {"x": item['style_name'], "y": item['defect_type_name'], "value": item['total']}
-            for item in aggregated
-        ]
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+            top_style_names = [item['style_name'] for item in top_styles]
+            top_defect_types = (
+                queryset.values(defect_type_name=F('defect_type__name'))
+                .annotate(total=Sum('amount')).order_by('-total')[:5]
+            )
+            top_defect_type_names = [item['defect_type_name'] for item in top_defect_types]
+            aggregated = (
+                queryset.filter(
+                    inspection__style__in=top_style_names,
+                    defect_type__name__in=top_defect_type_names,
+                )
+                .values(style_name=F('inspection__style'), defect_type_name=F('defect_type__name'))
+                .annotate(total=Sum('amount')).order_by('-total')
+            )
+            return [
+                {"x": item['style_name'], "y": item['defect_type_name'], "value": item['total']}
+                for item in aggregated
+            ]
+        return _get_cached_kpi_response("defects_by_style", request, _compute)
 
 
 # ─────────────────────────────────────────────────────────
@@ -813,27 +771,17 @@ class PassRejectDistributionView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("pass_reject", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
-
-        queryset = self.get_filtered_queryset(QualityQcFa.objects.all())
-
-        aggregated = (
-            queryset
-            .values(pof=F('pass_or_fail'))
-            .annotate(count=Count('id'))
-            .order_by('pof')
-        )
-
-        result = [
-            {"name": item['pof'], "value": item['count']}
-            for item in aggregated
-        ]
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+        def _compute():
+            queryset = self.get_filtered_queryset(QualityQcFa.objects.all())
+            aggregated = (
+                queryset.values(pof=F('pass_or_fail'))
+                .annotate(count=Count('id')).order_by('pof')
+            )
+            return [
+                {"name": item['pof'], "value": item['count']}
+                for item in aggregated
+            ]
+        return _get_cached_kpi_response("pass_reject", request, _compute)
 
 
 class RejectedEvolutionView(KpiFilterMixin, APIView):
@@ -846,30 +794,20 @@ class RejectedEvolutionView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("rejected_evolution", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
-
-        queryset = self.get_filtered_queryset(QualityQcFa.objects.all())
-
-        aggregated = (
-            queryset
-            .values(week_num=F('week'))
-            .annotate(total_rejected=Sum('rejected'))
-            .order_by('week_num')
-        )
-
-        result = [{
-            "name": "Rejected",
-            "data": [
-                {"x": item['week_num'], "y": item['total_rejected'] or 0}
-                for item in aggregated
-            ]
-        }]
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+        def _compute():
+            queryset = self.get_filtered_queryset(QualityQcFa.objects.all())
+            aggregated = (
+                queryset.values(week_num=F('week'))
+                .annotate(total_rejected=Sum('rejected')).order_by('week_num')
+            )
+            return [{
+                "name": "Rejected",
+                "data": [
+                    {"x": item['week_num'], "y": item['total_rejected'] or 0}
+                    for item in aggregated
+                ]
+            }]
+        return _get_cached_kpi_response("rejected_evolution", request, _compute)
 
 
 class ContainersByStateView(KpiFilterMixin, APIView):
@@ -887,67 +825,44 @@ class ContainersByStateView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("containers_by_state", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
+        def _compute():
+            from django.db.models import IntegerField
+            queryset = Container.objects.all()
+            customer = request.query_params.get('customer')
+            if customer:
+                queryset = queryset.filter(customer__exact=customer)
+            date_range_raw = request.query_params.get('date_range')
+            if date_range_raw is not None and date_range_raw.strip():
+                from_date, to_date = self._parse_date_range_param(date_range_raw, 'date_range')
+            else:
+                from_date = self._parse_date_param(request.query_params.get('from_date'), 'from_date')
+                to_date = self._parse_date_param(request.query_params.get('to_date'), 'to_date')
+                self._validate_date_order(from_date, to_date, ('from_date', 'to_date'))
+            if from_date:
+                queryset = queryset.filter(date__gte=from_date)
+            if to_date:
+                queryset = queryset.filter(date__lte=to_date)
 
-        queryset = Container.objects.all()
-
-        customer = request.query_params.get('customer')
-        if customer:
-            queryset = queryset.filter(customer__exact=customer)
-
-        date_range_raw = request.query_params.get('date_range')
-        if date_range_raw is not None and date_range_raw.strip():
-            from_date, to_date = self._parse_date_range_param(date_range_raw, 'date_range')
-        else:
-            from_date = self._parse_date_param(request.query_params.get('from_date'), 'from_date')
-            to_date = self._parse_date_param(request.query_params.get('to_date'), 'to_date')
-            self._validate_date_order(from_date, to_date, ('from_date', 'to_date'))
-
-        if from_date:
-            queryset = queryset.filter(date__gte=from_date)
-        if to_date:
-            queryset = queryset.filter(date__lte=to_date)
-
-        # Use Case/When for range grouping
-        from django.db.models import IntegerField
-
-        aggregated = (
-            queryset
-            .annotate(
-                range_bucket=Case(
-                    When(percentage_pass__lt=80, then=1),
-                    When(percentage_pass__gte=80, percentage_pass__lt=90, then=2),
-                    When(percentage_pass__gte=90, percentage_pass__lte=95, then=3),
-                    When(percentage_pass__gt=95, then=4),
-                    output_field=IntegerField(),
-                )
+            aggregated = (
+                queryset.annotate(
+                    range_bucket=Case(
+                        When(percentage_pass__lt=80, then=1),
+                        When(percentage_pass__gte=80, percentage_pass__lt=90, then=2),
+                        When(percentage_pass__gte=90, percentage_pass__lte=95, then=3),
+                        When(percentage_pass__gt=95, then=4),
+                        output_field=IntegerField(),
+                    )
+                ).values('range_bucket').annotate(count=Count('id'))
             )
-            .values('range_bucket')
-            .annotate(count=Count('id'))
-        )
-
-        # Build result with proper labels
-        range_labels = {
-            1: "< 80%",
-            2: "80-90%",
-            3: "90-95%",
-            4: "> 95%",
-        }
-
-        result = [
-            {"name": range_labels[item['range_bucket']], "value": item['count']}
-            for item in aggregated
-        ]
-
-        all_ranges = ["< 80%", "80-90%", "90-95%", "> 95%"]
-        result_dict = {r["name"]: r["value"] for r in result}
-        result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+            range_labels = {1: "< 80%", 2: "80-90%", 3: "90-95%", 4: "> 95%"}
+            result = [
+                {"name": range_labels[item['range_bucket']], "value": item['count']}
+                for item in aggregated
+            ]
+            all_ranges = ["< 80%", "80-90%", "90-95%", "> 95%"]
+            result_dict = {r["name"]: r["value"] for r in result}
+            return [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
+        return _get_cached_kpi_response("containers_by_state", request, _compute)
 
 class DefectRateView(KpiFilterMixin, APIView):
     """
@@ -960,24 +875,16 @@ class DefectRateView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        cache_key = _kpi_cache_key("defect_rate", request)
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
-
-        aggregated = self.get_filtered_queryset(QualityQcFa.objects.all()).aggregate(
-            total_defects=Sum('defects_total'),
-            total_sample=Sum('sample'),
-        )
-
-        total_defects = aggregated['total_defects'] or 0
-        total_sample = aggregated['total_sample'] or 0
-
-        value = round((total_defects / total_sample) * 100, 2) if total_sample > 0 else 0
-        result = {"label": "Defect Rate", "value": value}
-
-        cache.set(cache_key, result, CACHE_TTL)
-        return Response(result, status=http_status.HTTP_200_OK)
+        def _compute():
+            aggregated = self.get_filtered_queryset(QualityQcFa.objects.all()).aggregate(
+                total_defects=Sum('defects_total'),
+                total_sample=Sum('sample'),
+            )
+            total_defects = aggregated['total_defects'] or 0
+            total_sample = aggregated['total_sample'] or 0
+            value = round((total_defects / total_sample) * 100, 2) if total_sample > 0 else 0
+            return {"label": "Defect Rate", "value": value}
+        return _get_cached_kpi_response("defect_rate", request, _compute)
 
 
 class CorporateXlsxReportView(KpiFilterMixin, APIView):
