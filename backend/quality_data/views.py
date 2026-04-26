@@ -117,10 +117,12 @@ class Process(APIView):
 
     This endpoint exists to support the upload → preview → confirm workflow.
     """
-    parser_classes = [FileUploadParser]
+    parser_classes = [MultiPartParser]
 
     def post (self, request, filename, format = None):
-        file_obj = request.data['file']
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file provided"}, status=400)
 
         # Only _qc_fa_plant_df is used for validation in this endpoint.
         # The other sheets are parsed but not used here - they will be
@@ -174,10 +176,12 @@ class Process(APIView):
 # DEPRECATED: Use ExcelPreviewView + ExcelConfirmView instead.
 # Kept for backward compatibility. Will be removed in a future version.
 class SaveData(APIView):
-    parser_classes = [FileUploadParser]
+    parser_classes = [MultiPartParser]
 
     def post (self, request, filename, format = None):
-        file_obj = request.data['file']
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file provided"}, status=400)
 
         qc_fa_plant_df = load_and_clean(
             file_obj,
@@ -274,10 +278,12 @@ class ExcelPreviewView(APIView):
     POST /excel/preview/<filename>/
     Returns: session_id + preview summary (new, modified, warnings per sheet)
     """
-    parser_classes = [FileUploadParser]
+    parser_classes = [MultiPartParser]
 
     def post(self, request, filename, format=None):
-        file_obj = request.data['file']
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "No file provided"}, status=http_status.HTTP_400_BAD_REQUEST)
 
         try:
             # Parse all 5 sheets

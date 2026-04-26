@@ -39,8 +39,19 @@ class CorporateXlsxReportService:
     }
 
     def __init__(self, template_path=None):
-        self.project_root = Path(__file__).resolve().parents[2]
+        self.project_root = self._resolve_project_root()
         self.template_path = self._resolve_template_path(template_path)
+
+    @staticmethod
+    def _resolve_project_root():
+        service_path = Path(__file__).resolve()
+        candidate_roots = [service_path.parents[2], service_path.parents[1]]
+
+        for candidate in candidate_roots:
+            if candidate.joinpath(*CORPORATE_XLSX_CANONICAL_TEMPLATE_RELATIVE_PATH).exists():
+                return candidate
+
+        return candidate_roots[0]
 
     def generate(self, date_from, date_to):
         datasets = self.get_datasets(date_from, date_to)
@@ -161,7 +172,17 @@ class CorporateXlsxReportService:
 
     @staticmethod
     def _get_table(worksheet, table_name):
-        return worksheet.tables[table_name]
+        if table_name in worksheet.tables:
+            return worksheet.tables[table_name]
+
+        available_tables = list(worksheet.tables.keys())
+        if len(available_tables) == 1:
+            return worksheet.tables[available_tables[0]]
+
+        raise KeyError(
+            f"Table '{table_name}' not found in worksheet '{worksheet.title}'. "
+            f"Available tables: {available_tables}"
+        )
 
     @staticmethod
     def _clear_previous_table_body(worksheet, *, min_col, max_col, start_row, row_count):
