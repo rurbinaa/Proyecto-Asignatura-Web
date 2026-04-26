@@ -29,6 +29,7 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status as http_status
+from rest_framework import exceptions as rest_framework_exceptions
 from django.db.models import Sum
 from quality_data.models import (
     QualityQcFa,
@@ -1027,6 +1028,52 @@ class KpiFilterDateRangeTest(KpiTestMixin, TestCase):
 
         self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
         self.assertIn("date_range", response.data)
+
+
+class KpiFilterRequiredDateBoundsHelperTest(TestCase):
+    def test_parse_required_date_bounds_returns_iso_dates(self):
+        from quality_data.views import KpiFilterMixin
+
+        from_date, to_date = KpiFilterMixin.parse_required_date_bounds(
+            {"date_from": "2025-01-01", "date_to": "2025-01-31"}
+        )
+
+        self.assertEqual(from_date.isoformat(), "2025-01-01")
+        self.assertEqual(to_date.isoformat(), "2025-01-31")
+
+    def test_parse_required_date_bounds_requires_both_fields(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds({"date_to": "2025-01-31"})
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds({"date_from": "2025-01-01"})
+
+        self.assertIn("date_to", error_ctx.exception.detail)
+
+    def test_parse_required_date_bounds_rejects_invalid_iso_values(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds(
+                {"date_from": "01-01-2025", "date_to": "2025-01-31"}
+            )
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+
+    def test_parse_required_date_bounds_rejects_reversed_order(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds(
+                {"date_from": "2025-02-01", "date_to": "2025-01-31"}
+            )
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+        self.assertIn("date_to", error_ctx.exception.detail)
 
 
 class KpiFilterTeamTest(KpiTestMixin, TestCase):

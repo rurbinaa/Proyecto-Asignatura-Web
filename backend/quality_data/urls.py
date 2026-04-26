@@ -6,7 +6,7 @@ from .views import (
     KpiViewSet, AqlKpiViewSet,
     PassRejectDistributionView, RejectedEvolutionView,
     ContainersByStateView, DefectRateView,
-    VolatileKpiView, FilterOptionsView,
+    VolatileKpiView, FilterOptionsView, CorporateXlsxReportView,
 )
 
 app_name = 'quality_data'
@@ -46,4 +46,7 @@ urlpatterns = [
 
     # Filter options — dynamic choices for filter selects/datalists
     path(r'kpis/filter-options/', FilterOptionsView.as_view(), name='kpi-filter-options'),
+
+    # Corporate QA XLSX reports
+    path(r'reports/corporate-xlsx/', CorporateXlsxReportView.as_view(), name='corporate-xlsx-report'),
 ]

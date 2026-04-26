@@ -147,3 +147,61 @@ def normalize_container_date(value):
         return datetime.date.fromisoformat(normalized)
     except (TypeError, ValueError):
         return None
+
+
+def normalize_date_bounds(date_from, date_to):
+    """Normalize mixed date inputs into validated Python date bounds."""
+    normalized_from = _normalize_date_bound_value(date_from)
+    normalized_to = _normalize_date_bound_value(date_to)
+
+    if normalized_from and normalized_to and normalized_from > normalized_to:
+        raise ValueError("Invalid date range. Start date must be on or before end date.")
+
+    return normalized_from, normalized_to
+
+
+def apply_charfield_iso_date_range(queryset, field_name, date_from, date_to):
+    """Filter CharField-ISO dates with normalized date bounds."""
+    normalized_from, normalized_to = normalize_date_bounds(date_from, date_to)
+
+    if normalized_from:
+        queryset = queryset.filter(**{f"{field_name}__gte": normalized_from.isoformat()})
+    if normalized_to:
+        queryset = queryset.filter(**{f"{field_name}__lte": normalized_to.isoformat()})
+
+    return queryset
+
+
+def apply_datefield_date_range(queryset, field_name, date_from, date_to):
+    """Filter DateField values with normalized date bounds."""
+    normalized_from, normalized_to = normalize_date_bounds(date_from, date_to)
+
+    if normalized_from:
+        queryset = queryset.filter(**{f"{field_name}__gte": normalized_from})
+    if normalized_to:
+        queryset = queryset.filter(**{f"{field_name}__lte": normalized_to})
+
+    return queryset
+
+
+def _normalize_date_bound_value(value):
+    if value is None:
+        return None
+
+    if isinstance(value, datetime.datetime):
+        return value.date()
+
+    if isinstance(value, datetime.date):
+        return value
+
+    if isinstance(value, str):
+        normalized = parse_date(value)
+        if normalized:
+            return datetime.date.fromisoformat(normalized)
+        return None
+
+    normalized = parse_date(value)
+    if normalized:
+        return datetime.date.fromisoformat(normalized)
+
+    return None

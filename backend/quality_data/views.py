@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.viewsets import ViewSet
 from rest_framework import exceptions as rest_framework_exceptions
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
 from django.db.models import Sum, Count, Case, When, F
 import pandas as pd
 import numpy as np
@@ -52,6 +53,10 @@ from excel_importer.pivot_parsers import (
     parse_top_defects,
     parse_defects_by_style,
     parse_containers_by_state,
+)
+from quality_data.corporate_xlsx_service import (
+    CorporateXlsxReportService,
+    EmptyCorporateXlsxDataError,
 )
 
 def _get_incremental_rows(df, model_class, **filters):
@@ -450,6 +455,30 @@ class KpiFilterMixin:
         from_date = cls._parse_date_param(parts[0], field_name)
         to_date = cls._parse_date_param(parts[1], field_name)
         cls._validate_date_order(from_date, to_date, field_name)
+        return from_date, to_date
+
+    @classmethod
+    def parse_required_date_bounds(
+        cls,
+        query_params,
+        from_field='date_from',
+        to_field='date_to',
+    ):
+        from_raw = query_params.get(from_field)
+        to_raw = query_params.get(to_field)
+
+        missing_errors = {}
+        if from_raw is None or not str(from_raw).strip():
+            missing_errors[from_field] = 'This query parameter is required.'
+        if to_raw is None or not str(to_raw).strip():
+            missing_errors[to_field] = 'This query parameter is required.'
+
+        if missing_errors:
+            raise rest_framework_exceptions.ValidationError(missing_errors)
+
+        from_date = cls._parse_date_param(from_raw, from_field)
+        to_date = cls._parse_date_param(to_raw, to_field)
+        cls._validate_date_order(from_date, to_date, (from_field, to_field))
         return from_date, to_date
 
     @staticmethod
@@ -866,6 +895,27 @@ class DefectRateView(KpiFilterMixin, APIView):
         result = {"label": "Defect Rate", "value": value}
 
         return Response(result, status=http_status.HTTP_200_OK)
+
+
+class CorporateXlsxReportView(KpiFilterMixin, APIView):
+    def get(self, request):
+        date_from, date_to = self.parse_required_date_bounds(request.query_params)
+        service = CorporateXlsxReportService()
+
+        try:
+            artifact = service.generate(date_from, date_to)
+        except EmptyCorporateXlsxDataError as error:
+            return Response(
+                {"error": str(error)},
+                status=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        response = HttpResponse(
+            artifact.file_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{artifact.filename}"'
+        return response
 
 
 # ─────────────────────────────────────────────────────────
