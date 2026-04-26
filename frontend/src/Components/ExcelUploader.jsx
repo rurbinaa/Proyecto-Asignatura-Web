@@ -1,5 +1,4 @@
-import { useState, useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useState, useRef } from 'react';
 import { 
   UploadCloud, 
   FileSpreadsheet, 
@@ -22,6 +21,7 @@ const SHEET_GROUPS_MAP = {
 
 export default function ExcelUploader({ onVolatileDashboard }) {
   const [selectedFile, setSelectedFile] = useState(null);
+  const fileInputRef = useRef(null);
   const [reportType] = useState('QFA'); 
   const [errorMsg, setErrorMsg] = useState('');
   
@@ -32,22 +32,18 @@ export default function ExcelUploader({ onVolatileDashboard }) {
   const [apiError, setApiError] = useState('');
   const [importStats, setImportStats] = useState({ total: 0, inserted: 0, skipped: 0 });
 
-  const onDrop = useCallback((acceptedFiles) => {
-    if (acceptedFiles.length > 0) {
-      setSelectedFile(acceptedFiles[0]);
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
       setErrorMsg('');
       setUploadState('idle');
     }
-  }, []);
+  };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    maxFiles: 1,
-    accept: { 
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 
-      'text/csv': ['.csv'] 
-    }
-  });
+  const handleDropZoneClick = () => {
+    fileInputRef.current?.click();
+  };
 
   const resetUploader = () => {
     setSelectedFile(null);
@@ -286,8 +282,8 @@ export default function ExcelUploader({ onVolatileDashboard }) {
       {/* idle state - show dropzone or file with analyze button */}
       {uploadState === 'idle' && (
         <>
-          <div {...getRootProps()} className={`dropzone ${isDragActive ? 'drag-active' : ''} ${errorMsg ? 'drag-error' : ''}`}>
-            <input {...getInputProps()} />
+          <div onClick={handleDropZoneClick} className={`dropzone ${errorMsg ? 'drag-error' : ''}`}>
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".xlsx,.csv" hidden />
             {selectedFile ? (
               <div className="file-preview">
                 <FileSpreadsheet className="file-icon success-icon" />
@@ -304,7 +300,7 @@ export default function ExcelUploader({ onVolatileDashboard }) {
                 <h3 className="dropzone-title">
                   Upload your file for: {reportType === 'ALL' ? 'All sheets' : SHEET_GROUPS_MAP[reportType].join(' + ')}
                 </h3>
-                <p className="dropzone-subtitle">Drag and drop or click to browse</p>
+                <p className="dropzone-subtitle">Click to browse</p>
               </div>
             )}
           </div>
