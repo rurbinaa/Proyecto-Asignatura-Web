@@ -68,11 +68,14 @@ def load_pivot_range(file_obj, sheet, header_row, usecols, nrows=None):
     return df
 
 
-def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols):
+def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols, excel_file=None):
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
-    file_obj.seek(0)
-    df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+    if excel_file is not None:
+        df = pd.read_excel(excel_file, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+    else:
+        file_obj.seek(0)
+        df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
 
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)

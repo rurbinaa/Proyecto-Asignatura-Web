@@ -41,6 +41,12 @@ class CorporateXlsxReportService:
     def __init__(self, template_path=None):
         self.project_root = self._resolve_project_root()
         self.template_path = self._resolve_template_path(template_path)
+        self._template_bytes = None
+
+    def _get_workbook(self):
+        if self._template_bytes is None:
+            self._template_bytes = self.template_path.read_bytes()
+        return load_workbook(BytesIO(self._template_bytes))
 
     @staticmethod
     def _resolve_project_root():
@@ -58,7 +64,7 @@ class CorporateXlsxReportService:
         if not any(dataset.exists() for dataset in datasets.values()):
             raise EmptyCorporateXlsxDataError("No data for selected range.")
 
-        workbook = load_workbook(self.template_path)
+        workbook = self._get_workbook()
         self._populate_workbook(workbook, datasets)
         output = BytesIO()
         workbook.save(output)
@@ -333,10 +339,11 @@ class CorporateXlsxReportService:
         row_values,
     ):
         explicit_columns = len(row_values)
+        prototype_cells = [worksheet.cell(row=prototype_row, column=col) for col in range(min_col, max_col + 1)]
 
         for col_offset, col in enumerate(range(min_col, max_col + 1)):
             target_cell = worksheet.cell(row=target_row, column=col)
-            source_cell = worksheet.cell(row=prototype_row, column=col)
+            source_cell = prototype_cells[col_offset]
 
             self._copy_cell_style(source_cell, target_cell)
 
@@ -352,12 +359,6 @@ class CorporateXlsxReportService:
     def _copy_cell_style(source_cell, target_cell):
         if source_cell.has_style:
             target_cell._style = copy(source_cell._style)
-        target_cell.number_format = source_cell.number_format
-        target_cell.protection = copy(source_cell.protection)
-        target_cell.alignment = copy(source_cell.alignment)
-        target_cell.fill = copy(source_cell.fill)
-        target_cell.font = copy(source_cell.font)
-        target_cell.border = copy(source_cell.border)
 
     @staticmethod
     def _clone_formula_if_present(*, source_cell, target_cell):
