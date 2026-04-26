@@ -72,7 +72,7 @@ export default function KpiCard({ title, loading = false, error = null, children
         )}
         {!loading && !error && !children && (
           <div style={centerContentStyle}>
-            <div style={emptyStyle}>Sin datos</div>
+            <div style={emptyStyle}>No data</div>
           </div>
         )}
         {!loading && !error && children && <div style={chartContainerStyle}>{children}</div>}

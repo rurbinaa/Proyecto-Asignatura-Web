@@ -63,6 +63,14 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 100vh;
 }
 
+.app-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  color: white;
+}
+
 .main-wrapper {
   flex: 1;
   margin-left: 250px;
