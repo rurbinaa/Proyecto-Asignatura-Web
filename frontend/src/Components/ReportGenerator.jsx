@@ -107,7 +107,7 @@ export default function ReportGenerator() {
             <span className="status-message">{error}</span>
           </div>
           <button className="dismiss-btn" onClick={handleDismiss} type="button">
-            ×
+            x
           </button>
         </div>
       )}
@@ -123,7 +123,7 @@ export default function ReportGenerator() {
             </span>
           </div>
           <button className="dismiss-btn" onClick={handleDismiss} type="button">
-            ×
+            x
           </button>
         </div>
       )}
