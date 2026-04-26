@@ -15,7 +15,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      const res = await axiosClient.get('auth/me/');
+      const res = await axiosClient.get('/api/auth/me/');
       setUser(res.data);
     } catch (error) {
       setUser(null);
@@ -40,7 +40,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     try {
-      const response = await axiosClient.post('auth/login/', credentials);
+      const response = await axiosClient.post('/api/auth/login/', credentials);
       tokenStorage.setTokens({
         access: response.data.access,
         refresh: response.data.refresh,
@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await axiosClient.post('auth/logout/');
+      await axiosClient.post('/api/auth/logout/');
     } catch {}
     tokenStorage.clear();
     setUser(null);

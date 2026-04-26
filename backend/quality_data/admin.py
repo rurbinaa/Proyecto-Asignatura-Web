@@ -55,7 +55,7 @@ class SecondsA4Admin(admin.ModelAdmin):
 
 @admin.register(SecondsGeneral)
 class SecondsGeneralAdmin(admin.ModelAdmin):
-    list_display = ('date', 'week', 'total_de_tela')
+    list_display = ('date', 'week', 'customer', 'style')
     list_filter = ('week',)
     search_fields = ('date',)
 

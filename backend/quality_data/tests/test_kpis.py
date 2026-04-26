@@ -29,6 +29,7 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status as http_status
+from rest_framework import exceptions as rest_framework_exceptions
 from django.db.models import Sum
 from quality_data.models import (
     QualityQcFa,
@@ -116,17 +117,25 @@ class KpiTestMixin:
             )
 
         # SecondsGeneral records
+        from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
+        defect_types = {}
+        for name in ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]:
+            defect_types[name], _ = SecondsGeneralDefectType.objects.get_or_create(name=name)
+
         for i in range(3):
-            SecondsGeneral.objects.create(
+            sg = SecondsGeneral.objects.create(
                 week=i + 1,
                 date=f"2025-01-{i + 10:02d}",
-                corrido_2=10 + i,
-                barre=5 + i,
-                otros_3=3 + i,
-                degradacion=2 + i,
-                bordados=1 + i,
-                total_de_tela=21 + i * 5,
             )
+            for name, amount_base in [
+                ("corrido_2", 10), ("barre", 5), ("otros_3", 3),
+                ("degradacion", 2), ("bordados", 1),
+            ]:
+                SecondsGeneralDefect.objects.create(
+                    seconds_general=sg,
+                    defect_type=defect_types[name],
+                    amount=amount_base + i,
+                )
 
         # Container records — 6 containers distributed across percentage ranges
         pct_values = [75.0, 85.0, 87.0, 92.0, 93.0, 97.0]
@@ -1027,6 +1036,52 @@ class KpiFilterDateRangeTest(KpiTestMixin, TestCase):
 
         self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
         self.assertIn("date_range", response.data)
+
+
+class KpiFilterRequiredDateBoundsHelperTest(TestCase):
+    def test_parse_required_date_bounds_returns_iso_dates(self):
+        from quality_data.views import KpiFilterMixin
+
+        from_date, to_date = KpiFilterMixin.parse_required_date_bounds(
+            {"date_from": "2025-01-01", "date_to": "2025-01-31"}
+        )
+
+        self.assertEqual(from_date.isoformat(), "2025-01-01")
+        self.assertEqual(to_date.isoformat(), "2025-01-31")
+
+    def test_parse_required_date_bounds_requires_both_fields(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds({"date_to": "2025-01-31"})
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds({"date_from": "2025-01-01"})
+
+        self.assertIn("date_to", error_ctx.exception.detail)
+
+    def test_parse_required_date_bounds_rejects_invalid_iso_values(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds(
+                {"date_from": "01-01-2025", "date_to": "2025-01-31"}
+            )
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+
+    def test_parse_required_date_bounds_rejects_reversed_order(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds(
+                {"date_from": "2025-02-01", "date_to": "2025-01-31"}
+            )
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+        self.assertIn("date_to", error_ctx.exception.detail)
 
 
 class KpiFilterTeamTest(KpiTestMixin, TestCase):

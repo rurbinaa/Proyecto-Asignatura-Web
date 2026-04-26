@@ -868,28 +868,39 @@ class BulkInsertSecondsCoverageTest(TestCase):
 
     def test_bulk_insert_seconds_general_creates_records(self):
         import pandas as pd
+        from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]:
+            SecondsGeneralDefectType.objects.create(name=name)
+
         df = pd.DataFrame([
             {
                 "date": "2025-03-01",
                 "week": 10,
+                "produced": 100,
                 "corrido_2": 5,
                 "barre": 3,
                 "otros_3": 2,
                 "degradacion": 1,
                 "bordados": 0,
-                "total_de_tela": 11,
             }
         ])
 
         bulk_insert_seconds_general(
             df,
-            ["week", "corrido_2", "barre", "otros_3", "degradacion", "bordados", "total_de_tela"],
+            ["week", "produced"],
             ["date"],
         )
 
         from quality_data.models import SecondsGeneral
         self.assertEqual(SecondsGeneral.objects.count(), 1)
-        self.assertEqual(SecondsGeneral.objects.first().total_de_tela, 11)
+        sg = SecondsGeneral.objects.first()
+        self.assertEqual(sg.week, 10)
+        defects = SecondsGeneralDefect.objects.filter(seconds_general=sg)
+        defect_map = {d.defect_type.name: d.amount for d in defects}
+        self.assertEqual(defect_map.get("corrido_2"), 5)
+        self.assertEqual(defect_map.get("barre"), 3)
+        self.assertEqual(defect_map.get("otros_3"), 2)
 
 
 # ─────────────────────────────────────────────────────────

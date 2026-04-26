@@ -63,6 +63,28 @@ function buildQueryString(filters = {}) {
   return qs ? `?${qs}` : '';
 }
 
+function resolveKpiUrl(endpoint, filters = {}) {
+  const queryString = buildQueryString(filters);
+
+  const aqlEndpoints = new Set(['aql-by-style/', 'aql-weekly/', 'audited-pieces/']);
+  const rendimientoEndpoints = new Set([
+    'ac-re-rate-by-line/',
+    'seconds-rework/',
+    'performance-by-customer/',
+    'performance-by-line/',
+  ]);
+
+  if (aqlEndpoints.has(endpoint)) {
+    return `/quality/kpis/aql/${endpoint}${queryString}`;
+  }
+
+  if (rendimientoEndpoints.has(endpoint)) {
+    return `/quality/kpis/rendimiento/${endpoint}${queryString}`;
+  }
+
+  return `/quality/kpis/${endpoint}${queryString}`;
+}
+
 /**
  * Fetch KPI data from a specific endpoint.
  * @param {string} endpoint - KPI endpoint name (e.g. 'aql-by-style/')
@@ -70,8 +92,7 @@ function buildQueryString(filters = {}) {
  * @returns {Promise<any>} JSON response data
  */
 export async function fetchKpi(endpoint, filters = {}) {
-  const queryString = buildQueryString(filters);
-  const url = `/quality/kpis/${endpoint}${queryString}`;
+  const url = resolveKpiUrl(endpoint, filters);
   try {
     const res = await axiosClient.get(url);
     return res.data;

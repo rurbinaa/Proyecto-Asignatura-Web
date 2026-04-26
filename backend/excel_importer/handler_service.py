@@ -9,6 +9,8 @@ from quality_data.models import (
     QualityQcFa,
     SecondsA4,
     SecondsGeneral,
+    SecondsGeneralDefectType,
+    SecondsGeneralDefect,
 )
 from excel_importer.date_utils import normalize_container_date, parse_date
 
@@ -248,16 +250,55 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
     if df.empty:
         return
 
-    instances = []
+    from excel_importer.sheet_configs import SECONDS_GENERAL_DEFECT_COLUMNS, SECONDS_GENERAL_FABRIC_DEFECTS
 
+    instances = []
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
         production_data = _truncate_charfields(SecondsGeneral, production_data)
-
         instances.append(SecondsGeneral(**production_data))
 
     SecondsGeneral.objects.bulk_create(instances, batch_size=1000)
+
+    defect_type_names = SECONDS_GENERAL_DEFECT_COLUMNS
+    defect_types = SecondsGeneralDefectType.objects.filter(name__in=defect_type_names)
+    defect_type_map = {dt.name: dt for dt in defect_types}
+
+    all_created = SecondsGeneral.objects.order_by('-pk')[:len(instances)]
+    # Re-query to get PKs
+    date_week_pairs = [(inst.date, inst.week) for inst in instances]
+    created_records = SecondsGeneral.objects.filter(
+        date__in=[d for d, _ in date_week_pairs],
+        week__in=[w for _, w in date_week_pairs],
+    ).order_by('pk')
+
+    defects_to_create = []
+    for idx, (_, row) in enumerate(df.iterrows()):
+        if idx >= len(created_records):
+            break
+        sg = created_records[idx]
+        for defect_field in defect_type_names:
+            amount = int(row.get(defect_field, 0) or 0)
+            if amount <= 0:
+                continue
+            defect_type = defect_type_map.get(defect_field)
+            if defect_type is None:
+                continue
+            defects_to_create.append(
+                SecondsGeneralDefect(
+                    seconds_general=sg,
+                    defect_type=defect_type,
+                    amount=amount,
+                )
+            )
+
+    if defects_to_create:
+        SecondsGeneralDefect.objects.bulk_create(
+            defects_to_create,
+            batch_size=2000,
+            ignore_conflicts=True,
+        )
 
 
 def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fields):

@@ -101,15 +101,53 @@ class SecondsA4(models.Model):
 
 # Tabla Seconds General
 
+class SecondsGeneralDefectType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
 class SecondsGeneral(models.Model):
     date = models.CharField(max_length=20, db_index=True)
     week = models.IntegerField(db_index=True)
-    corrido_2 = models.IntegerField()
-    barre = models.IntegerField()
-    otros_3 = models.IntegerField()
-    degradacion = models.IntegerField()
-    bordados = models.IntegerField()
-    total_de_tela = models.IntegerField()
+    line = models.CharField(max_length=50, blank=True, default="")
+    customer = models.CharField(max_length=100, blank=True, default="")
+    style = models.CharField(max_length=50, blank=True, default="")
+    artcode = models.CharField(max_length=50, blank=True, default="")
+    color = models.CharField(max_length=50, blank=True, default="")
+    po = models.CharField(max_length=50, blank=True, default="")
+    size = models.CharField(max_length=20, blank=True, default="")
+    produced = models.IntegerField(default=0)
+    fixed = models.IntegerField(default=0)
+    definitive = models.IntegerField(default=0)
+    defects = models.ManyToManyField(
+        SecondsGeneralDefectType,
+        through="SecondsGeneralDefect",
+        related_name="seconds_general_records",
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['week'], name='idx_sg_week'),
+        ]
+
+class SecondsGeneralDefect(models.Model):
+    seconds_general = models.ForeignKey(
+        SecondsGeneral, on_delete=models.CASCADE, related_name="seconds_general_defects"
+    )
+    defect_type = models.ForeignKey(
+        SecondsGeneralDefectType, on_delete=models.PROTECT, related_name="seconds_general_defects"
+    )
+    amount = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["seconds_general", "defect_type"],
+                name="unique_seconds_general_defect",
+            )
+        ]
 
 
 # Tabla Container
