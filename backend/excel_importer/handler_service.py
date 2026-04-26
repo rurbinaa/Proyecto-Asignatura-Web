@@ -240,7 +240,7 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type):
 
         for defect_field in defeacts_fields:
             raw = row.get(defect_field)
-            amount = int(raw) if raw is not None and not (isinstance(raw, float) and math.isnan(raw)) else 0
+            amount = int(raw) if raw is not None and not (isinstance(raw, float) and pd.isna(raw)) else 0
             if amount <= 0:
                 continue
 
@@ -311,7 +311,7 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
         sg = created_records[idx]
         for defect_field in defect_type_names:
             raw = row.get(defect_field)
-            amount = int(raw) if raw is not None and not (isinstance(raw, float) and math.isnan(raw)) else 0
+            amount = int(raw) if raw is not None and not (isinstance(raw, float) and pd.isna(raw)) else 0
             if amount <= 0:
                 continue
             defect_type = defect_type_map.get(defect_field)
