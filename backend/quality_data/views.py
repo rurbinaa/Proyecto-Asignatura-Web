@@ -378,6 +378,12 @@ class ExcelConfirmView(APIView):
             apply_session(session)
             session.refresh_from_db()
 
+            try:
+                from django.core.cache import cache
+                cache.delete_pattern("kpi:*")
+            except Exception:
+                pass
+
             return Response({
                 "session_id": session.pk,
                 "status": session.status,
@@ -629,13 +635,17 @@ def _kpi_cache_key(prefix, request):
 
 
 def _get_cached_kpi_response(prefix, request, compute_fn):
-    cache_key = _kpi_cache_key(prefix, request)
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return Response(cached, status=http_status.HTTP_200_OK)
-    result = compute_fn()
-    cache.set(cache_key, result, CACHE_TTL)
-    return Response(result, status=http_status.HTTP_200_OK)
+    try:
+        cache_key = _kpi_cache_key(prefix, request)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached, status=http_status.HTTP_200_OK)
+        result = compute_fn()
+        cache.set(cache_key, result, CACHE_TTL)
+        return Response(result, status=http_status.HTTP_200_OK)
+    except Exception:
+        result = compute_fn()
+        return Response(result, status=http_status.HTTP_200_OK)
 
 
 class TopDefectsView(KpiFilterMixin, APIView):
@@ -1218,10 +1228,13 @@ class FilterOptionsView(APIView):
     """
 
     def get(self, request):
-        cache_key = "kpi:filter_options"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached, status=http_status.HTTP_200_OK)
+        try:
+            cache_key = "kpi:filter_options"
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return Response(cached, status=http_status.HTTP_200_OK)
+        except Exception:
+            pass
 
         weeks = list(
             QualityQcFa.objects.values_list('week', flat=True)
@@ -1263,7 +1276,10 @@ class FilterOptionsView(APIView):
             'customer': [c for c in customers if c is not None],
             'batch': [b for b in batches if b is not None],
         }
-        cache.set(cache_key, result, CACHE_TTL * 2)
+        try:
+            cache.set(cache_key, result, CACHE_TTL * 2)
+        except Exception:
+            pass
         return Response(result, status=http_status.HTTP_200_OK)
 
 
