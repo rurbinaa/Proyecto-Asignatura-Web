@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
 const ACCESS_TOKEN_KEY = 'rift-access-token';
 const REFRESH_TOKEN_KEY = 'rift-refresh-token';
@@ -47,6 +47,21 @@ export const tokenStorage = {
     safeStorage.remove(ACCESS_TOKEN_KEY);
     safeStorage.remove(REFRESH_TOKEN_KEY);
   },
+};
+
+export const handleApiError = (error) => {
+  const data = error.response?.data;
+  const message =
+    data?.error ||
+    data?.detail ||
+    error.message ||
+    (error.response?.status ? `Request failed: ${error.response.status}` : 'Request failed');
+
+  return {
+    message,
+    status: error.response?.status ?? null,
+    data: data ?? null,
+  };
 };
 
 axiosClient.interceptors.request.use((config) => {
