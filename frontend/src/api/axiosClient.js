@@ -4,7 +4,7 @@ const ACCESS_TOKEN_KEY = 'rift-access-token';
 const REFRESH_TOKEN_KEY = 'rift-refresh-token';
 
 const axiosClient = axios.create({
-  baseURL: 'http://localhost:8000/api/',
+  baseURL: 'http://localhost:8000',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -52,6 +52,10 @@ export const tokenStorage = {
 axiosClient.interceptors.request.use((config) => {
   const token = tokenStorage.getAccessToken();
 
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -69,5 +73,21 @@ axiosClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export const handleApiError = (error) => {
+  if (error.response?.data?.detail) {
+    return { message: error.response.data.detail };
+  }
+
+  if (error.response?.data?.error) {
+    return { message: error.response.data.error };
+  }
+
+  if (error.message) {
+    return { message: error.message };
+  }
+
+  return { message: 'Unexpected error' };
+};
 
 export default axiosClient;

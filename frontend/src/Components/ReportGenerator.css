@@ -43,6 +43,42 @@
   flex-wrap: wrap;
 }
 
+.report-month-range {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.report-month-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.report-month-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.report-month-input {
+  padding: 12px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--white);
+}
+
+.report-month-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(86, 126, 187, 0.15);
+}
+
 .generate-btn {
   display: flex;
   align-items: center;
@@ -223,6 +259,14 @@
   .report-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .report-month-range {
+    flex-direction: column;
+  }
+
+  .report-month-group {
+    min-width: unset;
   }
 
   .generate-btn {
