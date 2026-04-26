@@ -316,9 +316,9 @@ class CorporateXlsxReportService:
 
     @staticmethod
     def _clear_previous_table_body(worksheet, *, min_col, max_col, start_row, row_count):
-        clear_until = max(worksheet.max_row, start_row + row_count - 1)
+        end_row = start_row if row_count == 0 else start_row + row_count - 1
 
-        for row in range(start_row, clear_until + 1):
+        for row in range(start_row, end_row + 1):
             for col in range(min_col, max_col + 1):
                 worksheet.cell(row=row, column=col).value = None
 
