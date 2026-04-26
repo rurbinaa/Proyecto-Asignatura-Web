@@ -21,6 +21,28 @@ def _normalize_defects_fields(defeacts_fields):
     return list(defeacts_fields)
 
 
+def _resolve_colors_bulk(df_rows, color_field="color"):
+    names_seen = set()
+    all_names = []
+    for row in df_rows:
+        name = str(row.get(color_field, "unknown")).strip().lower().replace(" ", "_")
+        if name not in names_seen:
+            names_seen.add(name)
+        all_names.append(name)
+
+    existing = {
+        c.name: c
+        for c in Color.objects.filter(name__in=list(names_seen))
+    }
+    to_create = [Color(name=n) for n in names_seen if n not in existing]
+    Color.objects.bulk_create(to_create, ignore_conflicts=True)
+
+    for c in Color.objects.filter(name__in=list(names_seen)):
+        existing[c.name] = c
+
+    return [existing[name] for name in all_names]
+
+
 def _truncate_charfields(model_class, data):
     field_lengths = {
         field.name: field.max_length
@@ -126,18 +148,14 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         return
 
     quality_instances = []
+    color_objs = _resolve_colors_bulk(df.to_dict('records'), "color")
 
-    for _, row in df.iterrows():
-
-        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
-
+    for (_, row), color_obj in zip(df.iterrows(), color_objs):
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
         production_data['table_type'] = table_type
         production_data['color'] = color_obj
         production_data = _truncate_charfields(QualityQcFa, production_data)
-  
 
         quality_instances.append(QualityQcFa(**production_data))
 
@@ -172,39 +190,51 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
 
 def _bulk_insert_defects_only(df, defeacts_fields, table_type):
-    """
-    Create only InspectionDefect records, querying existing QualityQcFa parents.
-
-    Used when QualityQcFa records were already created by apply_timewindow.
-    Parents are queried by natural key: date_1 + po + style + team + color.
-    """
     defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
 
+    rows = list(df.to_dict('records'))
+    color_objs = _resolve_colors_bulk(rows, "color")
+
+    key_field = lambda row, color: (
+        table_type,
+        parse_date(row.get('date_1', '')),
+        int(row.get('po', 0) or 0),
+        str(row.get('style', '')).strip(),
+        int(row.get('team', 0) or 0),
+        color.pk if color else None,
+    )
+
+    keys = []
+    for row, color in zip(rows, color_objs):
+        k = key_field(row, color)
+        if k[1] and k[3] and k[5]:
+            keys.append(k)
+
+    if not keys:
+        return
+
+    from django.db.models import Q
+    query_parts = []
+    for k in keys:
+        query_parts.append(Q(
+            table_type=k[0], date_1=k[1], po=k[2],
+            style=k[3], team=k[4], color_id=k[5],
+        ))
+
+    existing = {}
+    batch_size = 200
+    for i in range(0, len(query_parts), batch_size):
+        chunk = query_parts[i:i + batch_size]
+        combined = chunk[0]
+        for q in chunk[1:]:
+            combined |= q
+        for inst in QualityQcFa.objects.filter(combined).only('pk', 'table_type', 'date_1', 'po', 'style', 'team', 'color_id'):
+            existing[(inst.table_type, inst.date_1, inst.po, inst.style, inst.team, inst.color_id)] = inst
+
     inspection_defects = []
-
-    for _, row in df.iterrows():
-        # Query existing QualityQcFa by natural key
-        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj = Color.objects.filter(name=color_name).first()
-        if color_obj is None:
-            continue
-
-        # Build natural key query - same as build_qc_fa_plant_key in sync_service
-        query = {
-            'table_type': table_type,
-            'date_1': parse_date(row.get('date_1', '')),
-            'po': int(row.get('po', 0)) if row.get('po') else 0,
-            'style': str(row.get('style', '')).strip(),
-            'team': int(row.get('team', 0)) if row.get('team') else 0,
-            'color': color_obj,
-        }
-
-        # Only query if we have valid key values
-        if not query['date_1'] or not query['style']:
-            continue
-
-        quality_instance = QualityQcFa.objects.filter(**query).first()
+    for (row, color), k in zip(zip(rows, color_objs), keys):
+        quality_instance = existing.get(k)
         if quality_instance is None:
             continue
 
@@ -212,11 +242,9 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type):
             amount = int(row.get(defect_field, 0) or 0)
             if amount <= 0:
                 continue
-
             defect_type = defect_type_map.get(defect_field)
             if defect_type is None:
                 continue
-
             inspection_defects.append(
                 InspectionDefect(
                     inspection=quality_instance,
@@ -234,11 +262,9 @@ def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):
         return
 
     instances = []
+    color_objs = _resolve_colors_bulk(df.to_dict('records'), "color")
 
-    for _, row in df.iterrows():
-        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
-
+    for (_, row), color_obj in zip(df.iterrows(), color_objs):
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
         production_data['color'] = color_obj
