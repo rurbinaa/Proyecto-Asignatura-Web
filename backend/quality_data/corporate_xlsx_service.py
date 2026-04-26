@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from copy import copy
+import datetime as dt
 
 from openpyxl import load_workbook
+from openpyxl.formula.translate import Translator
+from openpyxl.utils.cell import get_column_letter, range_boundaries
 
 from excel_importer.date_utils import (
     apply_charfield_iso_date_range,
@@ -44,6 +48,7 @@ class CorporateXlsxReportService:
             raise EmptyCorporateXlsxDataError("No data for selected range.")
 
         workbook = load_workbook(self.template_path)
+        self._populate_workbook(workbook, datasets)
         output = BytesIO()
         workbook.save(output)
         workbook.close()
@@ -95,3 +100,130 @@ class CorporateXlsxReportService:
             raise ValueError("Placeholder template is forbidden for corporate XLSX reports.")
 
         return resolved_path
+
+    def _populate_workbook(self, workbook, datasets):
+        for dataset_config in CORPORATE_XLSX_EXPORT_CONFIG:
+            queryset = datasets[dataset_config["dataset"]]
+            rows = self._queryset_to_rows(queryset, dataset_config["columns"])
+            self._write_dataset_table(
+                workbook,
+                sheet_name=dataset_config["sheet_name"],
+                table_name=dataset_config["table_name"],
+                rows=rows,
+            )
+
+    @staticmethod
+    def _queryset_to_rows(queryset, columns):
+        values = queryset.order_by("pk").values_list(*columns)
+        return [
+            [CorporateXlsxReportService._normalize_cell_value(value) for value in row]
+            for row in values
+        ]
+
+    @staticmethod
+    def _normalize_cell_value(value):
+        if isinstance(value, (dt.date, dt.datetime)):
+            return value.isoformat()
+        return value
+
+    def _write_dataset_table(self, workbook, *, sheet_name, table_name, rows):
+        worksheet = workbook[sheet_name]
+        table = self._get_table(worksheet, table_name)
+        min_col, header_row, max_col, _ = range_boundaries(table.ref)
+        prototype_row = header_row + 1
+
+        self._clear_previous_table_body(
+            worksheet,
+            min_col=min_col,
+            max_col=max_col,
+            start_row=prototype_row,
+            row_count=len(rows),
+        )
+
+        for row_offset, row_values in enumerate(rows):
+            target_row = prototype_row + row_offset
+            self._write_row_from_prototype(
+                worksheet,
+                target_row=target_row,
+                prototype_row=prototype_row,
+                min_col=min_col,
+                max_col=max_col,
+                row_values=row_values,
+            )
+
+        self._update_table_ref(
+            table,
+            min_col=min_col,
+            max_col=max_col,
+            header_row=header_row,
+            row_count=len(rows),
+        )
+
+    @staticmethod
+    def _get_table(worksheet, table_name):
+        return worksheet.tables[table_name]
+
+    @staticmethod
+    def _clear_previous_table_body(worksheet, *, min_col, max_col, start_row, row_count):
+        end_row = start_row if row_count == 0 else start_row + row_count - 1
+
+        for row in range(start_row, end_row + 1):
+            for col in range(min_col, max_col + 1):
+                worksheet.cell(row=row, column=col).value = None
+
+    def _write_row_from_prototype(
+        self,
+        worksheet,
+        *,
+        target_row,
+        prototype_row,
+        min_col,
+        max_col,
+        row_values,
+    ):
+        explicit_columns = len(row_values)
+
+        for col_offset, col in enumerate(range(min_col, max_col + 1)):
+            target_cell = worksheet.cell(row=target_row, column=col)
+            source_cell = worksheet.cell(row=prototype_row, column=col)
+
+            self._copy_cell_style(source_cell, target_cell)
+
+            if col_offset < explicit_columns:
+                target_cell.value = row_values[col_offset]
+            else:
+                target_cell.value = self._clone_formula_if_present(
+                    source_cell=source_cell,
+                    target_cell=target_cell,
+                )
+
+    @staticmethod
+    def _copy_cell_style(source_cell, target_cell):
+        if source_cell.has_style:
+            target_cell._style = copy(source_cell._style)
+        target_cell.number_format = source_cell.number_format
+        target_cell.protection = copy(source_cell.protection)
+        target_cell.alignment = copy(source_cell.alignment)
+        target_cell.fill = copy(source_cell.fill)
+        target_cell.font = copy(source_cell.font)
+        target_cell.border = copy(source_cell.border)
+
+    @staticmethod
+    def _clone_formula_if_present(*, source_cell, target_cell):
+        if source_cell.data_type != "f" or source_cell.value is None:
+            return None
+
+        try:
+            return Translator(source_cell.value, origin=source_cell.coordinate).translate_formula(
+                target_cell.coordinate
+            )
+        except Exception:
+            return source_cell.value
+
+    @staticmethod
+    def _update_table_ref(table, *, min_col, max_col, header_row, row_count):
+        last_row = header_row + row_count
+        table.ref = (
+            f"{get_column_letter(min_col)}{header_row}:"
+            f"{get_column_letter(max_col)}{last_row}"
+        )
