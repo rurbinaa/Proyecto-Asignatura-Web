@@ -185,38 +185,47 @@ class CorporateXlsxReportService:
 
     @staticmethod
     def _build_seconds_general_rows(*, queryset, columns):
+        from excel_importer.sheet_configs import (
+            SECONDS_GENERAL_DEFECT_COLUMNS,
+            SECONDS_GENERAL_SEWING_DEFECTS,
+            SECONDS_GENERAL_FABRIC_DEFECTS,
+        )
+
+        metadata_fields = {"date", "week", "line", "customer", "style", "artcode",
+                           "color", "po", "size", "produced", "fixed", "definitive"}
+        defect_set = set(SECONDS_GENERAL_DEFECT_COLUMNS)
+
         rows = []
-        inspections = queryset.order_by("pk")
+        inspections = queryset.prefetch_related(
+            "seconds_general_defects__defect_type"
+        ).order_by("pk")
 
         for inspection in inspections:
-            values = {
-                column: CorporateXlsxReportService._normalize_cell_value(
-                    getattr(inspection, column, None)
-                )
-                for column in columns
+            defect_amounts = {
+                d.defect_type.name: d.amount
+                for d in inspection.seconds_general_defects.all()
             }
 
-            rows.append(
-                [
-                    values.get("date"),
-                    values.get("week"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    values.get("total_de_tela"),
-                    values.get("corrido_2"),
-                    values.get("barre"),
-                    values.get("otros_3"),
-                    values.get("degradacion"),
-                    values.get("bordados"),
-                ]
-            )
+            row = []
+            for column in columns:
+                if column in metadata_fields:
+                    value = getattr(inspection, column, None)
+                elif column in defect_set:
+                    value = defect_amounts.get(column, 0)
+                elif column == "total_de_costura":
+                    value = sum(
+                        defect_amounts.get(d, 0) for d in SECONDS_GENERAL_SEWING_DEFECTS
+                    )
+                elif column == "total_de_tela":
+                    value = sum(
+                        defect_amounts.get(d, 0) for d in SECONDS_GENERAL_FABRIC_DEFECTS
+                    )
+                else:
+                    value = None
+
+                row.append(CorporateXlsxReportService._normalize_cell_value(value))
+
+            rows.append(row)
 
         return rows
 

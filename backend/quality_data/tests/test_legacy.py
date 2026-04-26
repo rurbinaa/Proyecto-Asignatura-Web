@@ -152,15 +152,18 @@ class SecondsGeneralModelTest(TestCase):
         seconds_general = SecondsGeneral.objects.create(
             date="2024-01-01",
             week=1,
-            corrido_2=10,
-            barre=5,
-            otros_3=3,
-            degradacion=2,
-            bordados=1,
-            total_de_tela=21,
+            line="11-12",
+            customer="ACME",
+            style="ST-001",
+            produced=100,
+        )
+        from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
+        corrido2 = SecondsGeneralDefectType.objects.create(name="corrido_2")
+        SecondsGeneralDefect.objects.create(
+            seconds_general=seconds_general, defect_type=corrido2, amount=10
         )
         self.assertEqual(seconds_general.date, "2024-01-01")
-        self.assertEqual(seconds_general.total_de_tela, 21)
+        self.assertEqual(seconds_general.style, "ST-001")
 
 
 class ContainerModelTest(TestCase):

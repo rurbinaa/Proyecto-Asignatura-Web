@@ -117,17 +117,25 @@ class KpiTestMixin:
             )
 
         # SecondsGeneral records
+        from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
+        defect_types = {}
+        for name in ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]:
+            defect_types[name], _ = SecondsGeneralDefectType.objects.get_or_create(name=name)
+
         for i in range(3):
-            SecondsGeneral.objects.create(
+            sg = SecondsGeneral.objects.create(
                 week=i + 1,
                 date=f"2025-01-{i + 10:02d}",
-                corrido_2=10 + i,
-                barre=5 + i,
-                otros_3=3 + i,
-                degradacion=2 + i,
-                bordados=1 + i,
-                total_de_tela=21 + i * 5,
             )
+            for name, amount_base in [
+                ("corrido_2", 10), ("barre", 5), ("otros_3", 3),
+                ("degradacion", 2), ("bordados", 1),
+            ]:
+                SecondsGeneralDefect.objects.create(
+                    seconds_general=sg,
+                    defect_type=defect_types[name],
+                    amount=amount_base + i,
+                )
 
         # Container records — 6 containers distributed across percentage ranges
         pct_values = [75.0, 85.0, 87.0, 92.0, 93.0, 97.0]

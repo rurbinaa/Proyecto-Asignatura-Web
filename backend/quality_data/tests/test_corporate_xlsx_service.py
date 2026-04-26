@@ -23,6 +23,8 @@ from quality_data.models import (
     InspectionDefect,
     QualityQcFa,
     SecondsGeneral,
+    SecondsGeneralDefectType,
+    SecondsGeneralDefect,
 )
 
 
@@ -35,7 +37,7 @@ class CorporateXlsxTemplateSelectionTest(SimpleTestCase):
         expected = (
             Path(__file__).resolve().parents[3]
             / "docs"
-            / "QA Data report 2025.xlsx"
+            / "plantilla.xlsx"
         )
         self.assertEqual(service.template_path, expected)
 
@@ -197,7 +199,8 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
 
         self.assertEqual(qfa_config["columns"], list(QC_FA_PLANT_REMAP.values()))
         self.assertEqual(qfc_config["columns"], list(QC_FA_CUSTOMER_REMAP.values()))
-        self.assertEqual(seconds_general_config["columns"], list(SECONDS_GENERAL_REMAP.values()))
+        from excel_importer.sheet_configs import SECONDS_GENERAL_EXPORT_COLUMNS
+        self.assertEqual(seconds_general_config["columns"], SECONDS_GENERAL_EXPORT_COLUMNS)
         self.assertEqual(container_config["columns"], list(CONTAINER_REMAP.values()))
 
     def test_qfa_row_serializes_color_name_and_defects_in_column_contract(self):
@@ -235,29 +238,37 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         seconds_general = SecondsGeneral.objects.create(
             date="2025-02-20",
             week=8,
-            corrido_2=4,
-            barre=2,
-            otros_3=1,
-            degradacion=3,
-            bordados=5,
-            total_de_tela=15,
+            line="11-12",
+            customer="ACME",
+            style="ST-001",
         )
+        corrido2 = SecondsGeneralDefectType.objects.create(name="corrido_2")
+        barre = SecondsGeneralDefectType.objects.create(name="barre")
+        otros3 = SecondsGeneralDefectType.objects.create(name="otros_3")
+        degradacion = SecondsGeneralDefectType.objects.create(name="degradacion")
+        bordados = SecondsGeneralDefectType.objects.create(name="bordados")
+        for dt, amount in [(corrido2, 4), (barre, 2), (otros3, 1), (degradacion, 3), (bordados, 5)]:
+            SecondsGeneralDefect.objects.create(
+                seconds_general=seconds_general, defect_type=dt, amount=amount
+            )
 
         dataset_config = next(
             config for config in CORPORATE_XLSX_EXPORT_CONFIG if config["dataset"] == "seconds_general"
         )
         row = self.service._queryset_to_rows(SecondsGeneral.objects.filter(pk=seconds_general.pk), dataset_config)[0]
 
-        self.assertEqual(len(row), 17)
+        self.assertEqual(len(row), 38)
         self.assertEqual(row[0], "2025-02-20")
         self.assertEqual(row[1], 8)
-        self.assertTrue(all(value is None for value in row[2:11]))
-        self.assertEqual(row[11], 15)
-        self.assertEqual(row[12], 4)
-        self.assertEqual(row[13], 2)
-        self.assertEqual(row[14], 1)
-        self.assertEqual(row[15], 3)
-        self.assertEqual(row[16], 5)
+        self.assertEqual(row[2], "11-12")
+        self.assertEqual(row[3], "ACME")
+        self.assertEqual(row[4], "ST-001")
+        self.assertEqual(row[32], 4)
+        self.assertEqual(row[33], 2)
+        self.assertEqual(row[34], 1)
+        self.assertEqual(row[35], 3)
+        self.assertEqual(row[36], 5)
+        self.assertEqual(row[37], 15)
 
     def test_container_row_serializes_defects_from_related_table_in_importer_order(self):
         container = Container.objects.create(

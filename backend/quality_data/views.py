@@ -644,8 +644,10 @@ class FabricDefectsView(KpiFilterMixin, APIView):
     """
 
     def get(self, request):
-        queryset = SecondsGeneral.objects.all()
+        from quality_data.models import SecondsGeneralDefect
+        from django.db.models import Sum
 
+        queryset = SecondsGeneral.objects.all()
         queryset = self._apply_date_range_filter(queryset, 'date')
 
         week = request.query_params.get('week')
@@ -659,21 +661,31 @@ class FabricDefectsView(KpiFilterMixin, APIView):
                 )
             queryset = queryset.filter(week__exact=week)
 
-        # Aggregate each fabric defect column
-        aggregated = queryset.aggregate(
-            corrido=Sum('corrido_2'),
-            barre=Sum('barre'),
-            otros=Sum('otros_3'),
-            degradacion=Sum('degradacion'),
-            bordados=Sum('bordados'),
+        fabric_defect_names = ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]
+
+        aggregated = (
+            SecondsGeneralDefect.objects
+            .filter(
+                seconds_general__in=queryset,
+                defect_type__name__in=fabric_defect_names,
+            )
+            .values(defect_name=F("defect_type__name"))
+            .annotate(total=Sum("amount"))
         )
 
+        result_map = {item["defect_name"]: item["total"] or 0 for item in aggregated}
+
+        label_map = {
+            "corrido_2": "Corrido",
+            "barre": "Barre",
+            "otros_3": "Otros",
+            "degradacion": "Degradación",
+            "bordados": "Bordados",
+        }
+
         result = [
-            {"label": "Corrido", "value": aggregated['corrido'] or 0},
-            {"label": "Barre", "value": aggregated['barre'] or 0},
-            {"label": "Otros", "value": aggregated['otros'] or 0},
-            {"label": "Degradación", "value": aggregated['degradacion'] or 0},
-            {"label": "Bordados", "value": aggregated['bordados'] or 0},
+            {"label": label_map[name], "value": result_map.get(name, 0)}
+            for name in fabric_defect_names
         ]
 
         return Response(result, status=http_status.HTTP_200_OK)

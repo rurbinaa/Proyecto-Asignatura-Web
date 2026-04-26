@@ -225,20 +225,24 @@ SECONDS_A4_NOT_NUMERIC_COLUMNS = [
 SECONDS_GENERAL_REMAP = {
     'Date': 'date',
     'Week': 'week',
-    'Picado de Aguja': 'corrido_2',
-    'Manchas/Sucio': 'barre',
-    'Grasa': 'otros_3',
-    'Tono Tela': 'degradacion',
-    'Fuera Medidas': 'bordados',
-    'Definitive': 'total_de_tela',
+    'Line': 'line',
+    'Customer': 'customer',
+    'Style': 'style',
+    'ArtCode': 'artcode',
+    'Color': 'color',
+    'PO ': 'po',
+    'Size': 'size',
+    'Produced': 'produced',
+    'Fixed': 'fixed',
+    'Definitive': 'definitive',
 }
 
 SECONDS_GENERAL_NUMERIC_COLUMNS = [
-    'week', 'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados', 'total_de_tela'
+    'week', 'produced', 'fixed', 'definitive',
 ]
 
 SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
-    'date'
+    'date', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
 ]
 
 
@@ -310,7 +314,39 @@ CORPORATE_XLSX_PLACEHOLDER_TEMPLATE_RELATIVE_PATH = (
 
 QC_FA_PLANT_EXPORT_COLUMNS = list(QC_FA_PLANT_REMAP.values())
 QC_FA_CUSTOMER_EXPORT_COLUMNS = list(QC_FA_CUSTOMER_REMAP.values())
-SECONDS_GENERAL_EXPORT_COLUMNS = list(SECONDS_GENERAL_REMAP.values())
+
+SECONDS_GENERAL_EXPORT_COLUMNS = [
+    'date', 'week', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
+    'produced', 'fixed', 'definitive',
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros', 'total_de_costura',
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados', 'total_de_tela',
+]
+
+SECONDS_GENERAL_DEFECT_COLUMNS = [
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros',
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
+]
+
+SECONDS_GENERAL_SEWING_DEFECTS = [
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros',
+]
+
+SECONDS_GENERAL_FABRIC_DEFECTS = [
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
+]
+
 CONTAINER_EXPORT_COLUMNS = list(CONTAINER_REMAP.values())
 
 CORPORATE_XLSX_EXPORT_CONFIG = [
