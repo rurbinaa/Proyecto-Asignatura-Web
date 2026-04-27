@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
 from copy import copy
 import datetime as dt
+import tempfile
 
 from openpyxl import load_workbook
 from openpyxl.formula.translate import Translator
@@ -63,12 +63,24 @@ class CorporateXlsxReportService:
             workbook.close()
             raise EmptyCorporateXlsxDataError("No data for selected range.")
 
-        output = BytesIO()
-        workbook.save(output)
-        workbook.close()
+        # Save to a temporary file — openpyxl.save() to a file path is
+        # significantly faster than saving to BytesIO for large workbooks,
+        # because the XML serializer can stream directly to disk.
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            workbook.save(tmp_path)
+        finally:
+            workbook.close()
+
+        with open(tmp_path, "rb") as f:
+            file_bytes = f.read()
+
+        Path(tmp_path).unlink(missing_ok=True)
 
         return CorporateXlsxArtifact(
-            file_bytes=output.getvalue(),
+            file_bytes=file_bytes,
             filename=f"corporate-qa-report-{date_from.isoformat()}_to_{date_to.isoformat()}.xlsx",
         )
 
@@ -280,13 +292,23 @@ class CorporateXlsxReportService:
         min_col, header_row, max_col, _ = range_boundaries(table.ref)
         prototype_row = header_row + 1
 
-        self._clear_previous_table_body(
-            worksheet,
-            min_col=min_col,
-            max_col=max_col,
-            start_row=prototype_row,
-            row_count=len(rows),
-        )
+        # Skip clearing when writing data — every cell in the target range will
+        # be explicitly written by _write_row_from_prototype, making the clear
+        # O(rows×cols) loop redundant. Only clear when there are no data rows
+        # (e.g., empty date range, previous export had data).
+        if not rows:
+            self._clear_previous_table_body(
+                worksheet,
+                min_col=min_col,
+                max_col=max_col,
+                start_row=prototype_row,
+                row_count=0,
+            )
+        else:
+            # Clear any stale rows beyond the current data length from a
+            # previous export. We just nuke from prototype_row + len(rows)
+            # to the end of the sheet to avoid O(rows×cols) per-cell clearing.
+            CorporateXlsxReportService._clear_rows_beyond(worksheet, min_col, max_col, prototype_row + len(rows))
 
         # ── Pre-extract styles and formulas from the prototype row ONCE ──
         # Instead of reading source_cell for every row × column (O(rows×cols)),
@@ -346,6 +368,13 @@ class CorporateXlsxReportService:
         for row in range(start_row, end_row + 1):
             for col in range(min_col, max_col + 1):
                 worksheet.cell(row=row, column=col).value = None
+
+    @staticmethod
+    def _clear_rows_beyond(worksheet, min_col, max_col, from_row):
+        """Delete rows beyond from_row to remove stale data from previous exports."""
+        max_row = worksheet.max_row
+        if max_row >= from_row:
+            worksheet.delete_rows(from_row, max_row - from_row + 1)
 
     def _write_row_from_prototype(
         self,
