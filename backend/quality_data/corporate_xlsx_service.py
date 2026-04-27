@@ -351,13 +351,17 @@ class CorporateXlsxReportService:
     @staticmethod
     def _copy_cell_style(source_cell, target_cell):
         if source_cell.has_style:
+            # copy(_style) already includes: font, fill, border, alignment,
+            # number_format, and protection. The individual copies below are
+            # redundant when has_style is True.
             target_cell._style = copy(source_cell._style)
-        target_cell.number_format = source_cell.number_format
-        target_cell.protection = copy(source_cell.protection)
-        target_cell.alignment = copy(source_cell.alignment)
-        target_cell.fill = copy(source_cell.fill)
-        target_cell.font = copy(source_cell.font)
-        target_cell.border = copy(source_cell.border)
+        else:
+            target_cell.number_format = source_cell.number_format
+            target_cell.protection = copy(source_cell.protection)
+            target_cell.alignment = copy(source_cell.alignment)
+            target_cell.fill = copy(source_cell.fill)
+            target_cell.font = copy(source_cell.font)
+            target_cell.border = copy(source_cell.border)
 
     @staticmethod
     def _clone_formula_if_present(*, source_cell, target_cell):

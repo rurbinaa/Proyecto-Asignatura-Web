@@ -68,11 +68,24 @@ def load_pivot_range(file_obj, sheet, header_row, usecols, nrows=None):
     return df
 
 
-def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols):
+def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols,
+                   excel_file=None):
+    """
+    Load and clean a single sheet from an Excel file.
+
+    Args:
+        file_obj: seekable file-like object (used as fallback if excel_file is None).
+        excel_file: Optional pd.ExcelFile instance. When provided, reads the sheet
+            directly from the already-opened ExcelFile, avoiding repeated file I/O
+            when processing multiple sheets.
+    """
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
-    file_obj.seek(0)
-    df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+    if excel_file is not None:
+        df = pd.read_excel(excel_file, sheet_name=sheet, header=header, usecols=range(cols))
+    else:
+        file_obj.seek(0)
+        df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
 
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)
@@ -103,7 +116,7 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     return df
 
 def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type,
-                defects_only=False):
+                defects_only=False, color_map=None):
     """
     Bulk insert QualityQcFa records and/or InspectionDefect records.
 
@@ -111,6 +124,8 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         defects_only: If True, skip creating QualityQcFa parents and only create
             InspectionDefect records by querying existing parents. Use this when
             parent records were already created by apply_timewindow.
+        color_map: Optional dict mapping color name → Color instance. When provided,
+            avoids N+1 get_or_create queries per row.
     """
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
@@ -119,7 +134,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     # For defects_only mode, query existing parents instead of creating new ones
     if defects_only:
-        _bulk_insert_defects_only(df, defeacts_fields, table_type)
+        _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=color_map)
         return
 
     quality_instances = []
@@ -127,7 +142,12 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
     for _, row in df.iterrows():
 
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+            if color_obj is None:
+                color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        else:
+            color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
 
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
@@ -168,12 +188,16 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000)
 
 
-def _bulk_insert_defects_only(df, defeacts_fields, table_type):
+def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     """
     Create only InspectionDefect records, querying existing QualityQcFa parents.
 
     Used when QualityQcFa records were already created by apply_timewindow.
     Parents are queried by natural key: date_1 + po + style + team + color.
+
+    Args:
+        color_map: Optional dict mapping color name → Color instance. When provided,
+            avoids N+1 Color.objects.filter() queries per row.
     """
     defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
@@ -181,9 +205,12 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type):
     inspection_defects = []
 
     for _, row in df.iterrows():
-        # Query existing QualityQcFa by natural key
+        # Resolve color — use batch map if available, otherwise query
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj = Color.objects.filter(name=color_name).first()
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+        else:
+            color_obj = Color.objects.filter(name=color_name).first()
         if color_obj is None:
             continue
 

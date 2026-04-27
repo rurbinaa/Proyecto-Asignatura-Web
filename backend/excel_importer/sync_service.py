@@ -21,6 +21,54 @@ from excel_importer.date_utils import normalize_container_date, parse_date
 
 
 # ─────────────────────────────────────────────────────────
+# Color Resolution (batched — avoids N+1 get_or_create per row)
+# ─────────────────────────────────────────────────────────
+
+def _resolve_colors_batch(color_names):
+    """
+    Resolve a set of color name strings to Color instances in O(1) queries.
+
+    Loads existing colors in 1 query, bulk-creates any missing ones, and
+    returns a `{name: Color}` map for O(1) lookups during row processing.
+
+    Args:
+        color_names: iterable of lowercased, underscore-normalized color name strings.
+
+    Returns:
+        dict mapping color name (str) → Color instance.
+    """
+    if not color_names:
+        return {}
+
+    unique_names = set(color_names)
+    existing = Color.objects.filter(name__in=unique_names)
+    existing_map = {c.name: c for c in existing}
+
+    missing = [Color(name=n, is_active=True) for n in unique_names if n not in existing_map]
+    if missing:
+        Color.objects.bulk_create(missing, ignore_conflicts=True)
+        # Re-fetch to get PKs for the newly created colors
+        refreshed = Color.objects.filter(name__in=unique_names)
+        existing_map = {c.name: c for c in refreshed}
+
+    return existing_map
+
+
+def _collect_sheet_colors(rows, color_field="color"):
+    """
+    Extract unique color names from a list of row dicts.
+
+    Returns a set of lowercased, underscore-normalized color name strings.
+    """
+    colors = set()
+    for row in (rows or []):
+        raw = str(row.get(color_field, "")).strip().lower().replace(" ", "_")
+        if raw and raw != "unknown":
+            colors.add(raw)
+    return colors
+
+
+# ─────────────────────────────────────────────────────────
 # Natural Key Builders
 # ─────────────────────────────────────────────────────────
 
@@ -238,7 +286,7 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
 # ─────────────────────────────────────────────────────────
 
 def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
-                 numeric_columns, defect_fields=None):
+                 numeric_columns, defect_fields=None, color_map=None):
     """
     Apply UPSERT for sheets with natural PKs.
 
@@ -273,12 +321,13 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
         if key not in db_index:
             # New record
             instance = _build_instance(model_class, row, numeric_columns,
-                                       not_numeric_columns)
+                                       not_numeric_columns, color_map=color_map)
             new_instances.append(instance)
         else:
             # Existing record — update fields
             instance = db_index[key]
-            _update_instance(instance, row, numeric_columns, not_numeric_columns)
+            _update_instance(instance, row, numeric_columns, not_numeric_columns,
+                             color_map=color_map)
             update_instances.append(instance)
 
     if new_instances:
@@ -294,12 +343,12 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
 
     # Handle defects if applicable
     if defect_fields:
-        _sync_defects(deduped_rows, model_class, defect_fields)
+        _sync_defects(deduped_rows, model_class, defect_fields, color_map=color_map)
 
 
 def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
                      numeric_columns=None, not_numeric_columns=None,
-                     defect_fields=None):
+                     defect_fields=None, color_map=None):
     """
     Apply Time-Window Sync for sheets without natural PKs.
 
@@ -329,7 +378,8 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
         d = parse_date(row.get(date_field, ""))
         if d in excel_dates:
             instance = _build_instance(model_class, row, numeric_columns,
-                                       not_numeric_columns, table_type)
+                                       not_numeric_columns, table_type,
+                                       color_map=color_map)
             instances.append(instance)
 
     if instances:
@@ -338,7 +388,8 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
     # Handle defects if applicable
     if defect_fields and table_type:
         _sync_defects_timewindow(excel_rows, model_class, table_type,
-                                  defect_fields, excel_dates)
+                                  defect_fields, excel_dates,
+                                  color_map=color_map)
 
 
 def apply_session(session):
@@ -347,6 +398,17 @@ def apply_session(session):
 
     If any sheet fails, the entire operation is rolled back.
     """
+    # ── Batch-resolve ALL colors upfront (1-2 queries instead of N× get_or_create) ──
+    all_color_names = set()
+    for sheet_rows in [
+        session.qc_fa_plant_data,
+        session.qc_fa_customer_data,
+        session.seconds_a4_data,
+    ]:
+        all_color_names |= _collect_sheet_colors(sheet_rows)
+
+    color_map = _resolve_colors_batch(all_color_names)
+
     with transaction.atomic():
         # QC FA Plant (Time-Window)
         apply_timewindow(
@@ -357,6 +419,7 @@ def apply_session(session):
             numeric_columns=_get_numeric_columns("qc_fa_plant"),
             not_numeric_columns=_get_not_numeric_columns("qc_fa_plant"),
             defect_fields=_get_defect_fields("qc_fa_plant"),
+            color_map=color_map,
         )
 
         # QC FA Customer (Time-Window)
@@ -368,6 +431,7 @@ def apply_session(session):
             numeric_columns=_get_numeric_columns("qc_fa_customer"),
             not_numeric_columns=_get_not_numeric_columns("qc_fa_customer"),
             defect_fields=_get_defect_fields("qc_fa_customer"),
+            color_map=color_map,
         )
 
         # SecondsA4 (UPSERT)
@@ -377,18 +441,20 @@ def apply_session(session):
             key_builder=build_seconds_a4_key,
             not_numeric_columns=_get_not_numeric_columns("seconds_a4"),
             numeric_columns=_get_numeric_columns("seconds_a4"),
+            color_map=color_map,
         )
 
-        # Seconds General (Time-Window)
+        # Seconds General (Time-Window) — color is CharField, no FK
         apply_timewindow(
             session.seconds_general_data,
             SecondsGeneral,
             date_field="date",
             numeric_columns=_get_numeric_columns("seconds_general"),
             not_numeric_columns=_get_not_numeric_columns("seconds_general"),
+            color_map=color_map,
         )
 
-        # Container (UPSERT)
+        # Container (UPSERT) — no color FK
         apply_upsert(
             session.container_data,
             Container,
@@ -396,6 +462,7 @@ def apply_session(session):
             not_numeric_columns=_get_not_numeric_columns("container"),
             numeric_columns=_get_numeric_columns("container"),
             defect_fields=_get_defect_fields("container"),
+            color_map=color_map,
         )
 
         session.status = "confirmed"
@@ -558,7 +625,7 @@ def _get_defect_fields(sheet_key):
 
 
 def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
-                    table_type=None):
+                    table_type=None, color_map=None):
     """Build a model instance from a row dict."""
     fk_fields = {"color"}  # Fields that are FK and need special handling
 
@@ -574,7 +641,16 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
     # Handle FK fields
     if "color" in [f.name for f in model_class._meta.fields]:
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+            if color_obj is None:
+                # Fallback: color not in batch map (shouldn't happen if _collect_sheet_colors
+                # caught all unique colors). Create it individually as a safety net.
+                color_obj, _ = Color.objects.get_or_create(
+                    name=color_name, defaults={"is_active": True}
+                )
+        else:
+            color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
         data["color"] = color_obj
 
     if model_class == Container:
@@ -583,7 +659,7 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
     return model_class(**data)
 
 
-def _update_instance(instance, row, numeric_columns, not_numeric_columns):
+def _update_instance(instance, row, numeric_columns, not_numeric_columns, color_map=None):
     """Update an existing model instance with row data."""
     fk_fields = {"color"}  # Fields that are FK and need special handling
 
@@ -599,7 +675,14 @@ def _update_instance(instance, row, numeric_columns, not_numeric_columns):
     # Handle FK fields
     if hasattr(instance, "color") and "color" in row:
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+            if color_obj is None:
+                color_obj, _ = Color.objects.get_or_create(
+                    name=color_name, defaults={"is_active": True}
+                )
+        else:
+            color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
         instance.color = color_obj
 
     if isinstance(instance, Container) and "date" in row:
@@ -636,7 +719,7 @@ def _rows_differ(row_a, row_b):
     return False
 
 
-def _sync_defects(excel_rows, model_class, defect_fields):
+def _sync_defects(excel_rows, model_class, defect_fields, color_map=None):
     """
     Sync defect through-table records for QC FA or Container.
     
@@ -645,11 +728,11 @@ def _sync_defects(excel_rows, model_class, defect_fields):
     if not excel_rows or not defect_fields:
         return
     
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields)
+    _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
 
 
 def _sync_defects_timewindow(excel_rows, model_class, table_type,
-                              defect_fields, excel_dates):
+                              defect_fields, excel_dates, color_map=None):
     """
     Sync defects for time-window strategy (already deleted, just create).
     
@@ -660,10 +743,10 @@ def _sync_defects_timewindow(excel_rows, model_class, table_type,
     
     # For time-window, the parent records were already deleted (CASCADE deletes defects)
     # So we just need to create new defect records for the new parent records
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields)
+    _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
 
 
-def _sync_defects_via_handler(excel_rows, model_class, defect_fields):
+def _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=None):
     """
     Helper that delegates defect creation to handler_service.
     
@@ -711,7 +794,8 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields):
             not_numeric_cols,
             qc_defect_fields or defect_fields,
             table_type,
-            defects_only=True  # Parents already exist, only create defects
+            defects_only=True,  # Parents already exist, only create defects
+            color_map=color_map,
         )
     elif model_class == Container:
         container_defect_fields = _get_defect_fields('container') or defect_fields
