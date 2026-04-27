@@ -89,20 +89,4 @@ axiosClient.interceptors.response.use(
   }
 );
 
-export const handleApiError = (error) => {
-  if (error.response?.data?.detail) {
-    return { message: error.response.data.detail };
-  }
-
-  if (error.response?.data?.error) {
-    return { message: error.response.data.error };
-  }
-
-  if (error.message) {
-    return { message: error.message };
-  }
-
-  return { message: 'Unexpected error' };
-};
-
 export default axiosClient;

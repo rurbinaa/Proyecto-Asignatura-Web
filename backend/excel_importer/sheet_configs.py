@@ -18,6 +18,7 @@ QC_FA_PLANT_REMAP = {
     'Batch': 'batch',
     'Color': 'color',
     'Qty': 'qty',
+    'Column2': 'column2',
     'Seconds': 'seconds',
     'Accepted': 'accepted',
     'Rejected': 'rejected',
@@ -71,10 +72,6 @@ QC_FA_PLANT_REMAP = {
     'Wrong PO': 'wrong_po',
     'Wrong Folding Method': 'wrong_folding_method',
     'Wrong Size Attached': 'wrong_size_attached',
-    'Damaged Label': 'damaged_label',
-    'Pocket Label': 'pocket_label',
-    'Label Placement': 'label_placement',
-    'Missing Information Lebel': 'missing_information_label',
 }
 
 QC_FA_PLANT_NUMERIC_COLUMNS = [

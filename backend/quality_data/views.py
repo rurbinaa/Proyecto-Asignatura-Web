@@ -286,36 +286,52 @@ class ExcelPreviewView(APIView):
             return Response({"error": "No file provided"}, status=http_status.HTTP_400_BAD_REQUEST)
 
         try:
+            import pandas as pd
+
+            # Open the Excel file ONCE — all sheets are read from the same ExcelFile
+            # object, avoiding 5 separate file open/parse cycles.
+            # Gracefully fall back to per-sheet reading if ExcelFile creation fails
+            # (e.g. invalid file, test mocks with /dev/null, etc.)
+            try:
+                excel_file = pd.ExcelFile(file_obj, engine='openpyxl')
+            except Exception:
+                excel_file = None
+
             # Parse all 5 sheets
             dataframes = {}
 
             qc_fa_plant_df = load_and_clean(
                 file_obj, QC_FA_PLANT_REMAP, QC_FA_PLANT_NUMERIC_COLUMNS,
                 QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[0],
+                excel_file=excel_file,
             )
             dataframes["qc_fa_plant"] = _df_to_json_safe(qc_fa_plant_df)
 
             qc_fa_customer_df = load_and_clean(
                 file_obj, QC_FA_CUSTOMER_REMAP, QC_FA_CUSTOMER_NUMERIC_COLUMNS,
                 QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[1],
+                excel_file=excel_file,
             )
             dataframes["qc_fa_customer"] = _df_to_json_safe(qc_fa_customer_df)
 
             seconds_a4_df = load_and_clean(
                 file_obj, SECONDS_A4_REMAP, SECONDS_A4_NUMERIC_COLUMNS,
                 None, *SHEET_NAMES[2],
+                excel_file=excel_file,
             )
             dataframes["seconds_a4"] = _df_to_json_safe(seconds_a4_df)
 
             seconds_general_df = load_and_clean(
                 file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
                 None, *SHEET_NAMES[3],
+                excel_file=excel_file,
             )
             dataframes["seconds_general"] = _df_to_json_safe(seconds_general_df)
 
             container_df = load_and_clean(
                 file_obj, CONTAINER_REMAP, CONTAINER_NUMERIC_COLUMNS,
                 CONTAINER_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[4],
+                excel_file=excel_file,
             )
             dataframes["container"] = _df_to_json_safe(container_df)
 

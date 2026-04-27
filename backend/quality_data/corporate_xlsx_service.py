@@ -1,27 +1,29 @@
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
-from copy import copy
 import datetime as dt
 
-from openpyxl import load_workbook
-from openpyxl.formula.translate import Translator
-from openpyxl.utils.cell import get_column_letter, range_boundaries
+import xlsxwriter
 
 from excel_importer.date_utils import (
     apply_charfield_iso_date_range,
     apply_datefield_date_range,
 )
 from excel_importer.sheet_configs import (
-    CORPORATE_XLSX_CANONICAL_TEMPLATE_RELATIVE_PATH,
     CORPORATE_XLSX_EXPORT_CONFIG,
-    CORPORATE_XLSX_PLACEHOLDER_TEMPLATE_RELATIVE_PATH,
+    SECONDS_GENERAL_DEFECT_COLUMNS,
+    SECONDS_GENERAL_SEWING_DEFECTS,
+    SECONDS_GENERAL_FABRIC_DEFECTS,
+)
+from quality_data.corporate_xlsx_styles import (
+    CORPORATE_SHEET_ORDER,
+    CORPORATE_DATA_SHEETS,
+    CorporateXlsxFormats,
 )
 from quality_data.models import Container, QualityQcFa, SecondsA4, SecondsGeneral
 
 
 class EmptyCorporateXlsxDataError(Exception):
-    """Raised when no reportable rows exist for the requested range."""
+    pass
 
 
 @dataclass
@@ -38,40 +40,125 @@ class CorporateXlsxReportService:
         "Container": Container,
     }
 
-    def __init__(self, template_path=None):
-        self.project_root = self._resolve_project_root()
-        self.template_path = self._resolve_template_path(template_path)
-
-    @staticmethod
-    def _resolve_project_root():
-        service_path = Path(__file__).resolve()
-        candidate_roots = [service_path.parents[2], service_path.parents[1]]
-
-        for candidate in candidate_roots:
-            if candidate.joinpath(*CORPORATE_XLSX_CANONICAL_TEMPLATE_RELATIVE_PATH).exists():
-                return candidate
-
-        return candidate_roots[0]
-
     def generate(self, date_from, date_to):
         datasets = self.get_datasets(date_from, date_to)
-        if not any(dataset.exists() for dataset in datasets.values()):
+
+        if not any(
+            queryset.exists()
+            for config in CORPORATE_XLSX_EXPORT_CONFIG
+            if (queryset := datasets.get(config["dataset"]))
+        ):
             raise EmptyCorporateXlsxDataError("No data for selected range.")
 
-        workbook = load_workbook(self.template_path)
-        self._populate_workbook(workbook, datasets)
-        output = BytesIO()
-        workbook.save(output)
+        buffer = BytesIO()
+        workbook = xlsxwriter.Workbook(buffer, {"in_memory": True})
+        fmt = CorporateXlsxFormats(workbook)
+
+        self._create_sheets(workbook, datasets, fmt)
+
         workbook.close()
+        file_bytes = buffer.getvalue()
 
         return CorporateXlsxArtifact(
-            file_bytes=output.getvalue(),
+            file_bytes=file_bytes,
             filename=f"corporate-qa-report-{date_from.isoformat()}_to_{date_to.isoformat()}.xlsx",
         )
 
+    def _create_sheets(self, workbook, datasets, fmt):
+        sheet_indexes = {}
+        for sheet_name in CORPORATE_SHEET_ORDER:
+            ws = workbook.add_worksheet(sheet_name)
+            sheet_indexes[sheet_name] = ws
+
+            data_config = CORPORATE_DATA_SHEETS.get(sheet_name)
+            if not data_config:
+                continue
+
+            dataset_config = next(
+                (c for c in CORPORATE_XLSX_EXPORT_CONFIG if c["sheet_name"] == sheet_name),
+                None,
+            )
+            if not dataset_config:
+                continue
+
+            queryset = datasets.get(dataset_config["dataset"])
+            if queryset is None:
+                continue
+
+            rows = self._queryset_to_rows(queryset, dataset_config)
+            columns = dataset_config["columns"]
+
+            self._write_table(
+                ws, sheet_name, data_config, columns, rows, fmt,
+            )
+
+    def _write_table(self, ws, sheet_name, data_config, columns, rows, fmt):
+        hdr_row = data_config["hdr_row"]
+        hdr_idx = hdr_row - 1
+        num_rows = len(rows)
+
+        from excel_importer.sheet_configs import (
+            QC_FA_PLANT_REMAP,
+            QC_FA_CUSTOMER_REMAP,
+            SECONDS_A4_REMAP,
+            CONTAINER_REMAP,
+        )
+
+        if sheet_name == "QC FA Plant":
+            reverse_map = {v: k for k, v in QC_FA_PLANT_REMAP.items()}
+        elif sheet_name == "QC FA Customer":
+            reverse_map = {v: k for k, v in QC_FA_CUSTOMER_REMAP.items()}
+        elif sheet_name == "SecondsA4":
+            reverse_map = {v: k for k, v in SECONDS_A4_REMAP.items()}
+        elif sheet_name == "Seconds General":
+            reverse_map = {
+                'date': 'Date', 'week': 'Week', 'line': 'Line',
+                'customer': 'Customer', 'style': 'Style', 'artcode': 'ArtCode',
+                'color': 'Color', 'po': 'PO ', 'size': 'Size',
+                'produced': 'Produced', 'fixed': 'Fixed', 'definitive': 'Definitive',
+                'picado_aguja': 'Picado de Aguja', 'manchas_sucio': 'Manchas/Sucio',
+                'grasa': 'Grasa', 'tono_tela': 'Tono Tela',
+                'fuera_medidas': 'Fuera Medidas', 'enganche': 'Enganche',
+                'costura_torcida_insegura': 'Costura Torcida/Insegura',
+                'hoyos_costura': 'Hoyos Costura',
+                'heat_transfer': 'Heat Transfer Defectuoso/Inclinado/Fuera de Posicion',
+                'mal_corte': 'Mal Corte', 'trapo': 'Trapo', 'corrido': 'Corrido',
+                'otros': 'Otros', 'total_de_costura': 'Total De Costura',
+                'desgarre_def_tela': 'Desgarre/Def Tela',
+                'contamination': 'Contamination', 'linea_de_tela': 'Linea de Tela',
+                'mill_flaw': 'Mill  Flaw', 'hoyos': 'Hoyos',
+                'manchas_tela': 'Manchas Tela', 'corrido_2': 'Corrido2',
+                'barre': 'Barre', 'otros_3': 'Otros3', 'degradacion': 'Degradacion',
+                'bordados': 'Bordados', 'total_de_tela': 'Total de Tela',
+            }
+        elif sheet_name == "Container":
+            reverse_map = {v: k for k, v in CONTAINER_REMAP.items()}
+        else:
+            reverse_map = {}
+
+        header_names = [reverse_map.get(col, col) for col in columns]
+
+        # 1. Write headers with explicit formatting
+        for col_idx, hdr_name in enumerate(header_names):
+            hdr_fmt = fmt.hdr_for(sheet_name, col_idx)
+            ws.write(hdr_idx, col_idx, hdr_name, hdr_fmt)
+
+        # 2. Write data cells with explicit formatting
+        for row_offset, row_values in enumerate(rows):
+            target_row = hdr_row + row_offset
+            for col_idx, value in enumerate(row_values):
+                data_fmt = fmt.data_for(sheet_name, col_idx)
+                ws.write(target_row, col_idx, value, data_fmt)
+
+        # 3. Auto-filter (haya o no datos)
+        last_data_row = hdr_row + num_rows - 1 if num_rows > 0 else hdr_row
+        ws.autofilter(hdr_idx, 0, last_data_row, len(columns) - 1)
+
+        if hdr_row > 1:
+            ws.freeze_panes(hdr_row, 0)
+
     def get_datasets(self, date_from, date_to):
         datasets = {}
-
         for dataset_config in CORPORATE_XLSX_EXPORT_CONFIG:
             model_class = self.MODEL_REGISTRY[dataset_config["model"]]
             queryset = model_class.objects.filter(**dataset_config["queryset_filters"])
@@ -95,34 +182,6 @@ class CorporateXlsxReportService:
 
         return datasets
 
-    def _resolve_template_path(self, template_path):
-        if template_path:
-            resolved_path = Path(template_path).resolve()
-        else:
-            resolved_path = self.project_root.joinpath(
-                *CORPORATE_XLSX_CANONICAL_TEMPLATE_RELATIVE_PATH
-            )
-
-        placeholder_path = self.project_root.joinpath(
-            *CORPORATE_XLSX_PLACEHOLDER_TEMPLATE_RELATIVE_PATH
-        ).resolve()
-
-        if resolved_path == placeholder_path:
-            raise ValueError("Placeholder template is forbidden for corporate XLSX reports.")
-
-        return resolved_path
-
-    def _populate_workbook(self, workbook, datasets):
-        for dataset_config in CORPORATE_XLSX_EXPORT_CONFIG:
-            queryset = datasets[dataset_config["dataset"]]
-            rows = self._queryset_to_rows(queryset, dataset_config)
-            self._write_dataset_table(
-                workbook,
-                sheet_name=dataset_config["sheet_name"],
-                table_name=dataset_config["table_name"],
-                rows=rows,
-            )
-
     @staticmethod
     def _queryset_to_rows(queryset, dataset_config):
         columns = dataset_config["columns"]
@@ -134,13 +193,11 @@ class CorporateXlsxReportService:
                 columns=columns,
                 defect_columns=dataset_config.get("defect_columns", []),
             )
-
         if row_builder == "seconds_general":
             return CorporateXlsxReportService._build_seconds_general_rows(
                 queryset=queryset,
                 columns=columns,
             )
-
         if row_builder == "container":
             return CorporateXlsxReportService._build_container_rows(
                 queryset=queryset,
@@ -185,12 +242,6 @@ class CorporateXlsxReportService:
 
     @staticmethod
     def _build_seconds_general_rows(*, queryset, columns):
-        from excel_importer.sheet_configs import (
-            SECONDS_GENERAL_DEFECT_COLUMNS,
-            SECONDS_GENERAL_SEWING_DEFECTS,
-            SECONDS_GENERAL_FABRIC_DEFECTS,
-        )
-
         metadata_fields = {"date", "week", "line", "customer", "style", "artcode",
                            "color", "po", "size", "produced", "fixed", "definitive"}
         defect_set = set(SECONDS_GENERAL_DEFECT_COLUMNS)
@@ -266,115 +317,3 @@ class CorporateXlsxReportService:
         if isinstance(value, (dt.date, dt.datetime)):
             return value.isoformat()
         return value
-
-    def _write_dataset_table(self, workbook, *, sheet_name, table_name, rows):
-        worksheet = workbook[sheet_name]
-        table = self._get_table(worksheet, table_name)
-        min_col, header_row, max_col, _ = range_boundaries(table.ref)
-        prototype_row = header_row + 1
-
-        self._clear_previous_table_body(
-            worksheet,
-            min_col=min_col,
-            max_col=max_col,
-            start_row=prototype_row,
-            row_count=len(rows),
-        )
-
-        for row_offset, row_values in enumerate(rows):
-            target_row = prototype_row + row_offset
-            self._write_row_from_prototype(
-                worksheet,
-                target_row=target_row,
-                prototype_row=prototype_row,
-                min_col=min_col,
-                max_col=max_col,
-                row_values=row_values,
-            )
-
-        self._update_table_ref(
-            table,
-            min_col=min_col,
-            max_col=max_col,
-            header_row=header_row,
-            row_count=len(rows),
-        )
-
-    @staticmethod
-    def _get_table(worksheet, table_name):
-        if table_name in worksheet.tables:
-            return worksheet.tables[table_name]
-
-        available_tables = list(worksheet.tables.keys())
-        if len(available_tables) == 1:
-            return worksheet.tables[available_tables[0]]
-
-        raise KeyError(
-            f"Table '{table_name}' not found in worksheet '{worksheet.title}'. "
-            f"Available tables: {available_tables}"
-        )
-
-    @staticmethod
-    def _clear_previous_table_body(worksheet, *, min_col, max_col, start_row, row_count):
-        end_row = start_row if row_count == 0 else start_row + row_count - 1
-
-        for row in range(start_row, end_row + 1):
-            for col in range(min_col, max_col + 1):
-                worksheet.cell(row=row, column=col).value = None
-
-    def _write_row_from_prototype(
-        self,
-        worksheet,
-        *,
-        target_row,
-        prototype_row,
-        min_col,
-        max_col,
-        row_values,
-    ):
-        explicit_columns = len(row_values)
-
-        for col_offset, col in enumerate(range(min_col, max_col + 1)):
-            target_cell = worksheet.cell(row=target_row, column=col)
-            source_cell = worksheet.cell(row=prototype_row, column=col)
-
-            self._copy_cell_style(source_cell, target_cell)
-
-            if col_offset < explicit_columns:
-                target_cell.value = row_values[col_offset]
-            else:
-                target_cell.value = self._clone_formula_if_present(
-                    source_cell=source_cell,
-                    target_cell=target_cell,
-                )
-
-    @staticmethod
-    def _copy_cell_style(source_cell, target_cell):
-        if source_cell.has_style:
-            target_cell._style = copy(source_cell._style)
-        target_cell.number_format = source_cell.number_format
-        target_cell.protection = copy(source_cell.protection)
-        target_cell.alignment = copy(source_cell.alignment)
-        target_cell.fill = copy(source_cell.fill)
-        target_cell.font = copy(source_cell.font)
-        target_cell.border = copy(source_cell.border)
-
-    @staticmethod
-    def _clone_formula_if_present(*, source_cell, target_cell):
-        if source_cell.data_type != "f" or source_cell.value is None:
-            return None
-
-        try:
-            return Translator(source_cell.value, origin=source_cell.coordinate).translate_formula(
-                target_cell.coordinate
-            )
-        except Exception:
-            return source_cell.value
-
-    @staticmethod
-    def _update_table_ref(table, *, min_col, max_col, header_row, row_count):
-        last_row = header_row + row_count
-        table.ref = (
-            f"{get_column_letter(min_col)}{header_row}:"
-            f"{get_column_letter(max_col)}{last_row}"
-        )

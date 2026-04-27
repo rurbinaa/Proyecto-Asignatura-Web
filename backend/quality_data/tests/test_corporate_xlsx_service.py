@@ -1,11 +1,8 @@
 import datetime as dt
 from io import BytesIO
-from pathlib import Path
-import tempfile
 
-from django.test import SimpleTestCase, TestCase
-from openpyxl import Workbook, load_workbook
-from openpyxl.worksheet.table import Table
+from django.test import TestCase
+from openpyxl import load_workbook
 
 from excel_importer.sheet_configs import (
     CONTAINER_REMAP,
@@ -14,6 +11,7 @@ from excel_importer.sheet_configs import (
     QC_FA_PLANT_REMAP,
     SECONDS_GENERAL_REMAP,
 )
+from quality_data.corporate_xlsx_styles import CORPORATE_SHEET_ORDER
 from quality_data.models import (
     Color,
     Container,
@@ -28,40 +26,10 @@ from quality_data.models import (
 )
 
 
-class CorporateXlsxTemplateSelectionTest(SimpleTestCase):
-    def test_uses_docs_canonical_template_path(self):
-        from quality_data.corporate_xlsx_service import CorporateXlsxReportService
-
-        service = CorporateXlsxReportService()
-
-        expected = (
-            Path(__file__).resolve().parents[3]
-            / "docs"
-            / "plantilla.xlsx"
-        )
-        self.assertEqual(service.template_path, expected)
-
-    def test_rejects_placeholder_template_path(self):
-        from quality_data.corporate_xlsx_service import CorporateXlsxReportService
-
-        placeholder = (
-            Path(__file__).resolve().parents[3]
-            / "backend"
-            / "excel_reports"
-            / "excel_templates"
-            / "plantilla_corporativa.xlsx"
-        )
-
-        with self.assertRaises(ValueError):
-            CorporateXlsxReportService(template_path=placeholder)
-
-
 class CorporateXlsxWorkbookFidelityTest(TestCase):
     def setUp(self):
         from quality_data.corporate_xlsx_service import CorporateXlsxReportService
-
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.template_path = Path(self.temp_dir.name) / "corporate-template.xlsx"
+        self.service = CorporateXlsxReportService()
         self.target_tables = {
             "QC FA Plant": "Table3",
             "QC FA Customer": "Table2",
@@ -69,39 +37,6 @@ class CorporateXlsxWorkbookFidelityTest(TestCase):
             "Seconds General": "Table1",
             "Container": "Table18",
         }
-        self._build_template_workbook(self.template_path)
-        self.service = CorporateXlsxReportService(template_path=self.template_path)
-
-    def tearDown(self):
-        self.temp_dir.cleanup()
-
-    def _build_template_workbook(self, output_path):
-        workbook = Workbook()
-        workbook.remove(workbook.active)
-
-        headers_by_sheet = {
-            "QC FA Plant": ["Date", "Week", "Customer"],
-            "QC FA Customer": ["Date", "Week", "Customer"],
-            "SecondsA4": ["Date", "Week", "Value"],
-            "Seconds General": ["Date", "Week", "Value"],
-            "Container": ["Date", "Container", "Customer"],
-        }
-
-        for sheet_name, table_name in self.target_tables.items():
-            worksheet = workbook.create_sheet(sheet_name)
-            headers = headers_by_sheet[sheet_name]
-
-            for col_index, header in enumerate(headers, start=1):
-                worksheet.cell(row=1, column=col_index, value=header)
-
-            worksheet.cell(row=2, column=1, value="TEMPLATE-DATA")
-            worksheet.cell(row=2, column=2, value=0)
-            worksheet.cell(row=2, column=3, value="TEMPLATE-DATA")
-
-            worksheet.add_table(Table(displayName=table_name, ref="A1:C2"))
-
-        workbook.save(output_path)
-        workbook.close()
 
     def _create_qfa_record(self, *, date_1, customer):
         color = Color.objects.create(name=f"Navy-{date_1}-{customer}")
@@ -133,9 +68,10 @@ class CorporateXlsxWorkbookFidelityTest(TestCase):
         artifact = self.service.generate(dt.date(2025, 1, 1), dt.date(2025, 1, 31))
         generated = load_workbook(BytesIO(artifact.file_bytes))
 
-        self.assertEqual(generated.sheetnames, list(self.target_tables.keys()))
-        for sheet_name, table_name in self.target_tables.items():
-            self.assertIn(table_name, generated[sheet_name].tables.keys())
+        self.assertEqual(generated.sheetnames, CORPORATE_SHEET_ORDER)
+        # No add_table — only autofilter, so no Table objects in metadata
+        for sheet_name in self.target_tables:
+            self.assertEqual(len(generated[sheet_name].tables), 0)
 
         generated.close()
 
@@ -147,12 +83,14 @@ class CorporateXlsxWorkbookFidelityTest(TestCase):
         workbook = load_workbook(BytesIO(artifact.file_bytes))
 
         sheet = workbook["QC FA Plant"]
-        table = sheet.tables["Table3"]
-
-        self.assertEqual(table.ref, "A1:C2")
-        self.assertEqual(sheet["A2"].value, "2025-01-15")
-        self.assertEqual(sheet["C2"].value, "InRange Co")
-        self.assertNotEqual(sheet["C2"].value, "OutOfRange Co")
+        # Header row 3 (1-indexed), data starts at row 4
+        self.assertEqual(sheet["A3"].value, "Date")
+        self.assertEqual(sheet["A4"].value, "2025-01-15")
+        self.assertEqual(sheet["C4"].value, "InRange Co")
+        self.assertNotEqual(sheet["C4"].value, "OutOfRange Co")
+        # Verify header formatting is applied
+        self.assertTrue(sheet["A3"].font.bold)
+        self.assertEqual(sheet["A3"].font.size, 9)
 
         workbook.close()
 
@@ -160,8 +98,7 @@ class CorporateXlsxWorkbookFidelityTest(TestCase):
 class CorporateXlsxQcFaExportContractTest(TestCase):
     def setUp(self):
         from quality_data.corporate_xlsx_service import CorporateXlsxReportService
-
-        self.service = CorporateXlsxReportService(template_path=Path(__file__).resolve())
+        self.service = CorporateXlsxReportService()
 
     def _create_quality_record(self, *, table_type, date_1):
         color = Color.objects.create(name="Navy Blue")
@@ -217,7 +154,7 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         self.assertEqual(row[index["date_1"]], "2025-02-10")
         self.assertEqual(row[index["color"]], "Navy Blue")
         self.assertEqual(row[index["uneven"]], 2)
-        self.assertEqual(row[index["missing_information_label"]], 1)
+        self.assertEqual(row[index["wrong_size_attached"]], 0)
         self.assertEqual(row[index["broken_stitch"]], 0)
 
     def test_qfc_row_serializes_color_name_and_defaults_missing_defects_to_zero(self):
@@ -234,7 +171,7 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         self.assertEqual(row[index["wrong_transfer"]], 3)
         self.assertEqual(row[index["uneven"]], 0)
 
-    def test_seconds_general_row_maps_fields_to_template_main_table_positions(self):
+    def test_seconds_general_row_maps_fields_to_main_table_positions(self):
         seconds_general = SecondsGeneral.objects.create(
             date="2025-02-20",
             week=8,
@@ -242,11 +179,11 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
             customer="ACME",
             style="ST-001",
         )
-        corrido2 = SecondsGeneralDefectType.objects.create(name="corrido_2")
-        barre = SecondsGeneralDefectType.objects.create(name="barre")
-        otros3 = SecondsGeneralDefectType.objects.create(name="otros_3")
-        degradacion = SecondsGeneralDefectType.objects.create(name="degradacion")
-        bordados = SecondsGeneralDefectType.objects.create(name="bordados")
+        corrido2, _ = SecondsGeneralDefectType.objects.get_or_create(name="corrido_2")
+        barre, _ = SecondsGeneralDefectType.objects.get_or_create(name="barre")
+        otros3, _ = SecondsGeneralDefectType.objects.get_or_create(name="otros_3")
+        degradacion, _ = SecondsGeneralDefectType.objects.get_or_create(name="degradacion")
+        bordados, _ = SecondsGeneralDefectType.objects.get_or_create(name="bordados")
         for dt, amount in [(corrido2, 4), (barre, 2), (otros3, 1), (degradacion, 3), (bordados, 5)]:
             SecondsGeneralDefect.objects.create(
                 seconds_general=seconds_general, defect_type=dt, amount=amount

@@ -158,7 +158,7 @@ class SecondsGeneralModelTest(TestCase):
             produced=100,
         )
         from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
-        corrido2 = SecondsGeneralDefectType.objects.create(name="corrido_2")
+        corrido2 = SecondsGeneralDefectType.objects.get_or_create(name="corrido_2")[0]
         SecondsGeneralDefect.objects.create(
             seconds_general=seconds_general, defect_type=corrido2, amount=10
         )
