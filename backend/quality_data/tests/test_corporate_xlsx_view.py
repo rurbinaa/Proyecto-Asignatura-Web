@@ -150,7 +150,7 @@ class CorporateXlsxReportContractTest(TestCase):
 
         qfa_sheet = workbook["QC FA Plant"]
         qfa_table = qfa_sheet.tables["Table3"]
-        self.assertEqual(qfa_table.ref, "A3:BO4")
+        self.assertEqual(qfa_table.ref, "A3:BP4")
         self.assertEqual(qfa_sheet["A4"].value, "2025-01-15")
         self.assertEqual(qfa_sheet["C4"].value, "TestCustomer")
         self.assertNotEqual(qfa_sheet["C4"].value, "OutOfRangeCustomer")

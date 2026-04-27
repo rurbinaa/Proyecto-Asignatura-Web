@@ -316,14 +316,9 @@ QC_FA_PLANT_EXPORT_COLUMNS = list(QC_FA_PLANT_REMAP.values())
 QC_FA_CUSTOMER_EXPORT_COLUMNS = list(QC_FA_CUSTOMER_REMAP.values())
 
 SECONDS_GENERAL_EXPORT_COLUMNS = [
-    'date', 'week', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
-    'produced', 'fixed', 'definitive',
-    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
-    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
-    'mal_corte', 'trapo', 'corrido', 'otros', 'total_de_costura',
-    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
-    'hoyos', 'manchas_tela',
-    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados', 'total_de_tela',
+    'date', 'week',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
+    'total_de_tela',
 ]
 
 SECONDS_GENERAL_DEFECT_COLUMNS = [
