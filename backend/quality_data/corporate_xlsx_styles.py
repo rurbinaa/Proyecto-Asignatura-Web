@@ -6,103 +6,110 @@ class CorporateXlsxFormats:
         self.workbook = workbook
         self._build()
 
-    def _fmt(self, **kwargs) -> Format:
-        return self.workbook.add_format(kwargs)
+    def _add(self) -> Format:
+        return self.workbook.add_format()
 
     def _build(self) -> None:
-        # ── Borders ──────────────────────────────────────────────────
-        thin_all = {"border": 1}
-        thin_sides_bottom = {"left": 1, "right": 1, "bottom": 1}
-
         # ── QC FA Plant (header row 3) ───────────────────────────────
-        self.qfa_hdr = self._fmt(
-            font_name="Calibri", font_size=9, bold=True,
-            left=1, right=1, bottom=2,
-        )
-        self.qfa_hdr_first = self._fmt(
-            font_name="Calibri", font_size=9, bold=True,
-            left=2, right=1, bottom=2,
-        )
-        self.qfa_data = self._fmt(
-            font_name="Calibri", font_size=10, **thin_all,
-        )
+        self.qfa_hdr = self._add()
+        self.qfa_hdr.set_font_name("Calibri")
+        self.qfa_hdr.set_font_size(9)
+        self.qfa_hdr.set_bold()
+        self.qfa_hdr.set_left(1)
+        self.qfa_hdr.set_right(1)
+        self.qfa_hdr.set_bottom(2)
+
+        self.qfa_hdr_first = self._add()
+        self.qfa_hdr_first.set_font_name("Calibri")
+        self.qfa_hdr_first.set_font_size(9)
+        self.qfa_hdr_first.set_bold()
+        self.qfa_hdr_first.set_left(2)
+        self.qfa_hdr_first.set_right(1)
+        self.qfa_hdr_first.set_bottom(2)
+
+        self.qfa_data = self._add()
+        self.qfa_data.set_font_name("Calibri")
+        self.qfa_data.set_font_size(10)
+        self.qfa_data.set_border(1)
 
         # ── QC FA Customer (header row 1) ────────────────────────────
-        self.qfc_hdr = self._fmt(
-            font_name="Calibri", font_size=9, bold=True,
-            font_color="#FFFFFF", bg_color="#FFFFFF",
-            left=1, right=1, bottom=2,
-        )
-        self.qfc_hdr_date = self._fmt(
-            font_name="Calibri", font_size=9, bold=True,
-            font_color="#FFFFFF", bg_color="#FFFFFF",
-            left=1, right=1, bottom=2,
-            num_format="dd\\-mmm",
-        )
-        self.qfc_data = self._fmt(
-            font_name="Calibri", font_size=11, **thin_all,
-        )
-        self.qfc_data_date = self._fmt(
-            font_name="Calibri", font_size=11, **thin_all,
-            num_format="dd\\-mmm",
-        )
-        self.qfc_data_pct = self._fmt(
-            font_name="Calibri", font_size=11, **thin_all,
-            num_format="0.0%",
-        )
+        self.qfc_hdr = self._add()
+        self.qfc_hdr.set_font_name("Calibri")
+        self.qfc_hdr.set_font_size(9)
+        self.qfc_hdr.set_bold()
+        self.qfc_hdr.set_font_color("#FFFFFF")
+        self.qfc_hdr.set_bg_color("#4472C4")
+        self.qfc_hdr.set_left(1)
+        self.qfc_hdr.set_right(1)
+        self.qfc_hdr.set_bottom(2)
+        self.qfc_hdr.set_align("center")
+
+        self.qfc_data = self._add()
+        self.qfc_data.set_font_name("Calibri")
+        self.qfc_data.set_font_size(11)
+        self.qfc_data.set_border(1)
 
         # ── SecondsA4 (header row 2) ─────────────────────────────────
-        self.sa4_hdr = self._fmt(
-            font_name="Calibri", font_size=11, bold=True,
-            font_color="#000000", bg_color="#E8E8E8",
-        )
-        self.sa4_data = self._fmt(
-            font_name="Calibri", font_size=10, **thin_all,
-        )
-        self.sa4_data_date = self._fmt(
-            font_name="Calibri", font_size=10, **thin_all,
-            num_format="dd\\-mmm\\-yy",
-        )
-        self.sa4_data_pct = self._fmt(
-            font_name="Calibri", font_size=10, **thin_all,
-            num_format="0.00%",
-        )
+        self.sa4_hdr = self._add()
+        self.sa4_hdr.set_font_name("Calibri")
+        self.sa4_hdr.set_font_size(11)
+        self.sa4_hdr.set_bold()
+        self.sa4_hdr.set_bg_color("#D6DCE4")
+        self.sa4_hdr.set_border(1)
+        self.sa4_hdr.set_align("center")
 
-        # ── Seconds General (header row 2, 8 cols) ───────────────────
-        self.sg_hdr_date = self._fmt(
-            font_name="Calibri", font_size=14, bold=True,
-        )
-        self.sg_hdr = self._fmt(
-            font_name="Calibri", font_size=11, bold=True,
-            **thin_sides_bottom,
-        )
-        self.sg_data = self._fmt(
-            font_name="Calibri", font_size=11, **thin_all,
-        )
+        self.sa4_data = self._add()
+        self.sa4_data.set_font_name("Calibri")
+        self.sa4_data.set_font_size(10)
+        self.sa4_data.set_border(1)
+
+        # ── Seconds General (header row 2) ────────────────────────────
+        self.sg_hdr_date = self._add()
+        self.sg_hdr_date.set_font_name("Calibri")
+        self.sg_hdr_date.set_font_size(14)
+        self.sg_hdr_date.set_bold()
+
+        self.sg_hdr = self._add()
+        self.sg_hdr.set_font_name("Calibri")
+        self.sg_hdr.set_font_size(11)
+        self.sg_hdr.set_bold()
+        self.sg_hdr.set_left(1)
+        self.sg_hdr.set_right(1)
+        self.sg_hdr.set_bottom(1)
+
+        self.sg_data = self._add()
+        self.sg_data.set_font_name("Calibri")
+        self.sg_data.set_font_size(11)
+        self.sg_data.set_border(1)
 
         # ── Container (header row 3) ──────────────────────────────────
-        self.ctr_title = self._fmt(
-            font_name="Aptos Narrow", font_size=16, bold=True,
-            left=1, right=1, top=1, bottom=0,
-        )
-        self.ctr_subtitle = self._fmt(
-            font_name="Calibri", font_size=16, bold=True,
-        )
-        self.ctr_hdr = self._fmt(
-            font_name="Calibri", font_size=14, bold=True,
-            left=1, right=1,
-        )
-        self.ctr_hdr_wide = self._fmt(
-            font_name="Calibri", font_size=16, bold=True,
-            left=1, right=1,
-        )
-        self.ctr_data = self._fmt(
-            font_name="Calibri", font_size=11, **thin_all,
-        )
-        self.ctr_data_pct = self._fmt(
-            font_name="Calibri", font_size=11, **thin_all,
-            num_format="0.0%",
-        )
+        self.ctr_title = self._add()
+        self.ctr_title.set_font_name("Aptos Narrow")
+        self.ctr_title.set_font_size(16)
+        self.ctr_title.set_bold()
+        self.ctr_title.set_left(1)
+        self.ctr_title.set_right(1)
+        self.ctr_title.set_top(1)
+        self.ctr_title.set_bottom(0)
+
+        self.ctr_hdr = self._add()
+        self.ctr_hdr.set_font_name("Calibri")
+        self.ctr_hdr.set_font_size(14)
+        self.ctr_hdr.set_bold()
+        self.ctr_hdr.set_left(1)
+        self.ctr_hdr.set_right(1)
+
+        self.ctr_hdr_wide = self._add()
+        self.ctr_hdr_wide.set_font_name("Calibri")
+        self.ctr_hdr_wide.set_font_size(16)
+        self.ctr_hdr_wide.set_bold()
+        self.ctr_hdr_wide.set_left(1)
+        self.ctr_hdr_wide.set_right(1)
+
+        self.ctr_data = self._add()
+        self.ctr_data.set_font_name("Calibri")
+        self.ctr_data.set_font_size(11)
+        self.ctr_data.set_border(1)
 
     def hdr_for(self, sheet_name: str, col_idx: int) -> Format:
         if sheet_name == "QC FA Plant":
@@ -115,7 +122,7 @@ class CorporateXlsxFormats:
             return self.sg_hdr_date if col_idx == 0 else self.sg_hdr
         if sheet_name == "Container":
             return self.ctr_hdr if col_idx == 0 else self.ctr_hdr_wide
-        return self._fmt()
+        return self._add()
 
     def data_for(self, sheet_name: str, col_idx: int) -> Format:
         if sheet_name == "QC FA Plant":
@@ -128,43 +135,22 @@ class CorporateXlsxFormats:
             return self.sg_data
         if sheet_name == "Container":
             return self.ctr_data
-        return self._fmt()
+        return self._add()
 
 
 CORPORATE_SHEET_ORDER = [
-    "Trims",
-    "Packing Audit",
-    "Sewing Endline 100% inspection",
-    "Sewing In-Line",
     "QC FA Plant",
     "QC FA Customer",
     "SecondsA4",
     "Seconds General",
-    "GraphxLine",
     "Container",
     "GeneralGraphics",
-    "Thirds",
 ]
 
 CORPORATE_DATA_SHEETS = {
-    "QC FA Plant": {
-        "table_name": "Table3",
-        "hdr_row": 3,
-    },
-    "QC FA Customer": {
-        "table_name": "Table2",
-        "hdr_row": 1,
-    },
-    "SecondsA4": {
-        "table_name": "Table15",
-        "hdr_row": 2,
-    },
-    "Seconds General": {
-        "table_name": "Table1",
-        "hdr_row": 2,
-    },
-    "Container": {
-        "table_name": "Table18",
-        "hdr_row": 3,
-    },
+    "QC FA Plant": {"table_name": "Table3", "hdr_row": 3},
+    "QC FA Customer": {"table_name": "Table2", "hdr_row": 1},
+    "SecondsA4": {"table_name": "Table15", "hdr_row": 2},
+    "Seconds General": {"table_name": "Table1", "hdr_row": 2},
+    "Container": {"table_name": "Table18", "hdr_row": 3},
 }

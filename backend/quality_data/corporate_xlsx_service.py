@@ -95,7 +95,7 @@ class CorporateXlsxReportService:
     def _write_table(self, ws, sheet_name, data_config, columns, rows, fmt):
         hdr_row = data_config["hdr_row"]
         hdr_idx = hdr_row - 1
-        data_start = hdr_row
+        num_rows = len(rows)
 
         from excel_importer.sheet_configs import (
             QC_FA_PLANT_REMAP,
@@ -112,14 +112,24 @@ class CorporateXlsxReportService:
             reverse_map = {v: k for k, v in SECONDS_A4_REMAP.items()}
         elif sheet_name == "Seconds General":
             reverse_map = {
-                'date': 'Date',
-                'week': 'Week',
-                'corrido_2': 'Corrido2',
-                'barre': 'Barre',
-                'otros_3': 'Otros3',
-                'degradacion': 'Degradacion',
-                'bordados': 'Bordados',
-                'total_de_tela': 'Total de Tela',
+                'date': 'Date', 'week': 'Week', 'line': 'Line',
+                'customer': 'Customer', 'style': 'Style', 'artcode': 'ArtCode',
+                'color': 'Color', 'po': 'PO ', 'size': 'Size',
+                'produced': 'Produced', 'fixed': 'Fixed', 'definitive': 'Definitive',
+                'picado_aguja': 'Picado de Aguja', 'manchas_sucio': 'Manchas/Sucio',
+                'grasa': 'Grasa', 'tono_tela': 'Tono Tela',
+                'fuera_medidas': 'Fuera Medidas', 'enganche': 'Enganche',
+                'costura_torcida_insegura': 'Costura Torcida/Insegura',
+                'hoyos_costura': 'Hoyos Costura',
+                'heat_transfer': 'Heat Transfer Defectuoso/Inclinado/Fuera de Posicion',
+                'mal_corte': 'Mal Corte', 'trapo': 'Trapo', 'corrido': 'Corrido',
+                'otros': 'Otros', 'total_de_costura': 'Total De Costura',
+                'desgarre_def_tela': 'Desgarre/Def Tela',
+                'contamination': 'Contamination', 'linea_de_tela': 'Linea de Tela',
+                'mill_flaw': 'Mill  Flaw', 'hoyos': 'Hoyos',
+                'manchas_tela': 'Manchas Tela', 'corrido_2': 'Corrido2',
+                'barre': 'Barre', 'otros_3': 'Otros3', 'degradacion': 'Degradacion',
+                'bordados': 'Bordados', 'total_de_tela': 'Total de Tela',
             }
         elif sheet_name == "Container":
             reverse_map = {v: k for k, v in CONTAINER_REMAP.items()}
@@ -127,29 +137,22 @@ class CorporateXlsxReportService:
             reverse_map = {}
 
         header_names = [reverse_map.get(col, col) for col in columns]
-        num_rows = len(rows)
-        last_col_letter = xlsxwriter.utility.xl_col_to_name(len(columns) - 1)
 
-        if num_rows > 0:
-            last_data_row_1idx = hdr_row + num_rows
-            table_ref = f"A{hdr_row}:{last_col_letter}{last_data_row_1idx}"
-        else:
-            # xlsxwriter requires at least one data row in the table range
-            ws.write(hdr_row, 0, "")
-            table_ref = f"A{hdr_row}:{last_col_letter}{hdr_row + 1}"
+        # 1. Write headers with explicit formatting
+        for col_idx, hdr_name in enumerate(header_names):
+            hdr_fmt = fmt.hdr_for(sheet_name, col_idx)
+            ws.write(hdr_idx, col_idx, hdr_name, hdr_fmt)
 
-        ws.add_table(table_ref, {
-            "name": data_config["table_name"],
-            "columns": [{"header": h} for h in header_names],
-            "autofilter": True if num_rows > 0 else False,
-            "style": "Table Style Medium 2",
-        })
-
+        # 2. Write data cells with explicit formatting
         for row_offset, row_values in enumerate(rows):
             target_row = hdr_row + row_offset
             for col_idx, value in enumerate(row_values):
                 data_fmt = fmt.data_for(sheet_name, col_idx)
                 ws.write(target_row, col_idx, value, data_fmt)
+
+        # 3. Auto-filter (haya o no datos)
+        last_data_row = hdr_row + num_rows - 1 if num_rows > 0 else hdr_row
+        ws.autofilter(hdr_idx, 0, last_data_row, len(columns) - 1)
 
         if hdr_row > 1:
             ws.freeze_panes(hdr_row, 0)

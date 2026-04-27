@@ -69,8 +69,9 @@ class CorporateXlsxWorkbookFidelityTest(TestCase):
         generated = load_workbook(BytesIO(artifact.file_bytes))
 
         self.assertEqual(generated.sheetnames, CORPORATE_SHEET_ORDER)
-        for sheet_name, table_name in self.target_tables.items():
-            self.assertIn(table_name, generated[sheet_name].tables.keys())
+        # No add_table — only autofilter, so no Table objects in metadata
+        for sheet_name in self.target_tables:
+            self.assertEqual(len(generated[sheet_name].tables), 0)
 
         generated.close()
 
@@ -82,27 +83,16 @@ class CorporateXlsxWorkbookFidelityTest(TestCase):
         workbook = load_workbook(BytesIO(artifact.file_bytes))
 
         sheet = workbook["QC FA Plant"]
-        table = sheet.tables["Table3"]
-
-        qfa_config = next(c for c in CORPORATE_XLSX_EXPORT_CONFIG if c["dataset"] == "qfa")
-        num_cols = len(qfa_config["columns"])
-        last_col = chr(ord("A") - 1 + num_cols) if num_cols <= 26 else _col_letter(num_cols)
-        expected_ref = f"A3:{last_col}4"
-        self.assertEqual(table.ref, expected_ref)
+        # Header row 3 (1-indexed), data starts at row 4
+        self.assertEqual(sheet["A3"].value, "Date")
         self.assertEqual(sheet["A4"].value, "2025-01-15")
         self.assertEqual(sheet["C4"].value, "InRange Co")
         self.assertNotEqual(sheet["C4"].value, "OutOfRange Co")
+        # Verify header formatting is applied
+        self.assertTrue(sheet["A3"].font.bold)
+        self.assertEqual(sheet["A3"].font.size, 9)
 
         workbook.close()
-
-
-def _col_letter(n):
-    """Convert 1-indexed column number to Excel letter(s)."""
-    result = ""
-    while n > 0:
-        n, remainder = divmod(n - 1, 26)
-        result = chr(65 + remainder) + result
-    return result
 
 
 class CorporateXlsxQcFaExportContractTest(TestCase):
@@ -164,7 +154,7 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         self.assertEqual(row[index["date_1"]], "2025-02-10")
         self.assertEqual(row[index["color"]], "Navy Blue")
         self.assertEqual(row[index["uneven"]], 2)
-        self.assertEqual(row[index["missing_information_label"]], 1)
+        self.assertEqual(row[index["wrong_size_attached"]], 0)
         self.assertEqual(row[index["broken_stitch"]], 0)
 
     def test_qfc_row_serializes_color_name_and_defaults_missing_defects_to_zero(self):
@@ -204,15 +194,18 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         )
         row = self.service._queryset_to_rows(SecondsGeneral.objects.filter(pk=seconds_general.pk), dataset_config)[0]
 
-        self.assertEqual(len(row), 8)
+        self.assertEqual(len(row), 38)
         self.assertEqual(row[0], "2025-02-20")
         self.assertEqual(row[1], 8)
-        self.assertEqual(row[2], 4)
-        self.assertEqual(row[3], 2)
-        self.assertEqual(row[4], 1)
-        self.assertEqual(row[5], 3)
-        self.assertEqual(row[6], 5)
-        self.assertEqual(row[7], 15)
+        self.assertEqual(row[2], "11-12")
+        self.assertEqual(row[3], "ACME")
+        self.assertEqual(row[4], "ST-001")
+        self.assertEqual(row[32], 4)
+        self.assertEqual(row[33], 2)
+        self.assertEqual(row[34], 1)
+        self.assertEqual(row[35], 3)
+        self.assertEqual(row[36], 5)
+        self.assertEqual(row[37], 15)
 
     def test_container_row_serializes_defects_from_related_table_in_importer_order(self):
         container = Container.objects.create(

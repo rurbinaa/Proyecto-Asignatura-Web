@@ -123,34 +123,20 @@ class CorporateXlsxReportContractTest(TestCase):
         self.assertEqual(
             workbook.sheetnames,
             [
-                "Trims",
-                "Packing Audit",
-                "Sewing Endline 100% inspection",
-                "Sewing In-Line",
                 "QC FA Plant",
                 "QC FA Customer",
                 "SecondsA4",
                 "Seconds General",
-                "GraphxLine",
                 "Container",
                 "GeneralGraphics",
-                "Thirds",
             ],
         )
 
-        target_tables = {
-            "QC FA Plant": "Table3",
-            "QC FA Customer": "Table2",
-            "SecondsA4": "Table15",
-            "Seconds General": "Table1",
-            "Container": "Table18",
-        }
-        for sheet_name, table_name in target_tables.items():
-            self.assertIn(table_name, workbook[sheet_name].tables.keys())
+        for sheet_name in ["QC FA Plant", "QC FA Customer", "SecondsA4", "Seconds General", "Container"]:
+            self.assertEqual(len(workbook[sheet_name].tables), 0)
 
         qfa_sheet = workbook["QC FA Plant"]
-        qfa_table = qfa_sheet.tables["Table3"]
-        self.assertEqual(qfa_table.ref, "A3:BP4")
+        self.assertEqual(qfa_sheet["A3"].value, "Date")
         self.assertEqual(qfa_sheet["A4"].value, "2025-01-15")
         self.assertEqual(qfa_sheet["C4"].value, "TestCustomer")
         self.assertNotEqual(qfa_sheet["C4"].value, "OutOfRangeCustomer")
