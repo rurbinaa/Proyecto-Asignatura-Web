@@ -193,19 +193,54 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     Create only InspectionDefect records, querying existing QualityQcFa parents.
 
     Used when QualityQcFa records were already created by apply_timewindow.
-    Parents are queried by natural key: date_1 + po + style + team + color.
+    Parents are loaded in a single batch query by date range and table_type,
+    indexed in memory by natural key, eliminating N+1 per-row DB queries.
 
     Args:
         color_map: Optional dict mapping color name → Color instance. When provided,
             avoids N+1 Color.objects.filter() queries per row.
     """
+    if df.empty:
+        return
+
     defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
+
+    # ── Batch-load ALL matching QualityQcFa parents in 1 query ──
+    # Extract unique dates from the DataFrame to scope the batch load.
+    unique_dates = set()
+    for _, row in df.iterrows():
+        d = parse_date(row.get('date_1', ''))
+        if d:
+            unique_dates.add(d)
+
+    if not unique_dates:
+        return
+
+    # Load all parents for this table_type and date range in a single query.
+    # select_related('color') avoids N+1 when building the in-memory index.
+    parents = QualityQcFa.objects.filter(
+        table_type=table_type,
+        date_1__in=unique_dates,
+    ).select_related('color')
+
+    # Build in-memory index by natural key: (date, po, style, team, color_name)
+    parent_index = {}
+    for parent in parents:
+        color_name = parent.color.name if parent.color_id else ""
+        key = (
+            parse_date(parent.date_1),
+            parent.po,
+            parent.style.strip() if parent.style else "",
+            parent.team,
+            color_name,
+        )
+        parent_index[key] = parent
 
     inspection_defects = []
 
     for _, row in df.iterrows():
-        # Resolve color — use batch map if available, otherwise query
+        # Resolve color — use batch map if available, otherwise skip
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
             color_obj = color_map.get(color_name)
@@ -214,21 +249,17 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
         if color_obj is None:
             continue
 
-        # Build natural key query - same as build_qc_fa_plant_key in sync_service
-        query = {
-            'table_type': table_type,
-            'date_1': parse_date(row.get('date_1', '')),
-            'po': int(row.get('po', 0)) if row.get('po') else 0,
-            'style': str(row.get('style', '')).strip(),
-            'team': int(row.get('team', 0)) if row.get('team') else 0,
-            'color': color_obj,
-        }
+        # Build natural key tuple for in-memory lookup
+        date_val = parse_date(row.get('date_1', ''))
+        po_val = int(row.get('po', 0)) if row.get('po') else 0
+        style_val = str(row.get('style', '')).strip()
+        team_val = int(row.get('team', 0)) if row.get('team') else 0
 
-        # Only query if we have valid key values
-        if not query['date_1'] or not query['style']:
+        if not date_val or not style_val:
             continue
 
-        quality_instance = QualityQcFa.objects.filter(**query).first()
+        key = (date_val, po_val, style_val, team_val, color_obj.name)
+        quality_instance = parent_index.get(key)
         if quality_instance is None:
             continue
 

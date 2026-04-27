@@ -19,6 +19,19 @@ services:
       retries: 10
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -37,6 +50,8 @@ services:
       - ./backend/.env
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       - DJANGO_DEBUG=True
@@ -67,4 +82,6 @@ services:
 
 volumes:
   postgres_data_dev:
+    driver: local
+  redis_data:
     driver: local

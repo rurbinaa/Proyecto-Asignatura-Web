@@ -49,6 +49,10 @@ class QualityQcFa(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=['week', 'team'], name='idx_qcfa_team_pof'),
+            models.Index(
+                fields=['table_type', 'date_1', 'po', 'style', 'team', 'color'],
+                name='idx_qcfa_natural_lookup',
+            ),
         ]
 
     defects = models.ManyToManyField(
@@ -208,6 +212,10 @@ class ExcelSyncSession(models.Model):
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
+    redis_stored = models.BooleanField(
+        default=False,
+        help_text="True when raw row data is stored in Redis instead of JSONFields.",
+    )
 
     # Parsed Excel data per sheet (JSONField stores list of dicts)
     qc_fa_plant_data = models.JSONField(default=list)

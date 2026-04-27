@@ -397,7 +397,15 @@ def apply_session(session):
     Apply all sheets from an ExcelSyncSession in a single atomic transaction.
 
     If any sheet fails, the entire operation is rolled back.
+
+    When preview data was stored in Redis (session._redis_stored is True),
+    row data is fetched from Redis before processing. This keeps JSONFields
+    small during preview and provides automatic TTL cleanup.
     """
+    # ── Fetch data from Redis if it was stored there during preview ──
+    if session.redis_stored:
+        _hydrate_session_from_redis(session)
+
     # ── Batch-resolve ALL colors upfront (1-2 queries instead of N× get_or_create) ──
     all_color_names = set()
     for sheet_rows in [
@@ -468,6 +476,11 @@ def apply_session(session):
         session.status = "confirmed"
         session.save()
 
+    # ── Clean up Redis after successful application ──
+    if session.redis_stored:
+        from excel_importer.preview_cache import delete_preview_data
+        delete_preview_data(session.pk)
+
 
 # ─────────────────────────────────────────────────────────
 # Session Management
@@ -477,52 +490,105 @@ def create_session_from_dataframes(dataframes):
     """
     Create an ExcelSyncSession from parsed DataFrames.
 
+    Stores raw row data in Redis (with 24h TTL) when available, falling
+    back to JSONField storage otherwise. This prevents PostgreSQL bloat
+    from large preview payloads and provides automatic cleanup of
+    abandoned sessions.
+
     Args:
         dataframes: dict with keys matching sheet names, values are lists of dicts
 
     Returns:
         ExcelSyncSession instance with preview computed
     """
+    from excel_importer.preview_cache import (
+        store_preview_data,
+        is_redis_available,
+    )
+
     session = ExcelSyncSession()
 
-    # Store parsed data
-    session.qc_fa_plant_data = dataframes.get("qc_fa_plant", [])
-    session.qc_fa_customer_data = dataframes.get("qc_fa_customer", [])
-    session.seconds_a4_data = dataframes.get("seconds_a4", [])
-    session.seconds_general_data = dataframes.get("seconds_general", [])
+    # Prepare parsed data
     raw_container_rows = dataframes.get("container", [])
     container_rows, container_warnings = _normalize_container_rows(raw_container_rows)
-    session.container_data = container_rows
 
-    # Compute previews
+    sheet_data_map = {
+        "qc_fa_plant": dataframes.get("qc_fa_plant", []),
+        "qc_fa_customer": dataframes.get("qc_fa_customer", []),
+        "seconds_a4": dataframes.get("seconds_a4", []),
+        "seconds_general": dataframes.get("seconds_general", []),
+        "container": container_rows,
+    }
+
+    # Store parsed data — prefer Redis for auto-TTL cleanup, fall back to JSONField
+    session.redis_stored = False
+    if is_redis_available():
+        session.save()  # Need PK for Redis key
+        if store_preview_data(session.pk, sheet_data_map):
+            # Data is in Redis — clear JSONFields to avoid duplicate storage
+            session.redis_stored = True
+
+    # Assign data to session fields (either full data or empty lists if in Redis)
+    session.qc_fa_plant_data = sheet_data_map["qc_fa_plant"] if not session.redis_stored else []
+    session.qc_fa_customer_data = sheet_data_map["qc_fa_customer"] if not session.redis_stored else []
+    session.seconds_a4_data = sheet_data_map["seconds_a4"] if not session.redis_stored else []
+    session.seconds_general_data = sheet_data_map["seconds_general"] if not session.redis_stored else []
+    session.container_data = sheet_data_map["container"] if not session.redis_stored else []
+
+    # For preview computation, always use the in-memory data (before it's cleared)
+    qc_fa_plant_rows = sheet_data_map["qc_fa_plant"]
+    qc_fa_customer_rows = sheet_data_map["qc_fa_customer"]
+    seconds_a4_rows = sheet_data_map["seconds_a4"]
+    seconds_general_rows = sheet_data_map["seconds_general"]
+    container_rows = sheet_data_map["container"]
+
+    # Compute previews — filter DB queries by Excel dates to avoid loading
+    # the entire table into memory. For large tables (100k+ rows), this is
+    # a critical optimization that reduces query time from seconds to milliseconds.
+
+    # QC FA Plant (time_window)
+    qfa_plant_dates = extract_dates(qc_fa_plant_rows, "date_1")
     session.qc_fa_plant_preview = compute_preview_timewindow(
-        session.qc_fa_plant_data,
-        QualityQcFa.objects.filter(table_type="QFA"),
+        qc_fa_plant_rows,
+        QualityQcFa.objects.filter(table_type="QFA", date_1__in=qfa_plant_dates)
+        if qfa_plant_dates else QualityQcFa.objects.none(),
         date_field="date_1",
     )
 
+    # QC FA Customer (time_window)
+    qfa_customer_dates = extract_dates(qc_fa_customer_rows, "date_1")
     session.qc_fa_customer_preview = compute_preview_timewindow(
-        session.qc_fa_customer_data,
-        QualityQcFa.objects.filter(table_type="QFC"),
+        qc_fa_customer_rows,
+        QualityQcFa.objects.filter(table_type="QFC", date_1__in=qfa_customer_dates)
+        if qfa_customer_dates else QualityQcFa.objects.none(),
         date_field="date_1",
     )
 
+    # SecondsA4 (upsert)
+    seconds_a4_dates = extract_dates(seconds_a4_rows, "date")
     session.seconds_a4_preview = compute_preview_upsert(
-        session.seconds_a4_data,
-        SecondsA4.objects.all(),
+        seconds_a4_rows,
+        SecondsA4.objects.filter(date__in=seconds_a4_dates)
+        if seconds_a4_dates else SecondsA4.objects.none(),
         key_builder=build_seconds_a4_key,
         date_field="date",
     )
 
+    # Seconds General (time_window)
+    seconds_general_dates = extract_dates(seconds_general_rows, "date")
     session.seconds_general_preview = compute_preview_timewindow(
-        session.seconds_general_data,
-        SecondsGeneral.objects.all(),
+        seconds_general_rows,
+        SecondsGeneral.objects.filter(date__in=seconds_general_dates)
+        if seconds_general_dates else SecondsGeneral.objects.none(),
         date_field="date",
     )
 
+    # Container (upsert) — use date filtering too
+    container_dates = extract_dates(container_rows, "date")
     session.container_preview = compute_preview_upsert(
-        session.container_data,
-        Container.objects.all(),
+        container_rows,
+        Container.objects.filter(date__in=container_dates)
+        if container_dates else Container.objects.none(),
         key_builder=build_container_key,
         date_field="date",
     )
@@ -541,9 +607,41 @@ def create_session_from_dataframes(dataframes):
 
 
 def reject_session(session):
-    """Reject a pending session — just mark it as rejected."""
+    """Reject a pending session — mark it as rejected and clean up Redis."""
+    if session.redis_stored:
+        from excel_importer.preview_cache import delete_preview_data
+        delete_preview_data(session.pk)
+
     session.status = "rejected"
     session.save()
+
+
+def _hydrate_session_from_redis(session):
+    """
+    Fetch row data from Redis and populate session.*_data fields.
+
+    Called at the start of apply_session() when data was stored in Redis
+    during preview (session._redis_stored is True).
+    """
+    from excel_importer.preview_cache import fetch_preview_data
+
+    sheet_names = [
+        "qc_fa_plant", "qc_fa_customer", "seconds_a4",
+        "seconds_general", "container",
+    ]
+    session_fields = [
+        "qc_fa_plant_data", "qc_fa_customer_data", "seconds_a4_data",
+        "seconds_general_data", "container_data",
+    ]
+
+    for sheet_name, field_name in zip(sheet_names, session_fields):
+        rows = fetch_preview_data(session.pk, sheet_name)
+        if rows is None:
+            raise RuntimeError(
+                f"Preview data for session {session.pk}, sheet '{sheet_name}' "
+                f"has expired or is unavailable. Please re-upload the file."
+            )
+        setattr(session, field_name, rows)
 
 
 # ─────────────────────────────────────────────────────────
