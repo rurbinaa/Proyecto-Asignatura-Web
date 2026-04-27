@@ -24,9 +24,10 @@
   opacity: 0.6;
 }
 
-.svg_injector svg {
+.svg_injector svg,
+.svg_injector img {
   width: 100% !important;
-  height: auto  !important;
+  height: auto !important;
   max-width: 500px;
   max-height: 70vh;
   margin: 0 auto;
