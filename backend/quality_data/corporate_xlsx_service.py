@@ -55,11 +55,14 @@ class CorporateXlsxReportService:
 
     def generate(self, date_from, date_to):
         datasets = self.get_datasets(date_from, date_to)
-        if not any(dataset.exists() for dataset in datasets.values()):
-            raise EmptyCorporateXlsxDataError("No data for selected range.")
 
         workbook = load_workbook(self.template_path)
-        self._populate_workbook(workbook, datasets)
+        populated = self._populate_workbook(workbook, datasets)
+
+        if not populated:
+            workbook.close()
+            raise EmptyCorporateXlsxDataError("No data for selected range.")
+
         output = BytesIO()
         workbook.save(output)
         workbook.close()
@@ -113,15 +116,19 @@ class CorporateXlsxReportService:
         return resolved_path
 
     def _populate_workbook(self, workbook, datasets):
+        any_data = False
         for dataset_config in CORPORATE_XLSX_EXPORT_CONFIG:
             queryset = datasets[dataset_config["dataset"]]
             rows = self._queryset_to_rows(queryset, dataset_config)
+            if rows:
+                any_data = True
             self._write_dataset_table(
                 workbook,
                 sheet_name=dataset_config["sheet_name"],
                 table_name=dataset_config["table_name"],
                 rows=rows,
             )
+        return any_data
 
     @staticmethod
     def _queryset_to_rows(queryset, dataset_config):
@@ -281,6 +288,21 @@ class CorporateXlsxReportService:
             row_count=len(rows),
         )
 
+        # ── Pre-extract styles and formulas from the prototype row ONCE ──
+        # Instead of reading source_cell for every row × column (O(rows×cols)),
+        # we extract styles and formula strings upfront and reuse them.
+        # This eliminates all per-row cell reads and style copy() calls.
+        column_styles = {}
+        column_formulas = {}
+        explicit_columns = len(rows[0]) if rows else 0
+
+        for col in range(min_col, max_col + 1):
+            source_cell = worksheet.cell(row=prototype_row, column=col)
+            if source_cell.has_style:
+                column_styles[col] = copy(source_cell._style)
+            if source_cell.data_type == "f" and source_cell.value is not None:
+                column_formulas[col] = source_cell.value
+
         for row_offset, row_values in enumerate(rows):
             target_row = prototype_row + row_offset
             self._write_row_from_prototype(
@@ -290,6 +312,9 @@ class CorporateXlsxReportService:
                 min_col=min_col,
                 max_col=max_col,
                 row_values=row_values,
+                explicit_columns=explicit_columns,
+                column_styles=column_styles,
+                column_formulas=column_formulas,
             )
 
         self._update_table_ref(
@@ -331,49 +356,49 @@ class CorporateXlsxReportService:
         min_col,
         max_col,
         row_values,
+        explicit_columns,
+        column_styles,
+        column_formulas,
     ):
-        explicit_columns = len(row_values)
+        """Write a single data row using pre-extracted styles and formulas.
 
+        column_styles and column_formulas are pre-computed once per dataset
+        in _write_dataset_table, avoiding per-row source_cell reads and
+        copy() calls. This is the critical optimization for large exports.
+        """
         for col_offset, col in enumerate(range(min_col, max_col + 1)):
             target_cell = worksheet.cell(row=target_row, column=col)
-            source_cell = worksheet.cell(row=prototype_row, column=col)
 
-            self._copy_cell_style(source_cell, target_cell)
+            # Apply pre-extracted style (0 copy() calls — just pointer assignment)
+            if col in column_styles:
+                target_cell._style = column_styles[col]
 
             if col_offset < explicit_columns:
                 target_cell.value = row_values[col_offset]
-            else:
-                target_cell.value = self._clone_formula_if_present(
-                    source_cell=source_cell,
+            elif col in column_formulas:
+                target_cell.value = self._translate_formula(
+                    formula_str=column_formulas[col],
+                    source_col=col,
+                    source_row=prototype_row,
                     target_cell=target_cell,
                 )
 
     @staticmethod
-    def _copy_cell_style(source_cell, target_cell):
-        if source_cell.has_style:
-            # copy(_style) already includes: font, fill, border, alignment,
-            # number_format, and protection. The individual copies below are
-            # redundant when has_style is True.
-            target_cell._style = copy(source_cell._style)
-        else:
-            target_cell.number_format = source_cell.number_format
-            target_cell.protection = copy(source_cell.protection)
-            target_cell.alignment = copy(source_cell.alignment)
-            target_cell.fill = copy(source_cell.fill)
-            target_cell.font = copy(source_cell.font)
-            target_cell.border = copy(source_cell.border)
+    def _translate_formula(*, formula_str, source_col, source_row, target_cell):
+        """Translate a formula from the prototype cell to a target cell.
 
-    @staticmethod
-    def _clone_formula_if_present(*, source_cell, target_cell):
-        if source_cell.data_type != "f" or source_cell.value is None:
-            return None
+        Converts the formula string's row references from source_row to
+        target_cell.row, preserving column references.
+        """
+        from openpyxl.utils.cell import get_column_letter
 
+        source_coordinate = f"{get_column_letter(source_col)}{source_row}"
         try:
-            return Translator(source_cell.value, origin=source_cell.coordinate).translate_formula(
-                target_cell.coordinate
-            )
+            return Translator(
+                formula_str, origin=source_coordinate
+            ).translate_formula(target_cell.coordinate)
         except Exception:
-            return source_cell.value
+            return formula_str
 
     @staticmethod
     def _update_table_ref(table, *, min_col, max_col, header_row, row_count):
