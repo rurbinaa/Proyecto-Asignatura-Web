@@ -38,6 +38,15 @@ db.sqlite3
 .coverage
 nosetests.xml
 coverage.xml
+frontend/coverage/
+frontend/.cache/
+frontend/.vite/
+frontend/.parcel-cache/
+frontend/.next/
+frontend/.turbo/
+frontend/.eslintcache
+*.sql
+react-router-dom/
 *.mo
 
 # Archivos generados por Django
