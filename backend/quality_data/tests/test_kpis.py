@@ -1353,3 +1353,72 @@ class FilterOptionsViewTest(TestCase):
         self.assertEqual(response.data["style"], [])
         self.assertEqual(response.data["customer"], [])
         self.assertEqual(response.data["batch"], [])
+
+
+class KpiContractParityTest(KpiTestMixin, TestCase):
+    """Regression tests that lock public KPI response contracts."""
+
+    def test_kpi_object_families_keep_expected_keys_and_types(self):
+        cases = [
+            ("quality_data:kpi-aql-aql-by-style", "data", {"label", "value"}),
+            ("quality_data:kpi-rendimiento-ac-re-rate-by-line", None, {"label", "value"}),
+            ("quality_data:kpi-rendimiento-performance-by-customer", None, {"label", "value"}),
+            ("quality_data:kpi-rendimiento-performance-by-line", None, {"label", "value"}),
+            ("quality_data:kpi-top-defects", None, {"label", "value"}),
+            ("quality_data:kpi-fabric-defects", None, {"label", "value"}),
+            ("quality_data:kpi-defects-by-style-type", None, {"x", "y", "value"}),
+            ("quality_data:kpi-pass-reject-distribution", None, {"name", "value"}),
+            ("quality_data:kpi-containers-by-state", None, {"name", "value"}),
+        ]
+
+        for route_name, wrapped_key, expected_keys in cases:
+            response = self.client.get(reverse(route_name))
+            self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+            payload = response.data[wrapped_key] if wrapped_key else response.data
+            self.assertIsInstance(payload, list)
+
+            if payload:
+                self.assertEqual(set(payload[0].keys()), expected_keys)
+
+    def test_series_kpis_keep_expected_shape_and_numeric_points(self):
+        series_routes = [
+            "quality_data:kpi-aql-aql-weekly",
+            "quality_data:kpi-aql-audited-pieces",
+            "quality_data:kpi-rendimiento-seconds-rework",
+            "quality_data:kpi-rejected-evolution",
+        ]
+
+        for route_name in series_routes:
+            response = self.client.get(reverse(route_name))
+            self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+            payload = response.data["data"] if route_name.startswith("quality_data:kpi-aql-") else response.data
+            self.assertIsInstance(payload, list)
+
+            for series in payload:
+                self.assertEqual(set(series.keys()), {"name", "data"})
+                self.assertIsInstance(series["data"], list)
+                for point in series["data"]:
+                    self.assertEqual(set(point.keys()), {"x", "y"})
+                    self.assertIsInstance(point["y"], (int, float))
+
+    def test_scalar_kpi_contract_is_stable(self):
+        response = self.client.get(reverse("quality_data:kpi-defect-rate"))
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(set(response.data.keys()), {"label", "value"})
+        self.assertEqual(response.data["label"], "Defect Rate")
+        self.assertIsInstance(response.data["value"], (int, float))
+
+    def test_filter_options_contract_keeps_key_set_and_sorted_lists(self):
+        response = self.client.get(reverse("quality_data:kpi-filter-options"))
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        self.assertEqual(
+            list(response.data.keys()),
+            ["week", "team", "style", "color", "customer", "batch"],
+        )
+
+        for key in ["week", "team", "style", "color", "customer", "batch"]:
+            self.assertIsInstance(response.data[key], list)
+            self.assertEqual(response.data[key], sorted(response.data[key]))
