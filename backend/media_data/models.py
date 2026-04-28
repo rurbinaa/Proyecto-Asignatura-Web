@@ -66,7 +66,7 @@ class RevisionDefect(models.Model):
     inspection = models.ForeignKey(InspectionData, on_delete=models.CASCADE)
     inspector = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True)
     defect_type = models.ForeignKey(DefectType, on_delete=models.PROTECT, null=True, blank=True)
-    defect_size = models.CharField(max_length=50)
+    defect_size = models.CharField(max_length=50, blank=True, default="")
     notes = models.TextField(blank=True, null=True)
     defect_count = models.IntegerField(default=1)
     timestamp = models.DateTimeField(auto_now_add=True)

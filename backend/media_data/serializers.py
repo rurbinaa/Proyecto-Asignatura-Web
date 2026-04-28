@@ -98,7 +98,7 @@ class RevisionDefectSerializer(serializers.ModelSerializer):
         queryset=DefectType.objects.filter(is_active=True),
         get_or_create_defaults={'is_active': True},
     )
-    defect_count = serializers.IntegerField(validators=[MinValueValidator(1)])
+    defect_count = serializers.IntegerField(default=1, validators=[MinValueValidator(1)])
 
     class Meta:
         model = RevisionDefect
