@@ -58,6 +58,18 @@ from quality_data.corporate_xlsx_service import (
     CorporateXlsxReportService,
     EmptyCorporateXlsxDataError,
 )
+from quality_data.serializers import (
+    KpiBarSerializer,
+    KpiSeriesSerializer,
+    KpiDonutSerializer,
+    KpiHeatmapSerializer,
+    KpiBarEnvelopeSerializer,
+    KpiSeriesEnvelopeSerializer,
+    KpiDonutEnvelopeSerializer,
+    KpiHeatmapEnvelopeSerializer,
+    ScalarMetricSerializer,
+    FilterOptionsSerializer,
+)
 
 def _get_incremental_rows(df, model_class, **filters):
     db_rows = model_class.objects.filter(**filters).count()
@@ -106,6 +118,18 @@ def _df_to_json_safe(df):
                 clean_row[key] = value
         result.append(clean_row)
     return result
+
+
+def _serialize_payload(serializer_cls, payload, many=False):
+    """Serialize a payload using a DTO serializer class."""
+    serializer = serializer_cls(payload, many=many)
+    return serializer.data
+
+
+def _serialize_envelope(envelope_serializer_cls, payload):
+    """Serialize a `{data: [...]}` response using an envelope serializer class."""
+    serializer = envelope_serializer_cls({"data": payload})
+    return serializer.data
 
 class Process(APIView):
     """

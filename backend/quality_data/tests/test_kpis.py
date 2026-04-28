@@ -1084,6 +1084,26 @@ class KpiFilterRequiredDateBoundsHelperTest(TestCase):
         self.assertIn("date_to", error_ctx.exception.detail)
 
 
+class KpiDtoHelperTest(TestCase):
+    def test_serialize_payload_helper_returns_serializer_data(self):
+        from quality_data.views import _serialize_payload
+        from quality_data.serializers import KpiBarSerializer
+
+        payload = [{"label": "Line 1", "value": 5}]
+        serialized = _serialize_payload(KpiBarSerializer, payload, many=True)
+
+        self.assertEqual(serialized, payload)
+
+    def test_serialize_envelope_helper_wraps_data_key(self):
+        from quality_data.views import _serialize_envelope
+        from quality_data.serializers import KpiBarEnvelopeSerializer
+
+        payload = [{"label": "Line 1", "value": 5}]
+        serialized = _serialize_envelope(KpiBarEnvelopeSerializer, payload)
+
+        self.assertEqual(serialized, {"data": payload})
+
+
 class KpiFilterTeamTest(KpiTestMixin, TestCase):
     """Tests for team filter on KPI endpoints that use KpiFilterMixin."""
 
