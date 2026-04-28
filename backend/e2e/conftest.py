@@ -9,6 +9,7 @@ import pytest
 
 from e2e.mocks.auth import mock_auth_success
 from e2e.mocks.kpis import mock_kpi_data
+from e2e.mocks.excel import mock_excel_preview
 from e2e.fixtures.generate_excel import generate_test_excel
 
 
@@ -47,8 +48,10 @@ def logged_in_page(page, base_url):
     After login, waits for ``aside.sidebar`` as post-login detection
     (the app is an SPA with no URL routing).
     """
-    # Mock all auth endpoints before navigating
+    # Mock all API endpoints before navigating — prevents real backend calls
     mock_auth_success(page)
+    mock_kpi_data(page)
+    mock_excel_preview(page)
 
     page.goto(base_url)
     page.wait_for_selector('input[type="email"]', timeout=10000)
