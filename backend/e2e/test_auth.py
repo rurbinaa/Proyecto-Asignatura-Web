@@ -14,13 +14,10 @@ def test_login_redirects_to_dashboard(logged_in_page, base_url):
 def test_login_rejects_invalid_credentials(page, base_url):
     """Invalid credentials should show error."""
     page.goto(base_url)
-    page.wait_for_selector('input[type="text"], input[name="username"]', timeout=5000)
+    page.wait_for_selector('input[type="email"]', timeout=10000)
 
-    username = page.locator('input[type="text"], input[name="username"]').first
-    password = page.locator('input[type="password"]').first
-
-    username.fill("wrong_user")
-    password.fill("wrong_pass")
+    page.locator('input[type="email"]').fill("wrong@user.com")
+    page.locator('input[type="password"]').fill("wrong_pass")
     page.locator('button[type="submit"]').click()
 
     # Should show error or stay on login

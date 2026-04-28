@@ -32,14 +32,11 @@ def logged_in_page(page, base_url):
     """Navigate to app and log in with test credentials."""
     page.goto(base_url)
     # Wait for login form
-    page.wait_for_selector('input[type="text"], input[name="username"]', timeout=5000)
+    page.wait_for_selector('input[type="email"]', timeout=10000)
     
-    # Fill credentials
-    username_input = page.locator('input[type="text"], input[name="username"]').first
-    password_input = page.locator('input[type="password"]').first
-    
-    username_input.fill("admin")
-    password_input.fill("admin")
+    # Fill credentials (LoginView uses email + password)
+    page.locator('input[type="email"]').fill("admin@uniwell.com")
+    page.locator('input[type="password"]').fill("admin")
     
     # Click login button
     page.locator('button[type="submit"]').click()
