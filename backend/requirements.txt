@@ -2,6 +2,7 @@ Django>=5.0
 djangorestframework
 django-cors-headers
 psycopg[binary,pool]
+dj-database-url
 daphne
 channels
 djangorestframework-simplejwt

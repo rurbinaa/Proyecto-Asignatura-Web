@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: rift-analytics-backend
+    env: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py migrate && python manage.py bootstrap_auth_users && gunicorn backend.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: False
+      - key: ALLOWED_HOSTS
+        value: rift-analytics-backend.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://rift-analytics.vercel.app
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: DJANGO_SETTINGS_MODULE
+        value: backend.settings
