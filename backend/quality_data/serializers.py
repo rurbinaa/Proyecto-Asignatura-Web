@@ -56,3 +56,45 @@ class KpiHeatmapSerializer(serializers.Serializer):
     x = serializers.CharField()
     y = serializers.CharField()
     value = serializers.FloatField()
+
+
+class KpiBarEnvelopeSerializer(serializers.Serializer):
+    """Envelope serializer for bar KPI families returned as {data:[...]}"""
+
+    data = KpiBarSerializer(many=True)
+
+
+class KpiSeriesEnvelopeSerializer(serializers.Serializer):
+    """Envelope serializer for series KPI families returned as {data:[...]}"""
+
+    data = KpiSeriesSerializer(many=True)
+
+
+class KpiDonutEnvelopeSerializer(serializers.Serializer):
+    """Envelope serializer for donut KPI families returned as {data:[...]}"""
+
+    data = KpiDonutSerializer(many=True)
+
+
+class KpiHeatmapEnvelopeSerializer(serializers.Serializer):
+    """Envelope serializer for heatmap KPI families returned as {data:[...]}"""
+
+    data = KpiHeatmapSerializer(many=True)
+
+
+class ScalarMetricSerializer(serializers.Serializer):
+    """Serializer for scalar metric contract: {label, value}."""
+
+    label = serializers.CharField()
+    value = serializers.FloatField()
+
+
+class FilterOptionsSerializer(serializers.Serializer):
+    """Serializer for filter options endpoint contract."""
+
+    week = serializers.ListField(child=serializers.IntegerField())
+    team = serializers.ListField(child=serializers.IntegerField())
+    style = serializers.ListField(child=serializers.CharField())
+    color = serializers.ListField(child=serializers.CharField())
+    customer = serializers.ListField(child=serializers.CharField())
+    batch = serializers.ListField(child=serializers.IntegerField())
