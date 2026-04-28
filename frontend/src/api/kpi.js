@@ -1,5 +1,4 @@
 import axiosClient from './axiosClient';
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
  * Unwrap a nested KPI value object to a scalar.

@@ -1,5 +1,4 @@
 import axiosClient from './axiosClient';
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
  * Create a new inspection session.
@@ -42,21 +41,6 @@ export async function createDefect(data) {
 }
 
 /**
- * Remove the last captured defect for an inspection.
- * 
- * @param {number} inspectionId - The inspection ID
- * @returns {Promise<object>} Result message
- */
-export async function undoDefect(inspectionId) {
-  try {
-    const res = await axiosClient.delete(`/api/v1/defects/undo/?inspection=${inspectionId}`);
-    return res.data;
-  } catch (error) {
-    throw new Error(error.response?.data?.error || `Undo defect failed: ${error.response?.status}`);
-  }
-}
-
-/**
  * Close an inspection, evaluate PASS/REJECT, and sync to QualityQcFa.
  * 
  * @param {number} inspectionId - The inspection ID
@@ -71,16 +55,3 @@ export async function closeInspection(inspectionId) {
   }
 }
 
-/**
- * Fetch available mockup images for the capture interface.
- * 
- * @returns {Promise<object[]>} List of mockup objects
- */
-export async function getMockups() {
-  try {
-    const res = await axiosClient.get('/api/v1/mockups/');
-    return res.data;
-  } catch (error) {
-    throw new Error(error.response?.data?.error || `Get mockups failed: ${error.response?.status}`);
-  }
-}
