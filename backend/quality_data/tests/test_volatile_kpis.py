@@ -378,12 +378,16 @@ class VolatileKpiViewTest(TestCase):
                 'rejected': 10, 'accepted': 90,
             },
         ]
-        # Should not crash and should handle negative defect values
+        # Should not crash and should keep deterministic ordering by AQL desc
         result = self.view._calc_aql_by_style(rows)
-        # N3165 with negative defects should not appear (filtered or handled)
-        # N4165 with 0 defects should have 0 AQL
-        # N5165 with huge defects should have extreme AQL value
-        self.assertEqual(len(result), 3)
+        self.assertEqual(
+            result,
+            [
+                {'label': 'N5165', 'value': 1000000000.0},
+                {'label': 'N4165', 'value': 0.0},
+                {'label': 'N3165', 'value': -999.0},
+            ],
+        )
 
     def test_volatile_parser_exception_returns_null(self):
         """
