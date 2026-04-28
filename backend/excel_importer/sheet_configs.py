@@ -18,6 +18,7 @@ QC_FA_PLANT_REMAP = {
     'Batch': 'batch',
     'Color': 'color',
     'Qty': 'qty',
+    'Column2': 'column2',
     'Seconds': 'seconds',
     'Accepted': 'accepted',
     'Rejected': 'rejected',
@@ -71,10 +72,6 @@ QC_FA_PLANT_REMAP = {
     'Wrong PO': 'wrong_po',
     'Wrong Folding Method': 'wrong_folding_method',
     'Wrong Size Attached': 'wrong_size_attached',
-    'Damaged Label': 'damaged_label',
-    'Pocket Label': 'pocket_label',
-    'Label Placement': 'label_placement',
-    'Missing Information Lebel': 'missing_information_label',
 }
 
 QC_FA_PLANT_NUMERIC_COLUMNS = [
@@ -225,20 +222,24 @@ SECONDS_A4_NOT_NUMERIC_COLUMNS = [
 SECONDS_GENERAL_REMAP = {
     'Date': 'date',
     'Week': 'week',
-    'Picado de Aguja': 'corrido_2',
-    'Manchas/Sucio': 'barre',
-    'Grasa': 'otros_3',
-    'Tono Tela': 'degradacion',
-    'Fuera Medidas': 'bordados',
-    'Definitive': 'total_de_tela',
+    'Line': 'line',
+    'Customer': 'customer',
+    'Style': 'style',
+    'ArtCode': 'artcode',
+    'Color': 'color',
+    'PO ': 'po',
+    'Size': 'size',
+    'Produced': 'produced',
+    'Fixed': 'fixed',
+    'Definitive': 'definitive',
 }
 
 SECONDS_GENERAL_NUMERIC_COLUMNS = [
-    'week', 'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados', 'total_de_tela'
+    'week', 'produced', 'fixed', 'definitive',
 ]
 
 SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
-    'date'
+    'date', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
 ]
 
 
@@ -294,3 +295,135 @@ PIVOT_RANGES = {
     'fabric_defects_corrido': {'sheet': 'Seconds General', 'header_row': 49, 'usecols': 'AM:AN', 'nrows': 35},
     'enganche': {'sheet': 'Seconds General', 'header_row': 42, 'usecols': 'AR:AS', 'nrows': 38},
 }
+
+
+CORPORATE_XLSX_CANONICAL_TEMPLATE_RELATIVE_PATH = (
+    "docs",
+    "plantilla.xlsx",
+)
+
+CORPORATE_XLSX_PLACEHOLDER_TEMPLATE_RELATIVE_PATH = (
+    "backend",
+    "excel_reports",
+    "excel_templates",
+    "plantilla_corporativa.xlsx",
+)
+
+QC_FA_PLANT_EXPORT_COLUMNS = list(QC_FA_PLANT_REMAP.values())
+QC_FA_CUSTOMER_EXPORT_COLUMNS = list(QC_FA_CUSTOMER_REMAP.values())
+
+SECONDS_GENERAL_EXPORT_COLUMNS = [
+    'date', 'week', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
+    'produced', 'fixed', 'definitive',
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros', 'total_de_costura',
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados', 'total_de_tela',
+]
+
+SECONDS_GENERAL_DEFECT_COLUMNS = [
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros',
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
+]
+
+SECONDS_GENERAL_SEWING_DEFECTS = [
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros',
+]
+
+SECONDS_GENERAL_FABRIC_DEFECTS = [
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
+]
+
+CONTAINER_EXPORT_COLUMNS = list(CONTAINER_REMAP.values())
+
+CORPORATE_XLSX_EXPORT_CONFIG = [
+    {
+        "dataset": "qfa",
+        "sheet_name": "QC FA Plant",
+        "table_name": "Table3",
+        "model": "QualityQcFa",
+        "date_field": "date_1",
+        "date_field_type": "char",
+        "queryset_filters": {"table_type": "QFA"},
+        "columns": QC_FA_PLANT_EXPORT_COLUMNS,
+        "defect_columns": QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
+        "row_builder": "qc_fa",
+    },
+    {
+        "dataset": "qfc",
+        "sheet_name": "QC FA Customer",
+        "table_name": "Table2",
+        "model": "QualityQcFa",
+        "date_field": "date_1",
+        "date_field_type": "char",
+        "queryset_filters": {"table_type": "QFC"},
+        "columns": QC_FA_CUSTOMER_EXPORT_COLUMNS,
+        "defect_columns": QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
+        "row_builder": "qc_fa",
+    },
+    {
+        "dataset": "seconds_a4",
+        "sheet_name": "SecondsA4",
+        "table_name": "Table15",
+        "model": "SecondsA4",
+        "date_field": "date",
+        "date_field_type": "char",
+        "queryset_filters": {},
+        "columns": [
+            "year",
+            "week",
+            "date",
+            "cut_num",
+            "style",
+            "cut_qty",
+            "first_quality_qty_sewing",
+            "sample",
+            "pass_field",
+            "fail_field",
+            "sew_def",
+            "fab_def",
+            "accepted",
+            "rejected",
+            "total_of_2ds",
+            "percentage_of_2ds",
+            "line",
+            "seconds_by_sew",
+            "seconds_by_fab",
+            "seconds_sew_a4",
+            "seconds_fab_a4",
+        ],
+    },
+    {
+        "dataset": "seconds_general",
+        "sheet_name": "Seconds General",
+        "table_name": "Table1",
+        "model": "SecondsGeneral",
+        "date_field": "date",
+        "date_field_type": "char",
+        "queryset_filters": {},
+        "columns": SECONDS_GENERAL_EXPORT_COLUMNS,
+        "row_builder": "seconds_general",
+    },
+    {
+        "dataset": "container",
+        "sheet_name": "Container",
+        "table_name": "Table18",
+        "model": "Container",
+        "date_field": "date",
+        "date_field_type": "date",
+        "queryset_filters": {},
+        "columns": CONTAINER_EXPORT_COLUMNS,
+        "defect_columns": CONTAINER_AMOUNT_DEFEACTS_FIELDS,
+        "row_builder": "container",
+    },
+]

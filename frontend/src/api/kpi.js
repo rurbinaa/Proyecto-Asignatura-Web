@@ -63,6 +63,28 @@ function buildQueryString(filters = {}) {
   return qs ? `?${qs}` : '';
 }
 
+function resolveKpiUrl(endpoint, filters = {}) {
+  const queryString = buildQueryString(filters);
+
+  const aqlEndpoints = new Set(['aql-by-style/', 'aql-weekly/', 'audited-pieces/']);
+  const rendimientoEndpoints = new Set([
+    'ac-re-rate-by-line/',
+    'seconds-rework/',
+    'performance-by-customer/',
+    'performance-by-line/',
+  ]);
+
+  if (aqlEndpoints.has(endpoint)) {
+    return `/quality/kpis/aql/${endpoint}${queryString}`;
+  }
+
+  if (rendimientoEndpoints.has(endpoint)) {
+    return `/quality/kpis/rendimiento/${endpoint}${queryString}`;
+  }
+
+  return `/quality/kpis/${endpoint}${queryString}`;
+}
+
 /**
  * Fetch KPI data from a specific endpoint.
  * @param {string} endpoint - KPI endpoint name (e.g. 'aql-by-style/')
@@ -70,14 +92,20 @@ function buildQueryString(filters = {}) {
  * @returns {Promise<any>} JSON response data
  */
 export async function fetchKpi(endpoint, filters = {}) {
-  const queryString = buildQueryString(filters);
-  const url = `/quality/kpis/${endpoint}${queryString}`;
+  const url = resolveKpiUrl(endpoint, filters);
   try {
     const res = await axiosClient.get(url);
-    return res.data;
+    return mapLiveKpiDto(endpoint, res.data);
   } catch (error) {
     throw new Error(error.response?.data?.error || `KPI fetch failed: ${error.response?.status}`);
   }
+}
+
+export function mapLiveKpiDto(endpoint, data) {
+  if (endpoint === 'defect-rate/') {
+    return unwrapScalarKpiValue(data);
+  }
+  return data;
 }
 
 // ─── Individual KPI helpers ──────────────────────────────────────────────────
@@ -175,7 +203,7 @@ export async function getDefectRate(filters) {
  * @param {object} response - Raw API response with snake_case keys
  * @returns {object} Response with camelCase keys (idempotent - existing camelCase keys preserved)
  */
-function normalizeVolatileResponse(response) {
+export function mapVolatileKpisDto(response) {
   if (!response || typeof response !== 'object') {
     return response;
   }
@@ -233,7 +261,7 @@ export async function fetchVolatileKpis(file) {
   formData.append('file', file);
   try {
     const res = await axiosClient.post('/quality/kpis/volatile/', formData);
-    return normalizeVolatileResponse(res.data);
+    return mapVolatileKpisDto(res.data);
   } catch (error) {
     throw new Error(error.response?.data?.error || 'Failed to process Excel');
   }

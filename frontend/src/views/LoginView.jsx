@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import RA_ICON from '../assets/RA-ICON_embed.svg';
+import { Factory } from 'lucide-react';
+import { useAuth } from '../contexts/useAuth';
 import './LoginView.css';
 
 export default function LoginView() {
@@ -27,7 +29,7 @@ export default function LoginView() {
       if (!success) {
         setError('Invalid credentials or server error.');
       }
-    } catch (err) {
+    } catch {
       setError('Connection error. Please try again later.');
     } finally {
       setIsLoading(false);

@@ -20,13 +20,13 @@ export const downloadQualityReport = async (startDate, endDate) => {
   }
 
   try {
-    const response = await axiosClient.get('/quality/report/', {
+    const response = await axiosClient.get('/quality/reports/corporate-xlsx/', {
       params: {
-        start_date: startDate,
-        end_date: endDate,
+        date_from: startDate,
+        date_to: endDate,
       },
       responseType: 'blob',
-      timeout: 120000,
+      timeout: 600000,
     });
 
     const blob = response.data;

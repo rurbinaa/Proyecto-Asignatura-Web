@@ -19,6 +19,19 @@ services:
       retries: 10
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -26,16 +39,19 @@ services:
       dockerfile: Dockerfile
     container_name: backend_app
     command: >
-      sh -c "python manage.py makemigrations && python manage.py migrate && python manage.py shell -c 'from quality_data.init_data_models import SaveColor, SaveDefects, SaveDefectsContainer; SaveColor(); SaveDefects(); SaveDefectsContainer()' &&
+      sh -c "python manage.py makemigrations && python manage.py migrate && python manage.py shell -c 'from quality_data.init_data_models import SaveColor, SaveDefects, SaveDefectsContainer; SaveColor(); SaveDefects(); SaveDefectsContainer()' && python manage.py bootstrap_auth_users &&
              daphne -b 0.0.0.0 -p 8000 backend.asgi:application"
     volumes:
       - ./backend:/app
+      - ./docs:/app/docs:ro
     ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       - DJANGO_DEBUG=True
@@ -66,4 +82,6 @@ services:
 
 volumes:
   postgres_data_dev:
+    driver: local
+  redis_data:
     driver: local

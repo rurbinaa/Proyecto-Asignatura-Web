@@ -1,11 +1,25 @@
 import { useState } from 'react';
 import { FileSpreadsheet, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
-import DateRangePicker from './DateRangePicker';
 import { downloadQualityReport, validateDateRange } from '../api/reports';
 import './ReportGenerator.css';
 
+function monthToDateRange(startMonth, endMonth) {
+  if (!startMonth || !endMonth) {
+    return { startDate: '', endDate: '' };
+  }
+
+  const [startYear, startMonthIndex] = startMonth.split('-').map(Number);
+  const [endYear, endMonthIndex] = endMonth.split('-').map(Number);
+
+  const startDate = `${startYear}-${String(startMonthIndex).padStart(2, '0')}-01`;
+  const endDateObject = new Date(endYear, endMonthIndex, 0);
+  const endDate = `${endYear}-${String(endMonthIndex).padStart(2, '0')}-${String(endDateObject.getDate()).padStart(2, '0')}`;
+
+  return { startDate, endDate };
+}
+
 export default function ReportGenerator() {
-  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
+  const [monthRange, setMonthRange] = useState({ startMonth: '', endMonth: '' });
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -13,14 +27,15 @@ export default function ReportGenerator() {
 
   const isGenerating = status === 'generating';
 
-  const handleDateChange = (newRange) => {
-    setDateRange(newRange);
+  const handleMonthChange = (field, value) => {
+    setMonthRange((current) => ({ ...current, [field]: value }));
     setError(null);
     setSuccess(null);
   };
 
   const handleGenerate = async () => {
-    const validation = validateDateRange(dateRange.startDate, dateRange.endDate);
+    const { startDate, endDate } = monthToDateRange(monthRange.startMonth, monthRange.endMonth);
+    const validation = validateDateRange(startDate, endDate);
     if (!validation.valid) {
       setError(validation.message);
       return;
@@ -31,7 +46,7 @@ export default function ReportGenerator() {
     setSuccess(null);
 
     try {
-      const result = await downloadQualityReport(dateRange.startDate, dateRange.endDate);
+      const result = await downloadQualityReport(startDate, endDate);
       setStatus('success');
       setSuccess('Report generated successfully');
       setLastFilename(result.filename);
@@ -53,21 +68,39 @@ export default function ReportGenerator() {
         <FileSpreadsheet size={24} className="report-icon" />
         <div className="report-title-container">
           <h3 className="report-title">Generate Quality Report</h3>
-          <p className="report-subtitle">Select the period to export historical data</p>
+          <p className="report-subtitle">Select whole months to export historical data</p>
         </div>
       </div>
 
       <div className="report-controls">
-        <DateRangePicker
-          startDate={dateRange.startDate}
-          endDate={dateRange.endDate}
-          onChange={handleDateChange}
-        />
+        <div className="report-month-range">
+          <div className="report-month-group">
+            <label className="report-month-label" htmlFor="report-start-month">From month</label>
+            <input
+              id="report-start-month"
+              className="report-month-input"
+              type="month"
+              value={monthRange.startMonth}
+              onChange={(e) => handleMonthChange('startMonth', e.target.value)}
+            />
+          </div>
+
+          <div className="report-month-group">
+            <label className="report-month-label" htmlFor="report-end-month">To month</label>
+            <input
+              id="report-end-month"
+              className="report-month-input"
+              type="month"
+              value={monthRange.endMonth}
+              onChange={(e) => handleMonthChange('endMonth', e.target.value)}
+            />
+          </div>
+        </div>
 
         <button
           className="generate-btn"
           onClick={handleGenerate}
-          disabled={isGenerating || !dateRange.startDate || !dateRange.endDate}
+          disabled={isGenerating || !monthRange.startMonth || !monthRange.endMonth}
         >
           {isGenerating ? (
             <>

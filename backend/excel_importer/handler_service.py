@@ -9,6 +9,8 @@ from quality_data.models import (
     QualityQcFa,
     SecondsA4,
     SecondsGeneral,
+    SecondsGeneralDefectType,
+    SecondsGeneralDefect,
 )
 from excel_importer.date_utils import normalize_container_date, parse_date
 
@@ -66,11 +68,24 @@ def load_pivot_range(file_obj, sheet, header_row, usecols, nrows=None):
     return df
 
 
-def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols):
+def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sheet, header, cols,
+                   excel_file=None):
+    """
+    Load and clean a single sheet from an Excel file.
+
+    Args:
+        file_obj: seekable file-like object (used as fallback if excel_file is None).
+        excel_file: Optional pd.ExcelFile instance. When provided, reads the sheet
+            directly from the already-opened ExcelFile, avoiding repeated file I/O
+            when processing multiple sheets.
+    """
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
-    file_obj.seek(0)
-    df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+    if excel_file is not None:
+        df = pd.read_excel(excel_file, sheet_name=sheet, header=header, usecols=range(cols))
+    else:
+        file_obj.seek(0)
+        df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
 
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)
@@ -101,7 +116,7 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     return df
 
 def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type,
-                defects_only=False):
+                defects_only=False, color_map=None):
     """
     Bulk insert QualityQcFa records and/or InspectionDefect records.
 
@@ -109,6 +124,8 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         defects_only: If True, skip creating QualityQcFa parents and only create
             InspectionDefect records by querying existing parents. Use this when
             parent records were already created by apply_timewindow.
+        color_map: Optional dict mapping color name → Color instance. When provided,
+            avoids N+1 get_or_create queries per row.
     """
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
@@ -117,7 +134,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     # For defects_only mode, query existing parents instead of creating new ones
     if defects_only:
-        _bulk_insert_defects_only(df, defeacts_fields, table_type)
+        _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=color_map)
         return
 
     quality_instances = []
@@ -125,7 +142,12 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
     for _, row in df.iterrows():
 
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+            if color_obj is None:
+                color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        else:
+            color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
 
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
@@ -166,40 +188,78 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
         InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000)
 
 
-def _bulk_insert_defects_only(df, defeacts_fields, table_type):
+def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     """
     Create only InspectionDefect records, querying existing QualityQcFa parents.
 
     Used when QualityQcFa records were already created by apply_timewindow.
-    Parents are queried by natural key: date_1 + po + style + team + color.
+    Parents are loaded in a single batch query by date range and table_type,
+    indexed in memory by natural key, eliminating N+1 per-row DB queries.
+
+    Args:
+        color_map: Optional dict mapping color name → Color instance. When provided,
+            avoids N+1 Color.objects.filter() queries per row.
     """
+    if df.empty:
+        return
+
     defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
+
+    # ── Batch-load ALL matching QualityQcFa parents in 1 query ──
+    # Extract unique dates from the DataFrame to scope the batch load.
+    unique_dates = set()
+    for _, row in df.iterrows():
+        d = parse_date(row.get('date_1', ''))
+        if d:
+            unique_dates.add(d)
+
+    if not unique_dates:
+        return
+
+    # Load all parents for this table_type and date range in a single query.
+    # select_related('color') avoids N+1 when building the in-memory index.
+    parents = QualityQcFa.objects.filter(
+        table_type=table_type,
+        date_1__in=unique_dates,
+    ).select_related('color')
+
+    # Build in-memory index by natural key: (date, po, style, team, color_name)
+    parent_index = {}
+    for parent in parents:
+        color_name = parent.color.name if parent.color_id else ""
+        key = (
+            parse_date(parent.date_1),
+            parent.po,
+            parent.style.strip() if parent.style else "",
+            parent.team,
+            color_name,
+        )
+        parent_index[key] = parent
 
     inspection_defects = []
 
     for _, row in df.iterrows():
-        # Query existing QualityQcFa by natural key
+        # Resolve color — use batch map if available, otherwise skip
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
-        color_obj = Color.objects.filter(name=color_name).first()
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+        else:
+            color_obj = Color.objects.filter(name=color_name).first()
         if color_obj is None:
             continue
 
-        # Build natural key query - same as build_qc_fa_plant_key in sync_service
-        query = {
-            'table_type': table_type,
-            'date_1': parse_date(row.get('date_1', '')),
-            'po': int(row.get('po', 0)) if row.get('po') else 0,
-            'style': str(row.get('style', '')).strip(),
-            'team': int(row.get('team', 0)) if row.get('team') else 0,
-            'color': color_obj,
-        }
+        # Build natural key tuple for in-memory lookup
+        date_val = parse_date(row.get('date_1', ''))
+        po_val = int(row.get('po', 0)) if row.get('po') else 0
+        style_val = str(row.get('style', '')).strip()
+        team_val = int(row.get('team', 0)) if row.get('team') else 0
 
-        # Only query if we have valid key values
-        if not query['date_1'] or not query['style']:
+        if not date_val or not style_val:
             continue
 
-        quality_instance = QualityQcFa.objects.filter(**query).first()
+        key = (date_val, po_val, style_val, team_val, color_obj.name)
+        quality_instance = parent_index.get(key)
         if quality_instance is None:
             continue
 
@@ -248,16 +308,55 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
     if df.empty:
         return
 
-    instances = []
+    from excel_importer.sheet_configs import SECONDS_GENERAL_DEFECT_COLUMNS, SECONDS_GENERAL_FABRIC_DEFECTS
 
+    instances = []
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
         production_data = _truncate_charfields(SecondsGeneral, production_data)
-
         instances.append(SecondsGeneral(**production_data))
 
     SecondsGeneral.objects.bulk_create(instances, batch_size=1000)
+
+    defect_type_names = SECONDS_GENERAL_DEFECT_COLUMNS
+    defect_types = SecondsGeneralDefectType.objects.filter(name__in=defect_type_names)
+    defect_type_map = {dt.name: dt for dt in defect_types}
+
+    all_created = SecondsGeneral.objects.order_by('-pk')[:len(instances)]
+    # Re-query to get PKs
+    date_week_pairs = [(inst.date, inst.week) for inst in instances]
+    created_records = SecondsGeneral.objects.filter(
+        date__in=[d for d, _ in date_week_pairs],
+        week__in=[w for _, w in date_week_pairs],
+    ).order_by('pk')
+
+    defects_to_create = []
+    for idx, (_, row) in enumerate(df.iterrows()):
+        if idx >= len(created_records):
+            break
+        sg = created_records[idx]
+        for defect_field in defect_type_names:
+            amount = int(row.get(defect_field, 0) or 0)
+            if amount <= 0:
+                continue
+            defect_type = defect_type_map.get(defect_field)
+            if defect_type is None:
+                continue
+            defects_to_create.append(
+                SecondsGeneralDefect(
+                    seconds_general=sg,
+                    defect_type=defect_type,
+                    amount=amount,
+                )
+            )
+
+    if defects_to_create:
+        SecondsGeneralDefect.objects.bulk_create(
+            defects_to_create,
+            batch_size=2000,
+            ignore_conflicts=True,
+        )
 
 
 def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fields):

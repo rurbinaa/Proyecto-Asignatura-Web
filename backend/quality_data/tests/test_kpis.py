@@ -29,7 +29,9 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status as http_status
+from rest_framework import exceptions as rest_framework_exceptions
 from django.db.models import Sum
+from unittest.mock import patch
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
@@ -116,17 +118,25 @@ class KpiTestMixin:
             )
 
         # SecondsGeneral records
+        from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
+        defect_types = {}
+        for name in ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]:
+            defect_types[name], _ = SecondsGeneralDefectType.objects.get_or_create(name=name)
+
         for i in range(3):
-            SecondsGeneral.objects.create(
+            sg = SecondsGeneral.objects.create(
                 week=i + 1,
                 date=f"2025-01-{i + 10:02d}",
-                corrido_2=10 + i,
-                barre=5 + i,
-                otros_3=3 + i,
-                degradacion=2 + i,
-                bordados=1 + i,
-                total_de_tela=21 + i * 5,
             )
+            for name, amount_base in [
+                ("corrido_2", 10), ("barre", 5), ("otros_3", 3),
+                ("degradacion", 2), ("bordados", 1),
+            ]:
+                SecondsGeneralDefect.objects.create(
+                    seconds_general=sg,
+                    defect_type=defect_types[name],
+                    amount=amount_base + i,
+                )
 
         # Container records — 6 containers distributed across percentage ranges
         pct_values = [75.0, 85.0, 87.0, 92.0, 93.0, 97.0]
@@ -330,6 +340,38 @@ class AuditedPiecesTest(KpiTestMixin, TestCase):
         self.assertEqual(week_1["y"], 150)
 
 
+class AqlDtoBoundaryTest(KpiTestMixin, TestCase):
+    def test_aql_by_style_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-aql-by-style")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 1)
+        self.assertEqual(serialize_envelope.call_count, 1)
+
+    def test_aql_weekly_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-aql-weekly")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 2)
+        self.assertEqual(serialize_envelope.call_count, 1)
+
+    def test_audited_pieces_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-audited-pieces")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 1)
+        self.assertEqual(serialize_envelope.call_count, 1)
+
+
 # ─────────────────────────────────────────────────────────
 # Grupo 2 — Rendimiento KPIs
 # ─────────────────────────────────────────────────────────
@@ -474,6 +516,40 @@ class PerformanceByLineTest(KpiTestMixin, TestCase):
         for item in response.data:
             self.assertIn("label", item)
             self.assertIn("value", item)
+
+
+class RendimientoDtoBoundaryTest(KpiTestMixin, TestCase):
+    def test_ac_re_rate_by_line_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-ac-re-rate-by-line")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_seconds_rework_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-seconds-rework")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_performance_by_customer_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_performance_by_line_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
 
 
 # ─────────────────────────────────────────────────────────
@@ -972,6 +1048,36 @@ class DefectRateTest(KpiTestMixin, TestCase):
         )
         self.assertEqual(response.data["value"], expected)
 
+
+class DefectOperationalDtoBoundaryTest(KpiTestMixin, TestCase):
+    def _assert_route_uses_payload_serializer(self, route_name):
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(reverse(route_name))
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_top_defects_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-top-defects")
+
+    def test_fabric_defects_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-fabric-defects")
+
+    def test_defects_by_style_type_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-defects-by-style-type")
+
+    def test_pass_reject_distribution_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-pass-reject-distribution")
+
+    def test_rejected_evolution_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-rejected-evolution")
+
+    def test_containers_by_state_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-containers-by-state")
+
+    def test_defect_rate_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-defect-rate")
+
     def test_defect_rate_week_filter(self):
         """week filter applies to defect rate calculation."""
         url = reverse("quality_data:kpi-defect-rate")
@@ -1027,6 +1133,72 @@ class KpiFilterDateRangeTest(KpiTestMixin, TestCase):
 
         self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
         self.assertIn("date_range", response.data)
+
+
+class KpiFilterRequiredDateBoundsHelperTest(TestCase):
+    def test_parse_required_date_bounds_returns_iso_dates(self):
+        from quality_data.views import KpiFilterMixin
+
+        from_date, to_date = KpiFilterMixin.parse_required_date_bounds(
+            {"date_from": "2025-01-01", "date_to": "2025-01-31"}
+        )
+
+        self.assertEqual(from_date.isoformat(), "2025-01-01")
+        self.assertEqual(to_date.isoformat(), "2025-01-31")
+
+    def test_parse_required_date_bounds_requires_both_fields(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds({"date_to": "2025-01-31"})
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds({"date_from": "2025-01-01"})
+
+        self.assertIn("date_to", error_ctx.exception.detail)
+
+    def test_parse_required_date_bounds_rejects_invalid_iso_values(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds(
+                {"date_from": "01-01-2025", "date_to": "2025-01-31"}
+            )
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+
+    def test_parse_required_date_bounds_rejects_reversed_order(self):
+        from quality_data.views import KpiFilterMixin
+
+        with self.assertRaises(rest_framework_exceptions.ValidationError) as error_ctx:
+            KpiFilterMixin.parse_required_date_bounds(
+                {"date_from": "2025-02-01", "date_to": "2025-01-31"}
+            )
+
+        self.assertIn("date_from", error_ctx.exception.detail)
+        self.assertIn("date_to", error_ctx.exception.detail)
+
+
+class KpiDtoHelperTest(TestCase):
+    def test_serialize_payload_helper_returns_serializer_data(self):
+        from quality_data.views import _serialize_payload
+        from quality_data.serializers import KpiBarSerializer
+
+        payload = [{"label": "Line 1", "value": 5}]
+        serialized = _serialize_payload(KpiBarSerializer, payload, many=True)
+
+        self.assertEqual(serialized, payload)
+
+    def test_serialize_envelope_helper_wraps_data_key(self):
+        from quality_data.views import _serialize_envelope
+        from quality_data.serializers import KpiBarEnvelopeSerializer
+
+        payload = [{"label": "Line 1", "value": 5}]
+        serialized = _serialize_envelope(KpiBarEnvelopeSerializer, payload)
+
+        self.assertEqual(serialized, {"data": payload})
 
 
 class KpiFilterTeamTest(KpiTestMixin, TestCase):
@@ -1298,3 +1470,80 @@ class FilterOptionsViewTest(TestCase):
         self.assertEqual(response.data["style"], [])
         self.assertEqual(response.data["customer"], [])
         self.assertEqual(response.data["batch"], [])
+
+    def test_filter_options_uses_dto_serializer(self):
+        url = reverse("quality_data:kpi-filter-options")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+
+class KpiContractParityTest(KpiTestMixin, TestCase):
+    """Regression tests that lock public KPI response contracts."""
+
+    def test_kpi_object_families_keep_expected_keys_and_types(self):
+        cases = [
+            ("quality_data:kpi-aql-aql-by-style", "data", {"label", "value"}),
+            ("quality_data:kpi-rendimiento-ac-re-rate-by-line", None, {"label", "value"}),
+            ("quality_data:kpi-rendimiento-performance-by-customer", None, {"label", "value"}),
+            ("quality_data:kpi-rendimiento-performance-by-line", None, {"label", "value"}),
+            ("quality_data:kpi-top-defects", None, {"label", "value"}),
+            ("quality_data:kpi-fabric-defects", None, {"label", "value"}),
+            ("quality_data:kpi-defects-by-style-type", None, {"x", "y", "value"}),
+            ("quality_data:kpi-pass-reject-distribution", None, {"name", "value"}),
+            ("quality_data:kpi-containers-by-state", None, {"name", "value"}),
+        ]
+
+        for route_name, wrapped_key, expected_keys in cases:
+            response = self.client.get(reverse(route_name))
+            self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+            payload = response.data[wrapped_key] if wrapped_key else response.data
+            self.assertIsInstance(payload, list)
+
+            if payload:
+                self.assertEqual(set(payload[0].keys()), expected_keys)
+
+    def test_series_kpis_keep_expected_shape_and_numeric_points(self):
+        series_routes = [
+            "quality_data:kpi-aql-aql-weekly",
+            "quality_data:kpi-aql-audited-pieces",
+            "quality_data:kpi-rendimiento-seconds-rework",
+            "quality_data:kpi-rejected-evolution",
+        ]
+
+        for route_name in series_routes:
+            response = self.client.get(reverse(route_name))
+            self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+            payload = response.data["data"] if route_name.startswith("quality_data:kpi-aql-") else response.data
+            self.assertIsInstance(payload, list)
+
+            for series in payload:
+                self.assertEqual(set(series.keys()), {"name", "data"})
+                self.assertIsInstance(series["data"], list)
+                for point in series["data"]:
+                    self.assertEqual(set(point.keys()), {"x", "y"})
+                    self.assertIsInstance(point["y"], (int, float))
+
+    def test_scalar_kpi_contract_is_stable(self):
+        response = self.client.get(reverse("quality_data:kpi-defect-rate"))
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(set(response.data.keys()), {"label", "value"})
+        self.assertEqual(response.data["label"], "Defect Rate")
+        self.assertIsInstance(response.data["value"], (int, float))
+
+    def test_filter_options_contract_keeps_key_set_and_sorted_lists(self):
+        response = self.client.get(reverse("quality_data:kpi-filter-options"))
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        self.assertEqual(
+            list(response.data.keys()),
+            ["week", "team", "style", "color", "customer", "batch"],
+        )
+
+        for key in ["week", "team", "style", "color", "customer", "batch"]:
+            self.assertIsInstance(response.data[key], list)
+            self.assertEqual(response.data[key], sorted(response.data[key]))
