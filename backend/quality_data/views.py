@@ -1020,7 +1020,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='seconds-rework')
     def seconds_rework(self, request):
@@ -1059,7 +1060,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             {"name": "Fabric", "data": fabric_data},
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiSeriesSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='performance-by-customer')
     def performance_by_customer(self, request):
@@ -1093,7 +1095,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='performance-by-line')
     def performance_by_line(self, request):
@@ -1126,7 +1129,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 # ─────────────────────────────────────────────────────────

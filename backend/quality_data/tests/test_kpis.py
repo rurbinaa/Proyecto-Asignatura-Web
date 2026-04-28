@@ -518,6 +518,40 @@ class PerformanceByLineTest(KpiTestMixin, TestCase):
             self.assertIn("value", item)
 
 
+class RendimientoDtoBoundaryTest(KpiTestMixin, TestCase):
+    def test_ac_re_rate_by_line_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-ac-re-rate-by-line")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_seconds_rework_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-seconds-rework")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_performance_by_customer_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_performance_by_line_uses_dto_payload_serializer(self):
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+
 # ─────────────────────────────────────────────────────────
 # Grupo 3 — Defectos KPIs
 # ─────────────────────────────────────────────────────────
