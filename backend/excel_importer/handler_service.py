@@ -35,13 +35,6 @@ def _truncate_charfields(model_class, data):
 
     return data
 
-# He quitado y vuelto a poner esta funcion como mil veces, ya mejor aqui se queda
-def print_headers(file_obj,sheet,header,cols):
-    file_obj.seek(0)
-    df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
-    pd.set_option('display.max_columns', None)
-    print(df.columns.tolist())
-
 
 def load_pivot_range(file_obj, sheet, header_row, usecols, nrows=None):
     """
@@ -308,7 +301,7 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
     if df.empty:
         return
 
-    from excel_importer.sheet_configs import SECONDS_GENERAL_DEFECT_COLUMNS, SECONDS_GENERAL_FABRIC_DEFECTS
+    from excel_importer.sheet_configs import SECONDS_GENERAL_DEFECT_COLUMNS
 
     instances = []
     for _, row in df.iterrows():
