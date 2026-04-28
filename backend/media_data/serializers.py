@@ -55,7 +55,7 @@ class FlexiblePrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
 
 
 class InspectionDataSerializer(serializers.ModelSerializer):
-    inspector = serializers.CharField(source='inspector.get_full_name', read_only=True)
+    inspector = serializers.SerializerMethodField()
     color = FlexiblePrimaryKeyRelatedField(
         queryset=Color.objects.filter(is_active=True),
         get_or_create_defaults={'is_active': True},
@@ -81,6 +81,14 @@ class InspectionDataSerializer(serializers.ModelSerializer):
             'id', 'inspector', 'date', 'week',
             'is_closed', 'status', 'closed_at',
         ]
+
+    def get_inspector(self, obj):
+        try:
+            if obj.inspector_id:
+                return obj.inspector.get_full_name() if obj.inspector else None
+        except Exception:
+            pass
+        return None
 
 
 class RevisionDefectSerializer(serializers.ModelSerializer):

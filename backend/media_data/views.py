@@ -1,7 +1,8 @@
 from django.utils import timezone
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from .models import RevisionDefect, Mockup, InspectionData
 from .serializers import RevisionDefectSerializer, MockupSerializer, InspectionDataSerializer
 from .inspection_bridge import bridge_inspection
@@ -11,6 +12,7 @@ class MockupViewSet(viewsets.ReadOnlyModelViewSet):
     """List and retrieve mockup images for the capture interface."""
     queryset = Mockup.objects.all()
     serializer_class = MockupSerializer
+    permission_classes = [AllowAny]
 
 
 class InspectionDataViewSet(viewsets.ModelViewSet):
@@ -22,6 +24,7 @@ class InspectionDataViewSet(viewsets.ModelViewSet):
     """
     queryset = InspectionData.objects.all()
     serializer_class = InspectionDataSerializer
+    permission_classes = [AllowAny]
 
     @action(detail=True, methods=['post'])
     def close_inspection(self, request, pk=None):
@@ -73,9 +76,14 @@ class RevisionDefectViewSet(viewsets.ModelViewSet):
     """
     queryset = RevisionDefect.objects.all()
     serializer_class = RevisionDefectSerializer
+    permission_classes = [AllowAny]
 
     def perform_create(self, serializer):
-        serializer.save(inspector=self.request.user)
+        user = self.request.user
+        if user and user.is_authenticated:
+            serializer.save(inspector=user)
+        else:
+            serializer.save(inspector=None)
 
     @action(detail=False, methods=['delete'], url_path='undo')
     def undo(self, request):

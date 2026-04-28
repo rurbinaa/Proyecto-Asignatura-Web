@@ -35,7 +35,7 @@ class InspectionData(models.Model):
         ('REJECT', 'Reject'),
     ]
 
-    inspector = models.ForeignKey(User, on_delete=models.PROTECT)
+    inspector = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True)
     date = models.DateField(auto_now_add=True)
     created_at = models.TimeField(auto_now_add=True)
     week = models.PositiveIntegerField(editable=False)
