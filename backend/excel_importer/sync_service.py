@@ -452,15 +452,25 @@ def apply_session(session):
             color_map=color_map,
         )
 
-        # Seconds General (Time-Window) — color is CharField, no FK
-        apply_timewindow(
-            session.seconds_general_data,
-            SecondsGeneral,
-            date_field="date",
-            numeric_columns=_get_numeric_columns("seconds_general"),
-            not_numeric_columns=_get_not_numeric_columns("seconds_general"),
-            color_map=color_map,
-        )
+        # Seconds General — use bulk_insert_seconds_general which creates
+        # both parent records AND SecondsGeneralDefect records
+        seconds_rows = session.seconds_general_data
+        if seconds_rows:
+            import pandas as pd
+            from excel_importer.handler_service import bulk_insert_seconds_general
+
+            sg_dates = extract_dates(seconds_rows, "date")
+            if sg_dates:
+                # Delete existing records for these dates (CASCADE deletes their defects)
+                SecondsGeneral.objects.filter(date__in=list(sg_dates)).delete()
+
+                # Convert to DataFrame and call bulk_insert which creates parents + defects
+                df = pd.DataFrame(seconds_rows)
+                bulk_insert_seconds_general(
+                    df,
+                    numeric_columns=_get_numeric_columns("seconds_general"),
+                    not_numeric_columns=_get_not_numeric_columns("seconds_general"),
+                )
 
         # Container (UPSERT) — no color FK
         apply_upsert(
