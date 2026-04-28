@@ -27,6 +27,7 @@ from excel_importer.sheet_configs import (
     SECONDS_A4_NUMERIC_COLUMNS,
     SECONDS_GENERAL_REMAP,
     SECONDS_GENERAL_NUMERIC_COLUMNS,
+    SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS,
     CONTAINER_REMAP,
     CONTAINER_NUMERIC_COLUMNS,
     CONTAINER_AMOUNT_DEFEACTS_FIELDS,
@@ -157,7 +158,7 @@ class Process(APIView):
             file_obj,
             SECONDS_GENERAL_REMAP,
             SECONDS_GENERAL_NUMERIC_COLUMNS,
-            None,
+            SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS,
             *SHEET_NAMES[3],
         )
 
@@ -227,7 +228,7 @@ class ExcelPreviewView(APIView):
 
             seconds_general_df = load_and_clean(
                 file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
-                None, *SHEET_NAMES[3],
+                SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[3],
                 excel_file=excel_file,
             )
             dataframes["seconds_general"] = _df_to_json_safe(seconds_general_df)
