@@ -381,13 +381,17 @@ class ProcessViewTest(APITestCase):
 
     @patch('quality_data.views.load_and_clean')
     def test_process_view_post(self, mock_load_and_clean):
+        from django.core.files.uploadedfile import SimpleUploadedFile
         mock_df = MagicMock(spec=pd.DataFrame)
         mock_load_and_clean.return_value = mock_df
         
-        file_content = b'test file content'
+        uploaded = SimpleUploadedFile(
+            'test.xlsx', b'test file content',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
         response = self.client.post(
             self.url,
-            {'file': ('test.xlsx', file_content)},
+            {'file': uploaded},
             format='multipart'
         )
         

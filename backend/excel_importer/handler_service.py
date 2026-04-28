@@ -75,10 +75,24 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
     if excel_file is not None:
-        df = pd.read_excel(excel_file, sheet_name=sheet, header=header, usecols=range(cols))
+        # Try with usecols first (fast path). If the sheet has fewer columns
+        # than expected, pandas raises ValueError. Fall back to reading all
+        # columns and slicing.
+        try:
+            df = pd.read_excel(excel_file, sheet_name=sheet, header=header, usecols=range(cols))
+        except ValueError:
+            df = pd.read_excel(excel_file, sheet_name=sheet, header=header)
+            if df.shape[1] > cols:
+                df = df.iloc[:, :cols]
     else:
         file_obj.seek(0)
-        df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+        try:
+            df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+        except ValueError:
+            file_obj.seek(0)
+            df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header)
+            if df.shape[1] > cols:
+                df = df.iloc[:, :cols]
 
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)

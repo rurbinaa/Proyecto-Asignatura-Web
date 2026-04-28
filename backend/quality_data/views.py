@@ -63,38 +63,24 @@ def _df_to_json_safe(df):
     """
     Convert a DataFrame to a list of dicts with JSON-serializable values.
 
-    Handles:
-    - pandas.Timestamp / datetime → ISO date string (YYYY-MM-DD)
-    - numpy.integer / numpy.floating → Python int / float
-    - numpy.bool_ → Python bool
-    - pandas.NaT / None → None
+    Uses vectorized pandas operations instead of row-by-row Python iteration.
+    Handles: Timestamp → ISO date, NaN → None, numpy types → Python types.
     """
     if df is None or df.empty:
         return []
 
-    records = df.to_dict('records')
-    result = []
-    for row in records:
-        clean_row = {}
-        for key, value in row.items():
-            if value is None or pd.isna(value):
-                clean_row[key] = None
-            elif isinstance(value, (pd.Timestamp, datetime.datetime)):
-                clean_row[key] = value.strftime("%Y-%m-%d")
-            elif isinstance(value, datetime.date):
-                clean_row[key] = value.strftime("%Y-%m-%d")
-            elif isinstance(value, (np.integer,)):
-                clean_row[key] = int(value)
-            elif isinstance(value, (np.floating,)):
-                clean_row[key] = float(value)
-            elif isinstance(value, (np.bool_,)):
-                clean_row[key] = bool(value)
-            elif isinstance(value, np.ndarray):
-                clean_row[key] = value.tolist()
-            else:
-                clean_row[key] = value
-        result.append(clean_row)
-    return result
+    # Work on a copy to avoid mutating the original
+    df = df.copy()
+
+    # Convert datetime columns to ISO date strings (vectorized)
+    for col in df.select_dtypes(include=['datetime64', 'datetimetz']).columns:
+        df[col] = df[col].dt.strftime('%Y-%m-%d')
+
+    # Replace NaN/NaT with None for JSON compatibility
+    df = df.where(pd.notna(df), None)
+
+    # Convert to dicts — pandas already handles numpy→Python type conversion
+    return df.to_dict('records')
 
 
 def _serialize_payload(serializer_cls, payload, many=False):
@@ -1529,9 +1515,9 @@ class VolatileKpiView(APIView):
                 options[field] = []
 
         if 'color__name' in df.columns:
-            options['color'] = sorted(df['color__name'].dropna().unique().tolist())
+            options['color'] = sorted([str(x) for x in df['color__name'].dropna().unique().tolist()])
         elif 'color' in df.columns:
-            options['color'] = sorted(df['color'].dropna().unique().tolist())
+            options['color'] = sorted([str(x) for x in df['color'].dropna().unique().tolist()])
         else:
             options['color'] = []
 
