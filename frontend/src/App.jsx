@@ -7,7 +7,8 @@ import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
 import DashboardView from './views/DashboardView.jsx';
 
-import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'; 
+import { AuthProvider } from './contexts/AuthContext.jsx'; 
+import { useAuth } from './contexts/useAuth';
 
 function AppContent() {
   const { user, loading, isAuthenticated, logout } = useAuth(); 

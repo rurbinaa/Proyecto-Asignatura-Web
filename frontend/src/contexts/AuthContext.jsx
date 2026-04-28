@@ -1,8 +1,7 @@
-import { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { tokenStorage } from '../api/axiosClient';
 import { getCurrentUserRequest, loginRequest, logoutRequest } from '../api/auth';
-
-const AuthContext = createContext();
+import { AuthContext } from './auth-context';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -18,7 +17,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const userDto = await getCurrentUserRequest();
       setUser(userDto);
-    } catch (error) {
+    } catch {
       setUser(null);
     } finally {
       setLoading(false);
@@ -61,7 +60,9 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await logoutRequest();
-    } catch {}
+    } catch (error) {
+      void error;
+    }
     tokenStorage.clear();
     setUser(null);
   };
@@ -76,5 +77,3 @@ export const AuthProvider = ({ children }) => {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
-export const useAuth = () => useContext(AuthContext);
