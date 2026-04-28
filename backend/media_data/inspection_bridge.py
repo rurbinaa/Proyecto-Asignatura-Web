@@ -2,9 +2,11 @@
 Inspection Bridge — Connect media_data inspections to quality_data tables.
 
 When a tactile inspection is closed, this service:
-1. Looks up the corresponding QualityQcFa record by style + color
+1. Finds matching records across QualityQcFa, SecondsGeneral, SecondsA4
+   by style + color + week
 2. Updates accepted/rejected/defects_total based on captured defects
 3. Syncs RevisionDefect records into InspectionDefect (through table)
+4. Populates common fields (style, color, week, date, size) on Seconds tables
 
 This bridges the gap between the touch capture interface (media_data)
 and the QC reporting tables (quality_data).
@@ -15,34 +17,44 @@ from quality_data.models import (
     QualityQcFa,
     InspectionDefect,
     DefectType,
+    SecondsGeneral,
+    SecondsA4,
 )
 from media_data.models import InspectionData, RevisionDefect
 
 
 def bridge_inspection(inspection: InspectionData) -> dict:
     """
-    Sync a closed inspection to QualityQcFa.
+    Sync a closed inspection to quality_data tables.
 
-    Flow:
-    1. Find matching QualityQcFa record(s) by style and color
-    2. Count defects by type from RevisionDefect
-    3. Update or create QualityQcFa with defect totals
-    4. Sync InspectionDefect through-table records
+    Tables affected:
+    - QualityQcFa: matched by style + color + week, updates defect/status fields
+    - InspectionDefect: synced from RevisionDefect (delete + recreate)
+    - SecondsGeneral: UPSERT by style + color.name + week (common fields only)
+    - SecondsA4: UPSERT by style + color + week (common fields only)
 
     Args:
         inspection: A closed InspectionData instance
 
     Returns:
-        dict with keys: matched_records, synced_defects, status
+        dict with keys: matched_records, synced_defects, status,
+              total_defects, seconds_general, seconds_a4
     """
     if not inspection.is_closed:
         raise ValueError("Inspection must be closed before bridging.")
 
     with transaction.atomic():
-        # Find matching QC records by style and color
+        # ── SecondsGeneral UPSERT (always attempted, even on no QC match) ──
+        sg_result = _bridge_seconds_general(inspection)
+
+        # ── SecondsA4 UPSERT (always attempted, even on no QC match) ──
+        sa4_result = _bridge_seconds_a4(inspection)
+
+        # ── QualityQcFa matching by style + color + week ──
         qc_records = QualityQcFa.objects.filter(
             style__iexact=inspection.style,
             color=inspection.color,
+            week=inspection.week,
         )
 
         if not qc_records.exists():
@@ -50,15 +62,18 @@ def bridge_inspection(inspection: InspectionData) -> dict:
                 "matched_records": 0,
                 "synced_defects": 0,
                 "status": "no_match",
+                "total_defects": 0,
+                "seconds_general": sg_result,
+                "seconds_a4": sa4_result,
                 "message": (
                     f"No QualityQcFa record found for "
-                    f"style='{inspection.style}', color='{inspection.color}'"
+                    f"style='{inspection.style}', color='{inspection.color}', "
+                    f"week={inspection.week}"
                 ),
             }
 
         # Aggregate defects from RevisionDefect
         defect_counts = _aggregate_defects(inspection)
-
         total_defects = sum(defect_counts.values())
 
         # Update each matching record
@@ -72,6 +87,7 @@ def bridge_inspection(inspection: InspectionData) -> dict:
             )
             qc_record.defects_total = total_defects
             qc_record.pass_or_fail = inspection.status
+            qc_record.date_1 = inspection.closed_at.date().isoformat()
             qc_record.save()
 
             # Sync individual defect types to InspectionDefect
@@ -82,7 +98,93 @@ def bridge_inspection(inspection: InspectionData) -> dict:
             "synced_defects": synced,
             "status": "synced",
             "total_defects": total_defects,
+            "seconds_general": sg_result,
+            "seconds_a4": sa4_result,
         }
+
+
+def _bridge_seconds_general(inspection: InspectionData) -> dict:
+    """
+    UPSERT a SecondsGeneral record with common fields from the inspection.
+
+    Matches by (style, color.name, week). Fills date, week, style, color,
+    and size. Production fields (produced, fixed, definitive, etc.) are
+    NEVER overwritten — they stay at their existing values or default 0.
+
+    Returns:
+        dict with keys: created, updated, record_id
+    """
+    defaults = {
+        "date": inspection.date.isoformat(),
+        "size": inspection.size,
+    }
+
+    record, created = SecondsGeneral.objects.update_or_create(
+        style=inspection.style,
+        color=inspection.color.name,
+        week=inspection.week,
+        defaults=defaults,
+    )
+
+    return {
+        "created": created,
+        "updated": not created,
+        "record_id": record.pk,
+    }
+
+
+def _bridge_seconds_a4(inspection: InspectionData) -> dict:
+    """
+    UPSERT a SecondsA4 record with common fields from the inspection.
+
+    Matches by (style, color, week). Fills year, week, date, style, and
+    color. Production fields (cut_num, cut_qty, sew_def, fab_def, etc.)
+    are NEVER overwritten — they stay at existing values or 0.
+
+    Uses get_or_create + conditional update to avoid overwriting
+    production fields that lack DB defaults (SecondsA4 has many
+    IntegerField without default=0).
+
+    Returns:
+        dict with keys: created, updated, record_id
+    """
+    record, created = SecondsA4.objects.get_or_create(
+        style=inspection.style,
+        color=inspection.color,
+        week=inspection.week,
+        defaults={
+            "year": inspection.closed_at.year,
+            "date": inspection.date.isoformat(),
+            "line": "",
+            "cut_num": 0,
+            "cut_qty": 0,
+            "first_quality_qty_sewing": 0,
+            "sample": 0,
+            "pass_field": 0,
+            "fail_field": 0,
+            "sew_def": 0,
+            "fab_def": 0,
+            "accepted": 0,
+            "rejected": 0,
+            "total_of_2ds": 0,
+            "percentage_of_2ds": 0.0,
+            "seconds_by_sew": 0,
+            "seconds_by_fab": 0,
+            "seconds_sew_a4": 0,
+            "seconds_fab_a4": 0,
+        },
+    )
+
+    if not created:
+        # Only update common fields (never touch production fields)
+        record.date = inspection.date.isoformat()
+        record.save(update_fields=["date"])
+
+    return {
+        "created": created,
+        "updated": not created,
+        "record_id": record.pk,
+    }
 
 
 def _aggregate_defects(inspection: InspectionData) -> dict:

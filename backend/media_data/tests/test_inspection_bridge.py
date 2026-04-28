@@ -11,9 +11,17 @@ Tests cover:
 - Edge cases: zero defects, sample < defects, null defect_type
 """
 from django.test import TestCase
+from django.utils import timezone
 from django.contrib.auth.models import User
-from quality_data.models import Color, DefectType, QualityQcFa, InspectionDefect
+from quality_data.models import (
+    Color, DefectType, QualityQcFa, InspectionDefect,
+    SecondsGeneral, SecondsA4,
+)
 from media_data.models import InspectionData, RevisionDefect
+
+
+def _current_week():
+    return timezone.now().date().isocalendar()[1]
 
 
 class InspectionBridgeUnclosedTest(TestCase):
@@ -50,6 +58,7 @@ class InspectionBridgeNoMatchTest(TestCase):
             color=self.color,
             style="NONEXISTENT-STYLE",
             size="M",
+            closed_at=timezone.now(),
             is_closed=True,
             status='PASS',
         )
@@ -77,7 +86,7 @@ class InspectionBridgeSingleRecordTest(TestCase):
         self.qc_record = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -100,6 +109,7 @@ class InspectionBridgeSingleRecordTest(TestCase):
             color=self.color,
             style="POLO-2026",
             size="XL",
+            closed_at=timezone.now(),
             is_closed=True,
             status='REJECT',
         )
@@ -148,7 +158,7 @@ class InspectionBridgeMultipleRecordsTest(TestCase):
         self.qc_record_1 = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -168,7 +178,7 @@ class InspectionBridgeMultipleRecordsTest(TestCase):
         self.qc_record_2 = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -191,6 +201,7 @@ class InspectionBridgeMultipleRecordsTest(TestCase):
             color=self.color,
             style="SHIRT-2026",
             size="L",
+            closed_at=timezone.now(),
             is_closed=True,
             status='REJECT',
         )
@@ -230,6 +241,7 @@ class InspectionBridgeDefectAggregationTest(TestCase):
             color=self.color,
             style="JEANS-2026",
             size="32",
+            closed_at=timezone.now(),
             is_closed=True,
         )
         # 5 + 3 = 8 of type_A, 2 of type_B
@@ -276,7 +288,7 @@ class InspectionBridgeInspectionDefectSyncTest(TestCase):
         self.qc_record = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -299,6 +311,7 @@ class InspectionBridgeInspectionDefectSyncTest(TestCase):
             color=self.color,
             style="TEST-STYLE",
             size="M",
+            closed_at=timezone.now(),
             is_closed=True,
             status='REJECT',
         )
@@ -348,7 +361,7 @@ class InspectionBridgeInactiveDefectTypesTest(TestCase):
         self.qc_record = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -391,7 +404,7 @@ class InspectionBridgeEdgeCasesTest(TestCase):
         self.qc_record_small_sample = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -417,7 +430,7 @@ class InspectionBridgeEdgeCasesTest(TestCase):
         qc_zero = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=_current_week(),
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -440,6 +453,7 @@ class InspectionBridgeEdgeCasesTest(TestCase):
             color=self.color,
             style="ZERO-DEFECTS",
             size="S",
+            closed_at=timezone.now(),
             is_closed=True,
             status='PASS',
         )
@@ -464,6 +478,7 @@ class InspectionBridgeEdgeCasesTest(TestCase):
             color=self.color,
             style="EDGE-CASE-SMALL",
             size="M",
+            closed_at=timezone.now(),
             is_closed=True,
             status='REJECT',
         )
@@ -490,6 +505,7 @@ class InspectionBridgeEdgeCasesTest(TestCase):
             color=self.color,
             style="EDGE-CASE",
             size="L",
+            closed_at=timezone.now(),
             is_closed=True,
         )
         # One with null defect_type
@@ -514,3 +530,206 @@ class InspectionBridgeEdgeCasesTest(TestCase):
         # Null type excluded, only "Minor" = 1
         self.assertEqual(len(counts), 1)
         self.assertEqual(counts["Minor"], 1)
+
+
+class SecondsGeneralBridgeTest(TestCase):
+    """SecondsGeneral UPSERT from inspection data."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='op', password='123')
+        self.color = Color.objects.create(name="SG-Test", is_active=True)
+        self.inspection = InspectionData.objects.create(
+            inspector=self.user,
+            color=self.color,
+            style="SG-STYLE",
+            size="XL",
+            closed_at=timezone.now(),
+            is_closed=True,
+            status='PASS',
+        )
+
+    def test_seconds_general_upsert_creates_new_record(self):
+        """SecondsGeneral created with common fields when no match exists."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        result = bridge_inspection(self.inspection)
+
+        self.assertIn('seconds_general', result)
+        sg = SecondsGeneral.objects.get(
+            style="SG-STYLE",
+            color="SG-Test",
+            week=_current_week(),
+        )
+        self.assertEqual(sg.date, self.inspection.date.isoformat())
+        self.assertEqual(sg.size, "XL")
+        # Production fields stay at defaults
+        self.assertEqual(sg.produced, 0)
+        self.assertEqual(sg.fixed, 0)
+
+    def test_seconds_general_upsert_preserves_production_fields(self):
+        """Re-bridging does NOT overwrite production fields."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        # First bridge: create record
+        bridge_inspection(self.inspection)
+
+        # Manually set production field
+        sg = SecondsGeneral.objects.get(
+            style="SG-STYLE", color="SG-Test", week=_current_week(),
+        )
+        sg.produced = 500
+        sg.save()
+
+        # Second bridge: should NOT overwrite produced
+        bridge_inspection(self.inspection)
+
+        sg.refresh_from_db()
+        self.assertEqual(sg.produced, 500)
+
+
+class SecondsA4BridgeTest(TestCase):
+    """SecondsA4 UPSERT from inspection data."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='op', password='123')
+        self.color = Color.objects.create(name="A4-Test", is_active=True)
+        self.inspection = InspectionData.objects.create(
+            inspector=self.user,
+            color=self.color,
+            style="A4-STYLE",
+            size="M",
+            closed_at=timezone.now(),
+            is_closed=True,
+            status='PASS',
+        )
+
+    def test_seconds_a4_upsert_creates_new_record(self):
+        """SecondsA4 created with common fields."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        result = bridge_inspection(self.inspection)
+
+        self.assertIn('seconds_a4', result)
+        a4 = SecondsA4.objects.get(
+            style="A4-STYLE",
+            color=self.color,
+            week=_current_week(),
+        )
+        self.assertEqual(a4.date, self.inspection.date.isoformat())
+
+    def test_seconds_a4_upsert_preserves_production_fields(self):
+        """Re-bridging preserves cut_qty."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        bridge_inspection(self.inspection)
+
+        a4 = SecondsA4.objects.get(
+            style="A4-STYLE", color=self.color, week=_current_week(),
+        )
+        a4.cut_qty = 300
+        a4.save()
+
+        bridge_inspection(self.inspection)
+
+        a4.refresh_from_db()
+        self.assertEqual(a4.cut_qty, 300)
+
+
+class QualityQcFaWeekMatchTest(TestCase):
+    """Week-based matching for QualityQcFa."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='op', password='123')
+        self.color = Color.objects.create(name="Week-Test", is_active=True)
+        self.current_week = _current_week()
+        self.other_week = self.current_week + 1
+        if self.other_week > 52:
+            self.other_week = 1
+
+    def test_same_week_matches(self):
+        """QC record with same week is matched and updated."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        qc = QualityQcFa.objects.create(
+            table_type="QFA", date_1="2025-01-15",
+            week=self.current_week, customer="Cust", team=1, coord="C",
+            po=1, style="WEEK-STYLE", batch=1, color=self.color,
+            qty=100, seconds=0, accepted=100, rejected=0, sample=100,
+            defects_total=0, aql=0, pass_or_fail="PASS",
+        )
+
+        inspection = InspectionData.objects.create(
+            inspector=self.user, color=self.color,
+            style="WEEK-STYLE", size="M",
+            closed_at=timezone.now(), is_closed=True, status='REJECT',
+        )
+
+        result = bridge_inspection(inspection)
+        self.assertEqual(result['status'], 'synced')
+        self.assertEqual(result['matched_records'], 1)
+
+        qc.refresh_from_db()
+        self.assertEqual(qc.pass_or_fail, 'REJECT')
+        self.assertEqual(qc.date_1, inspection.closed_at.date().isoformat())
+
+    def test_cross_week_blocked(self):
+        """QC record with different week is NOT matched."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        QualityQcFa.objects.create(
+            table_type="QFA", date_1="2025-01-15",
+            week=self.other_week, customer="Cust", team=1, coord="C",
+            po=1, style="WEEK-STYLE-2", batch=1, color=self.color,
+            qty=100, seconds=0, accepted=100, rejected=0, sample=100,
+            defects_total=0, aql=0, pass_or_fail="PASS",
+        )
+
+        inspection = InspectionData.objects.create(
+            inspector=self.user, color=self.color,
+            style="WEEK-STYLE-2", size="M",
+            closed_at=timezone.now(), is_closed=True, status='REJECT',
+        )
+
+        result = bridge_inspection(inspection)
+        self.assertEqual(result['status'], 'no_match')
+
+
+class BridgeTransactionTest(TestCase):
+    """Transaction atomicity for bridge."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='op', password='123')
+        self.color = Color.objects.create(name="Tx-Test", is_active=True)
+        self.defect_type = DefectType.objects.create(name="TxDefect", is_active=True)
+
+        self.qc = QualityQcFa.objects.create(
+            table_type="QFA", date_1="2025-01-15",
+            week=_current_week(), customer="Cust", team=1, coord="C",
+            po=1, style="TX-STYLE", batch=1, color=self.color,
+            qty=100, seconds=0, accepted=100, rejected=0, sample=100,
+            defects_total=0, aql=0, pass_or_fail="PASS",
+        )
+
+        self.inspection = InspectionData.objects.create(
+            inspector=self.user, color=self.color,
+            style="TX-STYLE", size="L",
+            closed_at=timezone.now(), is_closed=True, status='REJECT',
+        )
+        RevisionDefect.objects.create(
+            inspection=self.inspection, inspector=self.user,
+            defect_type=self.defect_type, defect_size="M", defect_count=2,
+        )
+
+    def test_all_tables_populated_in_single_transaction(self):
+        """QC, SG, SA4 all populated."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        result = bridge_inspection(self.inspection)
+
+        self.assertEqual(result['status'], 'synced')
+        self.assertIn('seconds_general', result)
+        self.assertIn('seconds_a4', result)
+
+        self.qc.refresh_from_db()
+        self.assertEqual(self.qc.defects_total, 2)
+        self.assertEqual(self.qc.pass_or_fail, 'REJECT')
