@@ -198,9 +198,12 @@ class ExcelPreviewView(APIView):
             # Gracefully fall back to per-sheet reading if ExcelFile creation fails
             # (e.g. invalid file, test mocks with /dev/null, etc.)
             try:
-                excel_file = pd.ExcelFile(file_obj, engine='openpyxl')
+                excel_file = pd.ExcelFile(file_obj, engine='calamine')
             except Exception:
-                excel_file = None
+                try:
+                    excel_file = pd.ExcelFile(file_obj, engine='openpyxl')
+                except Exception:
+                    excel_file = None
 
             # Parse all 5 sheets
             dataframes = {}

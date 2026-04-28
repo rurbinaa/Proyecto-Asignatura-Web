@@ -87,12 +87,16 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     else:
         file_obj.seek(0)
         try:
-            df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
-        except ValueError:
+            df = pd.read_excel(file_obj, engine='calamine', sheet_name=sheet, header=header, usecols=range(cols))
+        except (ValueError, ImportError):
             file_obj.seek(0)
-            df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header)
-            if df.shape[1] > cols:
-                df = df.iloc[:, :cols]
+            try:
+                df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+            except ValueError:
+                file_obj.seek(0)
+                df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header)
+                if df.shape[1] > cols:
+                    df = df.iloc[:, :cols]
 
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)
