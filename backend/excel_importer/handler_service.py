@@ -75,10 +75,10 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
     if excel_file is not None:
-        df = pd.read_excel(excel_file, sheet_name=sheet, header=header, usecols=range(cols))
+        df = pd.read_excel(excel_file, sheet_name=sheet, header=header)
     else:
         file_obj.seek(0)
-        df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, usecols=range(cols))
+        df = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header)
 
     df = df.dropna(how='all').dropna(axis=1, how='all')
     df = df.rename(columns=remap_columns)
