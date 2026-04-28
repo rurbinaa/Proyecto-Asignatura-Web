@@ -16,6 +16,7 @@ from django.contrib.auth.models import User
 from quality_data.models import (
     Color, DefectType, QualityQcFa, InspectionDefect,
     SecondsGeneral, SecondsA4,
+    SecondsGeneralDefectType, SecondsGeneralDefect,
 )
 from media_data.models import InspectionData, RevisionDefect
 
@@ -733,3 +734,86 @@ class BridgeTransactionTest(TestCase):
         self.qc.refresh_from_db()
         self.assertEqual(self.qc.defects_total, 2)
         self.assertEqual(self.qc.pass_or_fail, 'REJECT')
+
+
+class SecondsGeneralDefectSyncTest(TestCase):
+    """Garment defects synced to SecondsGeneralDefect via semantic mapping."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='op', password='123')
+        self.color = Color.objects.create(name="Map-Test", is_active=True)
+        # Create garment defect types (English names)
+        self.g_tear = DefectType.objects.create(name="tear", is_active=True)
+        self.g_hitched = DefectType.objects.create(name="hitched", is_active=True)
+        self.g_unknown = DefectType.objects.create(name="label_slanted", is_active=True)
+        # Create seconds defect types (Spanish names)
+        self.s_desgarre, _ = SecondsGeneralDefectType.objects.get_or_create(
+            name="desgarre_def_tela"
+        )
+        self.s_enganche, _ = SecondsGeneralDefectType.objects.get_or_create(
+            name="enganche"
+        )
+
+        self.inspection = InspectionData.objects.create(
+            inspector=self.user,
+            color=self.color,
+            style="MAP-STYLE",
+            size="L",
+            closed_at=timezone.now(),
+            is_closed=True,
+            status='REJECT',
+        )
+        # Garment defects: tear=5, hitched=3, label_slanted=1 (no mapping)
+        RevisionDefect.objects.create(
+            inspection=self.inspection, inspector=self.user,
+            defect_type=self.g_tear, defect_size="M", defect_count=5,
+        )
+        RevisionDefect.objects.create(
+            inspection=self.inspection, inspector=self.user,
+            defect_type=self.g_hitched, defect_size="S", defect_count=3,
+        )
+        RevisionDefect.objects.create(
+            inspection=self.inspection, inspector=self.user,
+            defect_type=self.g_unknown, defect_size="L", defect_count=1,
+        )
+
+    def test_maps_garment_defects_to_seconds_defects(self):
+        """tear→desgarre_def_tela(5), hitched→enganche(3), label_slanted ignored."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        result = bridge_inspection(self.inspection)
+        sg_result = result['seconds_general']
+
+        sg = SecondsGeneral.objects.get(pk=sg_result['record_id'])
+        defects = SecondsGeneralDefect.objects.filter(seconds_general=sg)
+
+        self.assertEqual(defects.count(), 2)
+
+        d1 = defects.get(defect_type__name="desgarre_def_tela")
+        self.assertEqual(d1.amount, 5)
+
+        d2 = defects.get(defect_type__name="enganche")
+        self.assertEqual(d2.amount, 3)
+
+    def test_seconds_defects_recreated_on_re_bridge(self):
+        """Re-bridging deletes old defects and recreates them."""
+        from media_data.inspection_bridge import bridge_inspection
+
+        # First bridge
+        bridge_inspection(self.inspection)
+
+        # Add a new RevisionDefect
+        RevisionDefect.objects.create(
+            inspection=self.inspection, inspector=self.user,
+            defect_type=self.g_tear, defect_size="M", defect_count=2,
+        )
+        # Total tear should now be 7
+
+        # Second bridge
+        result = bridge_inspection(self.inspection)
+        sg = SecondsGeneral.objects.get(pk=result['seconds_general']['record_id'])
+
+        d = SecondsGeneralDefect.objects.get(
+            seconds_general=sg, defect_type__name="desgarre_def_tela"
+        )
+        self.assertEqual(d.amount, 7)

@@ -19,8 +19,30 @@ from quality_data.models import (
     DefectType,
     SecondsGeneral,
     SecondsA4,
+    SecondsGeneralDefectType,
+    SecondsGeneralDefect,
 )
 from media_data.models import InspectionData, RevisionDefect
+
+
+# Mapping from garment defect types (English, from QC FA Plant)
+# to seconds defect types (Spanish, from Seconds General).
+# Built from Excel header translations in sheet_configs.py REMAP dicts.
+GARMENT_TO_SECONDS_DEFECT_MAP = {
+    "contamination": "contamination",
+    "mill_flaw": "mill_flaw",
+    "tear": "desgarre_def_tela",
+    "out_of_measurements": "fuera_medidas",
+    "hitched": "enganche",
+    "fabric_run": "corrido",
+    "stain_oil_soil": "manchas_sucio",
+    "dirt_marck": "manchas_sucio",
+    "broken_stitch": "costura_torcida_insegura",
+    "incorrect_stitch": "costura_torcida_insegura",
+    "run_off_stitch": "costura_torcida_insegura",
+    "neddle_holes": "picado_aguja",
+    "open_seam": "hoyos_costura",
+}
 
 
 def bridge_inspection(inspection: InspectionData) -> dict:
@@ -125,6 +147,9 @@ def _bridge_seconds_general(inspection: InspectionData) -> dict:
         week=inspection.week,
         defaults=defaults,
     )
+
+    # Sync garment defects to seconds defects where names overlap
+    _sync_seconds_defects(record, inspection)
 
     return {
         "created": created,
@@ -247,6 +272,66 @@ def _sync_defect_types(
         InspectionDefect.objects.create(
             inspection=qc_record,
             defect_type=defect_type,
+            amount=amount,
+        )
+        synced += 1
+
+    return synced
+
+
+def _sync_seconds_defects(
+    sg_record: SecondsGeneral,
+    inspection: InspectionData,
+) -> int:
+    """
+    Sync garment defects to SecondsGeneralDefect where names overlap.
+
+    Uses GARMENT_TO_SECONDS_DEFECT_MAP to translate garment defect type
+    names (English) to seconds defect type names (Spanish). Only maps
+    types that exist in both the garment DefectType table AND the
+    SecondsGeneralDefectType table.
+
+    Existing SecondsGeneralDefect records for this SecondsGeneral are
+    deleted and recreated to keep the mapping clean.
+
+    Returns:
+        Number of SecondsGeneralDefect records created.
+    """
+    # Aggregate RevisionDefect counts by garment defect type name
+    garment_counts = {}
+    for rd in RevisionDefect.objects.filter(
+        inspection=inspection,
+        defect_type__isnull=False,
+    ).select_related('defect_type'):
+        name = rd.defect_type.name
+        garment_counts[name] = garment_counts.get(name, 0) + rd.defect_count
+
+    # Build lookup: seconds defect type name → SecondsGeneralDefectType instance
+    mapped_names = set(GARMENT_TO_SECONDS_DEFECT_MAP.values())
+    seconds_types = {
+        st.name: st
+        for st in SecondsGeneralDefectType.objects.filter(name__in=mapped_names)
+    }
+
+    # Delete existing defects for this SecondsGeneral record
+    SecondsGeneralDefect.objects.filter(seconds_general=sg_record).delete()
+
+    synced = 0
+    for garment_name, amount in garment_counts.items():
+        seconds_name = GARMENT_TO_SECONDS_DEFECT_MAP.get(garment_name)
+        if seconds_name is None:
+            continue
+
+        seconds_type = seconds_types.get(seconds_name)
+        if seconds_type is None:
+            continue
+
+        if amount <= 0:
+            continue
+
+        SecondsGeneralDefect.objects.create(
+            seconds_general=sg_record,
+            defect_type=seconds_type,
             amount=amount,
         )
         synced += 1
