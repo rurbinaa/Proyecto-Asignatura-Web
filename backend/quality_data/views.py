@@ -1358,14 +1358,17 @@ class FilterOptionsView(APIView):
             .order_by('batch')
         )
 
-        return Response({
+        payload = {
             'week': [w for w in weeks if w is not None],
             'team': [t for t in teams if t is not None],
             'style': [s for s in styles if s is not None],
             'color': [c for c in colors if c is not None],
             'customer': [c for c in customers if c is not None],
             'batch': [b for b in batches if b is not None],
-        })
+        }
+
+        dto_data = _serialize_payload(FilterOptionsSerializer, payload, many=False)
+        return Response(dto_data)
 
 
 class VolatileKpiView(APIView):
@@ -1415,26 +1418,26 @@ class VolatileKpiView(APIView):
             except Exception:
                 containers = None
 
-            # Calcular los 14 KPIs usando pandas
+            # Calcular los 14 KPIs usando DTO serializers para mantener frontera explícita
             kpis = {
-                "aql_by_style": self._calc_aql_by_style(rows),
-                "aql_weekly": self._calc_aql_weekly(rows),
-                "audited_pieces": self._calc_audited_pieces(rows),
-                "ac_re_rate_by_line": self._calc_ac_re_rate(rows),
-                "seconds_rework": seconds_rework,
-                "performance_by_customer": self._calc_perf_by_customer(rows),
-                "performance_by_line": self._calc_perf_by_line(rows),
-                "top_defects": parse_top_defects(rows),
-                "fabric_defects": fabric_defects,
-                "defects_by_style_type": parse_defects_by_style(rows),
-                "pass_reject_distribution": self._calc_pass_reject(rows),
-                "rejected_evolution": self._calc_rejected_evolution(rows),
-                "containers_by_state": containers,
-                "defect_rate": self._calc_defect_rate(rows),
+                "aql_by_style": _serialize_payload(KpiBarSerializer, self._calc_aql_by_style(rows), many=True),
+                "aql_weekly": _serialize_payload(KpiSeriesSerializer, self._calc_aql_weekly(rows), many=True),
+                "audited_pieces": _serialize_payload(KpiSeriesSerializer, self._calc_audited_pieces(rows), many=True),
+                "ac_re_rate_by_line": _serialize_payload(KpiBarSerializer, self._calc_ac_re_rate(rows), many=True),
+                "seconds_rework": _serialize_payload(KpiSeriesSerializer, seconds_rework, many=True) if seconds_rework is not None else None,
+                "performance_by_customer": _serialize_payload(KpiBarSerializer, self._calc_perf_by_customer(rows), many=True),
+                "performance_by_line": _serialize_payload(KpiBarSerializer, self._calc_perf_by_line(rows), many=True),
+                "top_defects": _serialize_payload(KpiBarSerializer, parse_top_defects(rows), many=True),
+                "fabric_defects": _serialize_payload(KpiBarSerializer, fabric_defects, many=True) if fabric_defects is not None else None,
+                "defects_by_style_type": _serialize_payload(KpiHeatmapSerializer, parse_defects_by_style(rows), many=True),
+                "pass_reject_distribution": _serialize_payload(KpiDonutSerializer, self._calc_pass_reject(rows), many=True),
+                "rejected_evolution": _serialize_payload(KpiSeriesSerializer, self._calc_rejected_evolution(rows), many=True),
+                "containers_by_state": _serialize_payload(KpiDonutSerializer, containers, many=True) if containers is not None else None,
+                "defect_rate": _serialize_payload(ScalarMetricSerializer, self._calc_defect_rate(rows), many=False),
             }
 
             filter_options = self._compute_filter_options(rows)
-            kpis["filter_options"] = filter_options
+            kpis["filter_options"] = _serialize_payload(FilterOptionsSerializer, filter_options, many=False)
 
             return Response(kpis, status=200)
 

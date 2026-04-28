@@ -17,8 +17,11 @@ case which doesn't require Excel parsing.
 """
 from django.test import TestCase
 from django.urls import reverse
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 from rest_framework import status as http_status
+from unittest.mock import patch
+import pandas as pd
 
 from quality_data.views import VolatileKpiView
 
@@ -43,6 +46,48 @@ class VolatileKpiViewTest(TestCase):
         response = self.client.post(self.url, {}, format='multipart')
         self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
         self.assertIn('error', response.data)
+
+    def test_volatile_post_uses_dto_serialization_helpers(self):
+        file_obj = SimpleUploadedFile(
+            'test.xlsx',
+            b'fake excel content',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        qc_df = pd.DataFrame([
+            {
+                'style': 'N3165',
+                'defects_total': 3,
+                'sample': 100,
+                'week': 1,
+                'team': 1,
+                'customer': 'CUST_A',
+                'color': 'red',
+                'batch': 1,
+                'pass_or_fail': 'PASS',
+                'rejected': 5,
+                'accepted': 95,
+            }
+        ])
+
+        with patch('quality_data.views.load_and_clean', return_value=qc_df):
+            with patch('quality_data.views.parse_seconds_rework', return_value=[]):
+                with patch('quality_data.views.parse_fabric_defects', return_value=[]):
+                    with patch('quality_data.views.parse_containers_by_state', return_value=[]):
+                        with patch('quality_data.views.parse_top_defects', return_value=[]):
+                            with patch('quality_data.views.parse_defects_by_style', return_value=[]):
+                                with patch(
+                                    'quality_data.views._serialize_payload',
+                                    wraps=__import__('quality_data.views', fromlist=['_serialize_payload'])._serialize_payload,
+                                ) as serialize_payload:
+                                    response = self.client.post(
+                                        self.url,
+                                        {'file': file_obj},
+                                        format='multipart',
+                                    )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 1)
 
     # ─────────────────────────────────────────────────────────
     # 2.3 — Empty DataFrame (helper method tests)

@@ -1471,6 +1471,14 @@ class FilterOptionsViewTest(TestCase):
         self.assertEqual(response.data["customer"], [])
         self.assertEqual(response.data["batch"], [])
 
+    def test_filter_options_uses_dto_serializer(self):
+        url = reverse("quality_data:kpi-filter-options")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
 
 class KpiContractParityTest(KpiTestMixin, TestCase):
     """Regression tests that lock public KPI response contracts."""
