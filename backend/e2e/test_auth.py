@@ -21,6 +21,6 @@ def test_login_failure(page, base_url):
 def test_logout(logged_in_page):
     """Logout should return to login."""
     page = logged_in_page
-    page.locator('button.sidebar-nav-item').filter(has_text="Log Out").click()
+    page.locator('button.sidebar-logout').click()
     page.wait_for_selector('input[type="email"]', timeout=5000)
     assert page.locator('input[type="email"]').is_visible()
