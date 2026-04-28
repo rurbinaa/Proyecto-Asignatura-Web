@@ -1,0 +1,64 @@
+"""
+E2E test fixtures for Playwright + Django.
+
+Requires the app to be running (docker compose up or dev server).
+Set E2E_BASE_URL env var or defaults to http://localhost:8000.
+"""
+import os
+import pytest
+from django.contrib.auth.models import User
+from quality_data.models import Color
+
+
+BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:5173")
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    """Override browser context for consistent viewport."""
+    return {
+        **browser_context_args,
+        "viewport": {"width": 1280, "height": 800},
+    }
+
+
+@pytest.fixture
+def page(context):
+    """Fresh page per test."""
+    page = context.new_page()
+    yield page
+    page.close()
+
+
+@pytest.fixture
+def base_url():
+    return BASE_URL
+
+
+@pytest.fixture(scope="session")
+def django_db_setup():
+    """E2E tests use the running app's DB, not a test DB."""
+    pass
+
+
+@pytest.fixture
+def logged_in_page(page, base_url):
+    """Navigate to app and log in with test credentials."""
+    page.goto(base_url)
+    # Wait for login form
+    page.wait_for_selector('input[type="text"], input[name="username"]', timeout=5000)
+    
+    # Fill credentials
+    username_input = page.locator('input[type="text"], input[name="username"]').first
+    password_input = page.locator('input[type="password"]').first
+    
+    username_input.fill("admin")
+    password_input.fill("admin")
+    
+    # Click login button
+    page.locator('button[type="submit"]').click()
+    
+    # Wait for dashboard to load
+    page.wait_for_url("**/dashboard**", timeout=10000)
+    
+    return page
