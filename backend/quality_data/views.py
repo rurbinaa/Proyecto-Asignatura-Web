@@ -1161,7 +1161,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiBarEnvelopeSerializer, []))
 
         # GROUP BY style: SUM(defects_total) / SUM(sample) * 100
         annotated = (
@@ -1189,7 +1189,8 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         # Sort by value descending
         result.sort(key=lambda x: x['value'], reverse=True)
 
-        return Response({"data": result})
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(_serialize_envelope(KpiBarEnvelopeSerializer, dto_data))
 
     @action(detail=False, methods=['get'], url_path='aql-weekly')
     def aql_weekly(self, request):
@@ -1202,7 +1203,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
         # GROUP BY week: SUM(defects_total) / SUM(sample) * 100
         annotated = (
@@ -1225,7 +1226,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             aql_data.append({"x": week, "y": round(aql, 2)})
 
         if not aql_data:
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
         # Calculate simple trend line (average of differences)
         if len(aql_data) >= 2:
@@ -1249,12 +1250,19 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             # Single point - trend = same value
             trend_data = [{"x": aql_data[0]['x'], "y": aql_data[0]['y']}]
 
-        return Response({
-            "data": [
-                {"name": "AQL", "data": aql_data},
-                {"name": "Trend", "data": trend_data},
-            ]
-        })
+        aql_series = _serialize_payload(
+            KpiSeriesSerializer,
+            {"name": "AQL", "data": aql_data},
+            many=False,
+        )
+        trend_series = _serialize_payload(
+            KpiSeriesSerializer,
+            {"name": "Trend", "data": trend_data},
+            many=False,
+        )
+        return Response(
+            _serialize_envelope(KpiSeriesEnvelopeSerializer, [aql_series, trend_series])
+        )
 
     @action(detail=False, methods=['get'], url_path='audited-pieces')
     def audited_pieces(self, request):
@@ -1266,7 +1274,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
         # GROUP BY week: SUM(sample)
         annotated = (
@@ -1283,11 +1291,12 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
                 "y": row['total_sample'] or 0
             })
 
-        return Response({
-            "data": [
-                {"name": "Pieces", "data": pieces_data},
-            ]
-        })
+        pieces_series = _serialize_payload(
+            KpiSeriesSerializer,
+            {"name": "Pieces", "data": pieces_data},
+            many=False,
+        )
+        return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, [pieces_series]))
 
 
 # ─────────────────────────────────────────────────────────

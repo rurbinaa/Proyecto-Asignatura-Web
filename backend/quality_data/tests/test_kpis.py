@@ -31,6 +31,7 @@ from rest_framework.test import APIClient
 from rest_framework import status as http_status
 from rest_framework import exceptions as rest_framework_exceptions
 from django.db.models import Sum
+from unittest.mock import patch
 from quality_data.models import (
     QualityQcFa,
     SecondsA4,
@@ -337,6 +338,38 @@ class AuditedPiecesTest(KpiTestMixin, TestCase):
         week_1 = next(point for point in points if point["x"] == 1)
         # Original week 1 sample=100 + new sample=50
         self.assertEqual(week_1["y"], 150)
+
+
+class AqlDtoBoundaryTest(KpiTestMixin, TestCase):
+    def test_aql_by_style_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-aql-by-style")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 1)
+        self.assertEqual(serialize_envelope.call_count, 1)
+
+    def test_aql_weekly_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-aql-weekly")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 2)
+        self.assertEqual(serialize_envelope.call_count, 1)
+
+    def test_audited_pieces_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-audited-pieces")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 1)
+        self.assertEqual(serialize_envelope.call_count, 1)
 
 
 # ─────────────────────────────────────────────────────────
