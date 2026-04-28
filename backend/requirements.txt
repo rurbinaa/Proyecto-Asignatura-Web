@@ -1,7 +1,7 @@
 Django>=5.0
 djangorestframework
 django-cors-headers
-psycopg2-binary>=2.9
+psycopg[binary,pool]
 daphne
 channels
 djangorestframework-simplejwt
@@ -10,3 +10,7 @@ channels_redis
 pytest
 pytest-django
 requests
+pandas
+openpyxl
+Pillow==11.0.0
+xlsxwriter>=3.2.0

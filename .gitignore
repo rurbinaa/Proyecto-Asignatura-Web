@@ -38,11 +38,24 @@ db.sqlite3
 .coverage
 nosetests.xml
 coverage.xml
+frontend/coverage/
+frontend/.cache/
+frontend/.vite/
+frontend/.parcel-cache/
+frontend/.next/
+frontend/.turbo/
+frontend/.eslintcache
+*.sql
+react-router-dom/
 *.mo
 
 # Archivos generados por Django
 /staticfiles/
-media/
+/media/
+!/media/mockups/
+/media/mockups/*
+!/media/mockups/README.md
+!/media/mockups/.gitkeep
 *.pid
 
 # ============================================
@@ -126,4 +139,5 @@ pytest_cache/
 
 
 # archivos confidenciales
-.xlsx
+*.xlsx
+/.atl

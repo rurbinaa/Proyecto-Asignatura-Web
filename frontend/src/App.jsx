@@ -1,35 +1,106 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState, useEffect } from 'react';
+import './App.css';
+import Sidebar from './Components/Sidebar.jsx';
+import Navbar from './Components/Navbar.jsx';
+import CaptureView from './views/CaptureView.jsx';
+import LoginView from './views/LoginView.jsx';
+import ExcelUploader from './Components/ExcelUploader.jsx';
+import DashboardView from './views/DashboardView.jsx';
 
-function App() {
-  const [count, setCount] = useState(0)
+import { AuthProvider } from './contexts/AuthContext.jsx'; 
+import { useAuth } from './contexts/useAuth';
+
+function AppContent() {
+  const { user, loading, isAuthenticated, logout } = useAuth(); 
+
+  const [activeView, setActiveView] = useState(() => {
+    try {
+      const stored = localStorage.getItem('rift-activeView');
+      return stored || '';
+    } catch {
+      return '';
+    }
+  });
+  
+  const [volatileData, setVolatileData] = useState(null);
+  const [volatileFile, setVolatileFile] = useState(null);
+  const defaultView = user?.role === 'manager' ? 'excel' : 'capture';
+  const resolvedActiveView = activeView || (isAuthenticated && user ? defaultView : '');
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const storedView = localStorage.getItem('rift-activeView');
+      if (!storedView) {
+        localStorage.setItem('rift-activeView', defaultView);
+      }
+    }
+  }, [defaultView, isAuthenticated, user]);
+
+  const handleVolatileDashboard = (file) => {
+    setVolatileFile(file);
+    setActiveView('dashboard');
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    localStorage.removeItem('rift-activeView');
+    setActiveView('');
+  };
+
+  if (loading) {
+    return <div className="app-loading">Verificando sesión...</div>;
+  }
+
+  if (!isAuthenticated || !user) {
+    return <LoginView />;
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="app-layout">
+      
+        <Sidebar 
+          userRole={user.role} 
+          activeView={resolvedActiveView} 
+          setActiveView={(view) => {
+            setActiveView(view);
+            localStorage.setItem('rift-activeView', view);
+          }} 
+        setVolatileData={setVolatileData}
+        onLogout={handleLogout} 
+      />
+
+      <div className="main-wrapper">
+        <Navbar user={user} />
+
+        <main className="content-area">
+          
+          {resolvedActiveView === 'capture' && user.role === 'operator' && <CaptureView />}
+
+          {resolvedActiveView === 'excel' && user.role === 'manager' && (
+            <div className="card excel-view-card">
+              <h2 className="section-title title-tight">Importation of batches (Excel)</h2>
+              <p className="excel-subtitle">
+                Drag your file to ingest multiple records into the system.
+              </p>
+              <ExcelUploader onVolatileDashboard={handleVolatileDashboard} />
+            </div>
+          )}
+
+          {resolvedActiveView === 'dashboard' && (
+            <DashboardView volatileData={volatileData} volatileFile={volatileFile} />
+          )}
+
+        </main>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+      
+    </div>
+  );
 }
 
-export default App
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}

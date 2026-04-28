@@ -1,0 +1,129 @@
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-light);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-card {
+  background-color: var(--white);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  padding: 48px;
+  width: 100%;
+  max-width: 420px;
+  position: relative;
+  z-index: 10;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.login-logo-img {
+  width: 120px;
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 16px;
+}
+
+.login-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #163451;
+  margin-bottom: 0px;
+  display: inline;
+}
+
+.login-subtitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: #6484a0;
+  opacity: 0.62;
+  margin-left: 0px;
+}
+
+.login-company {
+  font-size: 28px;
+  font-weight: 700;
+  color: #6484a0;
+  opacity: 0.62;
+  margin-bottom: 8px;
+}
+
+.login-credentials {
+  font-size: 14px;
+  color: #58748e;
+  margin-top: 8px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d3c59;
+}
+
+.input-field {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(135, 176, 212, 0.38);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  color: #163451;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.input-field:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #6b9dd2;
+  box-shadow: 0 0 0 3px rgba(107, 157, 210, 0.16);
+}
+
+.error-text {
+  color: #ef4444;
+  font-size: 13px;
+  text-align: center;
+}
+
+.login-button {
+  margin-top: 8px;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #5d8fca 0%, #416ea9 100%);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(46, 88, 139, 0.24);
+  transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
+}
+
+.login-button:hover {
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px rgba(46, 88, 139, 0.28);
+}

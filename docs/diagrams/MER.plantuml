@@ -1,0 +1,300 @@
+@startuml MER_Conceptual
+' ==============================================================================
+' MODELO ENTIDAD-RELACIÓN (Vista Conceptual) — Rift Analytics QA
+' ==============================================================================
+' Notación Chen:
+'   Rectángulo  = Entidad fuerte
+'   Rectángulo doble borde = Entidad débil
+'   Diamante    = Relación
+'   Subrayado   = Atributo clave
+'   /cursiva/   = Atributo derivado
+'   {llaves}    = Atributo multivaluado
+'   (1,N)       = Cardinalidad
+' ==============================================================================
+' NO se incluyen: FKs, tipos de datos, tablas intermedias.
+' Esos conceptos pertenecen al Modelo Relacional.
+' ==============================================================================
+
+skinparam backgroundColor #fafafa
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 13
+
+' Estilo para entidades
+skinparam class {
+  BackgroundColor<<fuerte>> #dce6f1
+  BorderColor<<fuerte>> #2c3e50
+  BackgroundColor<<debil>> #fce4d6
+  BorderColor<<debil>> #c0392b
+  BackgroundColor<<aislada>> #e2efda
+  BorderColor<<aislada>> #27ae60
+  FontStyle bold
+  AttributeFontSize 12
+}
+
+' Estilo para relaciones (diamante simulado)
+skinparam class {
+  BackgroundColor<<relacion>> #fff2cc
+  BorderColor<<relacion>> #d4a017
+  BackgroundColor<<relNM>> #f8d7da
+  BorderColor<<relNM>> #c0392b
+}
+
+hide methods
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' ENTIDADES FUERTES (Catálogos)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+class "User" as user <<fuerte>> {
+  <u>User_ID</u>
+  Username
+  First_Name
+  Last_Name
+  Email
+  Is_Staff
+  Is_Active
+  Date_Joined
+}
+
+class "Color" as color <<fuerte>> {
+  <u>Color_ID</u>
+  Name
+  Is_Active
+}
+
+class "DefectType" as defect <<fuerte>> {
+  <u>Defect_ID</u>
+  Name
+  Is_Active
+}
+
+class "ContainerDefectType" as c_defect <<fuerte>> {
+  <u>CDefect_ID</u>
+  Name
+  Is_Active
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' ENTIDADES FUERTES (Datos de Calidad)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+class "QualityQcFa" as qcfa <<fuerte>> {
+  <u>QC_ID</u>
+  Table_Type
+  Date_1
+  Week
+  Customer
+  Team
+  Coordinator
+  Date_2
+  PO
+  Style
+  Batch
+  Quantity
+  Seconds
+  Accepted
+  Rejected
+  Sample
+  AQL
+  Pass_or_Fail
+  --
+  <i>/Defects_Total/</i>  ← derivado: Σ defectos
+}
+
+class "SecondsA4" as seconds <<fuerte>> {
+  <u>Seconds_ID</u>
+  Year
+  Week
+  Date
+  Cut_Num
+  Style
+  Cut_Qty
+  First_Quality_Qty_Sewing
+  Sample
+  Pass
+  Fail
+  Sew_Def
+  Fab_Def
+  Accepted
+  Rejected
+  Total_of_2ds
+  Line
+  Seconds_by_Sew
+  Seconds_by_Fab
+  Seconds_Sew_A4
+  Seconds_Fab_A4
+  --
+  <i>/Percentage_of_2ds/</i>  ← derivado: cálculo %
+}
+
+class "Container" as container <<fuerte>> {
+  <u>Container_ID</u>
+  Container_Number
+  Customer
+  Transfer_of_Container
+  Total_Palette
+  Total_Palette_Pass
+  Total_Palette_Rejected
+  Percentage_Pass
+  Percentage_Reject
+}
+
+class "SecondsGeneral" as seconds_gen <<aislada>> {
+  <u>SecGen_ID</u>
+  Date
+  Week
+  Corrido_2
+  Barre
+  Otros_3
+  Degradacion
+  Bordados
+  Total_de_Tela
+}
+
+class "Mockup" as mockup <<aislada>> {
+  <u>Mockup_ID</u>
+  Name
+  Side
+  Image
+  Width
+  Height
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' ENTIDAD CON ATRIBUTOS MULTIVALUADOS (ExcelSyncSession)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+class "ExcelSyncSession" as sync <<aislada>> {
+  <u>Session_ID</u>
+  Status
+  Created_At
+  --
+  {QC_FA_Plant_Data}  ← multivaluado
+  {QC_FA_Customer_Data}  ← multivaluado
+  {Seconds_A4_Data}  ← multivaluado
+  {Seconds_General_Data}  ← multivaluado
+  {Container_Data}  ← multivaluado
+  {Warnings}  ← multivaluado
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' ENTIDAD FUERTE + ENTIDAD DÉBIL (Media Data)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+class "InspectionData" as insp <<fuerte>> {
+  <u>Inspection_ID</u>
+  Date
+  Created_At
+  Style
+  Size
+  Lot
+  Is_Closed
+  Status
+  Closed_At
+  --
+  <i>/Week/</i>  ← derivado de Date
+}
+
+class "RevisionDefect" as revdef <<debil>> {
+  <u>Revision_ID</u>  (parcial)
+  Defect_Size
+  Notes
+  Defect_Count
+  Timestamp
+  --
+  {Coordinates_X}  ← multivaluado
+  {Coordinates_Y}  ← multivaluado
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' RELACIONES (Diamantes — cardinalidad)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+' --- Relaciones 1:N ---
+diamond "tiene" as rel_color_qcfa <<relacion>>
+diamond "tiene" as rel_color_sec <<relacion>>
+diamond "tiene" as rel_color_insp <<relacion>>
+diamond "realiza" as rel_user_insp <<relacion>>
+diamond "registra" as rel_user_revdef <<relacion>>
+diamond "clasifica" as rel_def_revdef <<relacion>>
+
+' --- Relación identificadora (entidad débil) ---
+diamond "compone" as rel_insp_revdef <<relacion>>
+
+' --- Relaciones N:M ---
+diamond "contiene\ndefectos" as rel_qcfa_def <<relNM>>
+diamond "contiene\ndefectos" as rel_cont_cdef <<relNM>>
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' CONEXIONES CON CARDINALIDAD
+' ═══════════════════════════════════════════════════════════════════════════════
+
+color "1" -- rel_color_qcfa
+rel_color_qcfa -- "N" qcfa
+
+color "1" -- rel_color_sec
+rel_color_sec -- "N" seconds
+
+color "1" -- rel_color_insp
+rel_color_insp -- "N" insp
+
+user "1" -- rel_user_insp
+rel_user_insp -- "N" insp
+
+user "1" -- rel_user_revdef
+rel_user_revdef -- "N" revdef
+
+defect "1" -- rel_def_revdef
+rel_def_revdef -- "N" revdef
+
+insp "1" -- rel_insp_revdef
+rel_insp_revdef -- "N" revdef : "identifica ☆"
+
+' Relaciones N:M (sin resolver — se resuelven en el MR)
+qcfa "N" -- rel_qcfa_def
+rel_qcfa_def -- "M" defect
+
+container "N" -- rel_cont_cdef
+rel_cont_cdef -- "M" c_defect
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' NOTAS CONCEPTUALES
+' ═══════════════════════════════════════════════════════════════════════════════
+
+note bottom of revdef
+  <b>Entidad débil:</b>
+  Su existencia depende de
+  InspectionData. Se identifica
+  parcialmente por su PK propia.
+end note
+
+note bottom of seconds_gen
+  <b>Entidad aislada:</b>
+  No participa en ninguna
+  relación con otras entidades.
+end note
+
+note right of rel_qcfa_def
+  <b>Relación N:M:</b>
+  Se resolverá en el modelo
+  relacional con una tabla
+  asociativa.
+end note
+
+note as N1
+  <b>LEYENDA</b>
+  ──────────────
+  <color:#2c3e50>■</color> Azul = Entidad fuerte
+  <color:#c0392b>■</color> Naranja = Entidad débil
+  <color:#27ae60>■</color> Verde = Entidad aislada
+  <color:#d4a017>◆</color> Amarillo = Relación 1:N
+  <color:#c0392b>◆</color> Rojo = Relación N:M
+  ──────────────
+  <u>Subrayado</u> = Atributo clave
+  <i>/Cursiva/</i> = Atributo derivado
+  {Llaves} = Atributo multivaluado
+end note
+
+title **Modelo Entidad-Relación (Vista Conceptual)** — Rift Analytics QA\nNotación Chen — Sin FKs, sin tipos de datos, sin tablas intermedias
+
+@enduml

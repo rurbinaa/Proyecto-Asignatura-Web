@@ -1,0 +1,26 @@
+.navbar {
+  background-color: var(--white);
+  padding: 16px 32px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.navbar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.navbar-email {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bg-dark);
+}
+
+.navbar-user-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--text-muted);
+}

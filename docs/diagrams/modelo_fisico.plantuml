@@ -1,0 +1,318 @@
+@startuml Modelo_Fisico_PostgreSQL
+' ==============================================================================
+' MODELO FÍSICO (PostgreSQL 16) — Rift Analytics QA
+' ==============================================================================
+' Adaptación del Modelo Relacional al SGBD PostgreSQL 16.
+'
+' Cada campo incluye:
+'   - Nombre exacto de la tabla (convención Django: <app>_<model>)
+'   - Tipo de dato nativo de PostgreSQL
+'   - PK / FK explícitos
+'   - NOT NULL / NULL
+'   - DEFAULT value
+'   - ON DELETE behavior (CASCADE / PROTECT)
+'   - UNIQUE constraints con nombre
+'   - Índices con nombre
+'
+' SGBD: PostgreSQL 16
+' ORM: Django 5.x (genera los nombres de tabla automáticamente)
+' ==============================================================================
+
+skinparam backgroundColor #0d1117
+skinparam defaultFontName "Cascadia Code"
+skinparam defaultFontSize 11
+
+skinparam entity {
+  BackgroundColor #161b22
+  BorderColor #30363d
+  FontColor #c9d1d9
+  ArrowColor #58a6ff
+  HeaderBackgroundColor #1f6feb
+  StereotypeFontColor #8b949e
+}
+skinparam ArrowColor #58a6ff
+skinparam ArrowFontColor #8b949e
+
+hide circle
+hide methods
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' TABLAS BASE — Sin dependencias (catálogos maestros)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "auth_user" as user {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  password : VARCHAR(128) <color:#f85149>NOT NULL</color>
+  last_login : TIMESTAMP WITH TIME ZONE <color:#8b949e>NULL</color>
+  is_superuser : BOOLEAN <color:#f85149>NOT NULL</color>
+  username : VARCHAR(150) <color:#f85149>NOT NULL</color> <color:#d29922>UNIQUE</color>
+  first_name : VARCHAR(150) <color:#f85149>NOT NULL</color>
+  last_name : VARCHAR(150) <color:#f85149>NOT NULL</color>
+  email : VARCHAR(254) <color:#f85149>NOT NULL</color>
+  is_staff : BOOLEAN <color:#f85149>NOT NULL</color>
+  is_active : BOOLEAN <color:#f85149>NOT NULL</color>
+  date_joined : TIMESTAMP WITH TIME ZONE <color:#f85149>NOT NULL</color>
+}
+
+entity "quality_data_color" as color {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  name : VARCHAR(50) <color:#f85149>NOT NULL</color> <color:#d29922>UNIQUE</color>
+  is_active : BOOLEAN <color:#f85149>NOT NULL</color> DEFAULT true
+}
+
+entity "quality_data_defecttype" as defect {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  name : VARCHAR(100) <color:#f85149>NOT NULL</color> <color:#d29922>UNIQUE</color>
+  is_active : BOOLEAN <color:#f85149>NOT NULL</color> DEFAULT true
+}
+
+entity "quality_data_containerdefecttype" as c_defect {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  name : VARCHAR(100) <color:#f85149>NOT NULL</color> <color:#d29922>UNIQUE</color>
+  is_active : BOOLEAN <color:#f85149>NOT NULL</color> DEFAULT true
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' TABLAS AISLADAS (sin FK entrantes ni salientes)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "media_data_mockup" as mockup {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  name : VARCHAR(100) <color:#f85149>NOT NULL</color>
+  side : VARCHAR(10) <color:#f85149>NOT NULL</color> DEFAULT 'FRONT'
+  image : VARCHAR(100) <color:#f85149>NOT NULL</color>
+  width : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 1024
+  height : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 768
+}
+
+entity "quality_data_secondsgeneral" as sec_gen {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  date : VARCHAR(20) <color:#f85149>NOT NULL</color>
+  week : INTEGER <color:#f85149>NOT NULL</color>
+  corrido_2 : INTEGER <color:#f85149>NOT NULL</color>
+  barre : INTEGER <color:#f85149>NOT NULL</color>
+  otros_3 : INTEGER <color:#f85149>NOT NULL</color>
+  degradacion : INTEGER <color:#f85149>NOT NULL</color>
+  bordados : INTEGER <color:#f85149>NOT NULL</color>
+  total_de_tela : INTEGER <color:#f85149>NOT NULL</color>
+  ..
+  <color:#3fb950>INDEX</color> idx_secgen_date (date)
+  <color:#3fb950>INDEX</color> idx_secgen_week (week)
+}
+
+entity "quality_data_excelsyncsession" as sync {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  status : VARCHAR(10) <color:#f85149>NOT NULL</color> DEFAULT 'pending'
+  created_at : TIMESTAMP WITH TIME ZONE <color:#f85149>NOT NULL</color>
+  qc_fa_plant_data : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  qc_fa_customer_data : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  seconds_a4_data : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  seconds_general_data : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  container_data : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  qc_fa_plant_preview : JSONB <color:#f85149>NOT NULL</color> DEFAULT '{}'
+  qc_fa_customer_preview : JSONB <color:#f85149>NOT NULL</color> DEFAULT '{}'
+  seconds_a4_preview : JSONB <color:#f85149>NOT NULL</color> DEFAULT '{}'
+  seconds_general_preview : JSONB <color:#f85149>NOT NULL</color> DEFAULT '{}'
+  container_preview : JSONB <color:#f85149>NOT NULL</color> DEFAULT '{}'
+  warnings : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' TABLAS CON FOREIGN KEYS (1:N del modelo relacional)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "quality_data_qualityqcfa" as qcfa {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  table_type : VARCHAR(3) <color:#f85149>NOT NULL</color>
+  date_1 : VARCHAR(20) <color:#f85149>NOT NULL</color>
+  week : INTEGER <color:#f85149>NOT NULL</color>
+  customer : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  team : INTEGER <color:#f85149>NOT NULL</color>
+  coord : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  date_2 : VARCHAR(20) <color:#f85149>NOT NULL</color> DEFAULT ''
+  po : INTEGER <color:#f85149>NOT NULL</color>
+  style : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  batch : INTEGER <color:#f85149>NOT NULL</color>
+  qty : INTEGER <color:#f85149>NOT NULL</color>
+  seconds : INTEGER <color:#f85149>NOT NULL</color>
+  accepted : INTEGER <color:#f85149>NOT NULL</color>
+  rejected : INTEGER <color:#f85149>NOT NULL</color>
+  sample : INTEGER <color:#f85149>NOT NULL</color>
+  defects_total : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 0
+  aql : DOUBLE PRECISION <color:#f85149>NOT NULL</color>
+  pass_or_fail : VARCHAR(10) <color:#f85149>NOT NULL</color>
+  --
+  <color:#d2a8ff>FK</color> color_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_color(id)
+     ON DELETE PROTECT
+  ..
+  <color:#3fb950>INDEX</color> idx_qcfa_date1 (date_1)
+  <color:#3fb950>INDEX</color> idx_qcfa_week (week)
+  <color:#3fb950>INDEX</color> idx_qcfa_customer (customer)
+  <color:#3fb950>INDEX</color> idx_qcfa_team (team)
+  <color:#3fb950>INDEX</color> idx_qcfa_style (style)
+  <color:#3fb950>INDEX</color> idx_qcfa_team_pof (week, team)
+}
+
+entity "quality_data_secondsa4" as sec_a4 {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  year : INTEGER <color:#f85149>NOT NULL</color>
+  week : INTEGER <color:#f85149>NOT NULL</color>
+  date : VARCHAR(20) <color:#f85149>NOT NULL</color>
+  cut_num : INTEGER <color:#f85149>NOT NULL</color>
+  style : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  cut_qty : INTEGER <color:#f85149>NOT NULL</color>
+  first_quality_qty_sewing : INTEGER <color:#f85149>NOT NULL</color>
+  sample : INTEGER <color:#f85149>NOT NULL</color>
+  pass_field : INTEGER <color:#f85149>NOT NULL</color>
+  fail_field : INTEGER <color:#f85149>NOT NULL</color>
+  sew_def : INTEGER <color:#f85149>NOT NULL</color>
+  fab_def : INTEGER <color:#f85149>NOT NULL</color>
+  accepted : INTEGER <color:#f85149>NOT NULL</color>
+  rejected : INTEGER <color:#f85149>NOT NULL</color>
+  total_of_2ds : INTEGER <color:#f85149>NOT NULL</color>
+  percentage_of_2ds : DOUBLE PRECISION <color:#f85149>NOT NULL</color>
+  line : VARCHAR(20) <color:#f85149>NOT NULL</color>
+  seconds_by_sew : INTEGER <color:#f85149>NOT NULL</color>
+  seconds_by_fab : INTEGER <color:#f85149>NOT NULL</color>
+  seconds_sew_a4 : INTEGER <color:#f85149>NOT NULL</color>
+  seconds_fab_a4 : INTEGER <color:#f85149>NOT NULL</color>
+  --
+  <color:#d2a8ff>FK</color> color_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_color(id)
+     ON DELETE PROTECT
+  ..
+  <color:#3fb950>INDEX</color> idx_seca4_week (week)
+  <color:#3fb950>INDEX</color> idx_seca4_date (date)
+  <color:#3fb950>INDEX</color> idx_seca4_style (style)
+}
+
+entity "quality_data_container" as container {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  container_number : INTEGER <color:#f85149>NOT NULL</color> <color:#d29922>UNIQUE</color>
+  customer : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  transfer_of_container : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 0
+  total_palette : INTEGER <color:#f85149>NOT NULL</color>
+  total_palette_pass : INTEGER <color:#f85149>NOT NULL</color>
+  total_palette_rejected : INTEGER <color:#f85149>NOT NULL</color>
+  percentage_pass : DOUBLE PRECISION <color:#f85149>NOT NULL</color>
+  percentage_reject : DOUBLE PRECISION <color:#f85149>NOT NULL</color>
+  ..
+  <color:#3fb950>INDEX</color> idx_container_customer (customer)
+}
+
+entity "media_data_inspectiondata" as insp {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  date : DATE <color:#f85149>NOT NULL</color>
+  created_at : TIME <color:#f85149>NOT NULL</color>
+  week : INTEGER <color:#f85149>NOT NULL</color>
+  style : VARCHAR(100) <color:#f85149>NOT NULL</color>
+  size : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  lot : VARCHAR(50) <color:#f85149>NOT NULL</color> DEFAULT ''
+  is_closed : BOOLEAN <color:#f85149>NOT NULL</color> DEFAULT false
+  status : VARCHAR(10) <color:#f85149>NOT NULL</color> DEFAULT 'OPEN'
+  closed_at : TIMESTAMP WITH TIME ZONE <color:#8b949e>NULL</color>
+  --
+  <color:#d2a8ff>FK</color> inspector_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES auth_user(id)
+     ON DELETE PROTECT
+  <color:#d2a8ff>FK</color> color_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_color(id)
+     ON DELETE PROTECT
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' TABLAS ASOCIATIVAS (N:M resueltas en el modelo relacional)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "quality_data_inspectiondefect" as insp_def {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  amount : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 0
+  --
+  <color:#d2a8ff>FK</color> inspection_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_qualityqcfa(id)
+     ON DELETE CASCADE
+  <color:#d2a8ff>FK</color> defect_type_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_defecttype(id)
+     ON DELETE PROTECT
+  ..
+  <color:#d29922>UNIQUE</color> unique_quality_qc_fa_defect
+     (inspection_id, defect_type_id)
+}
+
+entity "quality_data_containerinspectiondefect" as cont_def {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  amount : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 0
+  --
+  <color:#d2a8ff>FK</color> container_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_container(id)
+     ON DELETE CASCADE
+  <color:#d2a8ff>FK</color> defect_type_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES quality_data_containerdefecttype(id)
+     ON DELETE PROTECT
+  ..
+  <color:#d29922>UNIQUE</color> unique_container_defect
+     (container_id, defect_type_id)
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' TABLA DEPENDIENTE (entidad débil resuelta)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+entity "media_data_revisiondefect" as revdef {
+  <color:#58a6ff>PK</color> id : <b>SERIAL</b>
+  --
+  defect_size : VARCHAR(50) <color:#f85149>NOT NULL</color>
+  notes : TEXT <color:#8b949e>NULL</color>
+  defect_count : INTEGER <color:#f85149>NOT NULL</color> DEFAULT 1
+  timestamp : TIMESTAMP WITH TIME ZONE <color:#f85149>NOT NULL</color>
+  coordinates_x : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  coordinates_y : JSONB <color:#f85149>NOT NULL</color> DEFAULT '[]'
+  --
+  <color:#d2a8ff>FK</color> inspection_id : INTEGER <color:#f85149>NOT NULL</color>
+     REFERENCES media_data_inspectiondata(id)
+     ON DELETE CASCADE
+  <color:#d2a8ff>FK</color> inspector_id : INTEGER <color:#8b949e>NULL</color>
+     REFERENCES auth_user(id)
+     ON DELETE PROTECT
+  <color:#d2a8ff>FK</color> defect_type_id : INTEGER <color:#8b949e>NULL</color>
+     REFERENCES quality_data_defecttype(id)
+     ON DELETE PROTECT
+}
+
+' ═══════════════════════════════════════════════════════════════════════════════
+' RELACIONES FK (líneas)
+' ═══════════════════════════════════════════════════════════════════════════════
+
+color ||--o{ qcfa : "PROTECT"
+color ||--o{ sec_a4 : "PROTECT"
+color ||--o{ insp : "PROTECT"
+
+user ||--o{ insp : "PROTECT"
+user ||--o{ revdef : "PROTECT"
+
+qcfa ||--o{ insp_def : "CASCADE"
+defect ||--o{ insp_def : "PROTECT"
+
+container ||--o{ cont_def : "CASCADE"
+c_defect ||--o{ cont_def : "PROTECT"
+
+insp ||--|{ revdef : "CASCADE"
+defect ||--o{ revdef : "PROTECT"
+
+title **Modelo Físico (PostgreSQL 16)** — Rift Analytics QA\nTipos de datos nativos · PK / FK · NOT NULL · DEFAULT · ON DELETE · Índices
+
+@enduml

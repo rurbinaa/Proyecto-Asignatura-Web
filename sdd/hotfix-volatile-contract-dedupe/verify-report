@@ -1,0 +1,127 @@
+## Verification Report
+
+**Change**: hotfix-volatile-contract-dedupe  
+**Version**: N/A  
+**Mode**: Strict TDD
+
+---
+
+### Completeness
+| Metric | Value |
+|--------|-------|
+| Tasks total | 13 |
+| Tasks complete | 13 |
+| Tasks incomplete | 0 |
+
+All tasks in `sdd/hotfix-volatile-contract-dedupe/tasks` are marked complete.
+
+---
+
+### Build & Tests Execution
+
+**Build**: ➖ Skipped (project standard: never run build commands)
+
+**Tests**: ✅ 31 passed / ❌ 0 failed / ⚠️ 0 skipped
+- Backend (`python manage.py test excel_importer.tests.test_handler_service -v 2`): 6 passed
+- Backend regression (`python manage.py test excel_importer.tests.test_sync_service -v 2`): 19 passed
+- Frontend (`npx vitest run src/api/kpi.test.js`): 6 passed
+
+**Coverage**: ➖ Not available at runtime
+- Attempted command: `npx vitest run --coverage src/api/kpi.test.js`
+- Result: missing dependency `@vitest/coverage-v8`
+- Threshold evaluation: not possible
+
+---
+
+### TDD Compliance
+| Check | Result | Details |
+|-------|--------|---------|
+| TDD Evidence reported | ✅ | Found in `sdd/hotfix-volatile-contract-dedupe/apply-progress` (RED/GREEN/REFACTOR table) |
+| All tasks have tests | ✅ | 4/4 spec scenarios mapped to passing runtime tests across backend/frontend suites |
+| RED confirmed (tests exist) | ✅ | 2/2 changed test files exist (`test_handler_service.py`, `kpi.test.js`) |
+| GREEN confirmed (tests pass) | ✅ | 2/2 changed test files pass on execution |
+| Triangulation adequate | ✅ | Duplicate import and KPI contract behaviors covered with multiple distinct cases, including regression cases |
+| Safety Net for modified files | ✅ | Related regression suites re-run (`test_sync_service.py`, `kpi.test.js`) |
+
+**TDD Compliance**: 6/6 checks passed
+
+---
+
+### Test Layer Distribution
+| Layer | Tests | Files | Tools |
+|-------|-------|-------|-------|
+| Unit | 31 | 3 | Django test runner, Vitest |
+| Integration | 0 | 0 | @testing-library/react (available, unused in this change) |
+| E2E | 0 | 0 | not installed |
+| **Total** | **31** | **3** | |
+
+---
+
+### Changed File Coverage
+Coverage analysis skipped — no usable coverage runtime in current environment (`@vitest/coverage-v8` missing).
+
+---
+
+### Assertion Quality
+**Assertion quality**: ✅ All assertions verify real behavior
+
+Audit notes:
+- No tautologies (e.g. `expect(true).toBe(true)`) found.
+- No ghost-loop assertions over potentially empty collections.
+- No smoke-only tests counted as scenario proof.
+- Assertions execute production paths (`_bulk_insert_defects_only`, `fetchVolatileKpis`) and validate behavior outcomes.
+
+---
+
+### Quality Metrics
+**Linter**: ✅ No errors in touched frontend files/tests (`npx eslint --max-warnings=0 "src/api/kpi.test.js"`; and changed API/config files linted)  
+**Type Checker**: ➖ Not available in cached capabilities
+
+---
+
+### Spec Compliance Matrix
+| Requirement | Scenario | Test | Result |
+|-------------|----------|------|--------|
+| Idempotent Excel Defect Import | Clean import with no duplicates | `backend/excel_importer/tests/test_handler_service.py > BulkInsertDefectsOnlyTest.test_insert_new_defects` | ✅ COMPLIANT |
+| Idempotent Excel Defect Import | Import with duplicate collisions (Regression) | `backend/excel_importer/tests/test_handler_service.py > test_duplicate_defects_ignored; test_duplicate_key_no_crash_regression; test_mixed_new_and_duplicate_defects_in_same_batch` | ✅ COMPLIANT |
+| Volatile KPI Data Contract | Displaying KPIs in fast mode | `frontend/src/api/kpi.test.js > normalizes snake_case response to camelCase; contract regression: adapter output matches DashboardView consumer shape` | ✅ COMPLIANT |
+| Volatile KPI Data Contract | Handling missing or null KPI values (Regression) | `frontend/src/api/kpi.test.js > handles null/missing values gracefully` | ✅ COMPLIANT |
+
+**Compliance summary**: 4/4 scenarios compliant
+
+---
+
+### Correctness (Static — Structural Evidence)
+| Requirement | Status | Notes |
+|------------|--------|-------|
+| Idempotent Excel Defect Import | ✅ Implemented | `_bulk_insert_defects_only` now uses `bulk_create(..., ignore_conflicts=True)` and tests prove duplicate collisions are ignored while new rows still insert |
+| Volatile KPI Data Contract | ✅ Implemented | `normalizeVolatileResponse` maps snake_case → camelCase at API boundary; tests validate adapter shape, idempotency, and null/missing handling |
+
+---
+
+### Coherence (Design)
+| Decision | Followed? | Notes |
+|----------|-----------|-------|
+| Normalize volatile contract at frontend API boundary | ✅ Yes | Implemented in `frontend/src/api/kpi.js` (`fetchVolatileKpis` + adapter), Dashboard consumer unchanged |
+| Handle duplicate defects with `ignore_conflicts=True` in defects-only path | ✅ Yes | Implemented in `backend/excel_importer/handler_service.py` |
+| File changes match design table | ✅ Yes (plus quality support file) | Designed files were modified/created as expected; additional `frontend/eslint.config.js` adjustment supports lint for test globals |
+
+---
+
+### Issues Found
+
+**CRITICAL** (must fix before archive):
+- None
+
+**WARNING** (should fix):
+- None
+
+**SUGGESTION** (nice to have):
+- Install/enable frontend coverage provider (`@vitest/coverage-v8`) to restore changed-file coverage reporting in Strict TDD runs.
+
+---
+
+### Verdict
+PASS
+
+All specified critical/warning follow-ups are closed: TDD evidence present, full scenario compliance achieved (no partials), and lint is clean for the touched frontend test file.
