@@ -3,8 +3,6 @@ from django.test import TestCase
 from quality_data.serializers import (
     KpiBarEnvelopeSerializer,
     KpiSeriesEnvelopeSerializer,
-    KpiDonutEnvelopeSerializer,
-    KpiHeatmapEnvelopeSerializer,
     ScalarMetricSerializer,
     FilterOptionsSerializer,
 )
@@ -14,13 +12,9 @@ class KpiDtoSerializersTest(TestCase):
     def test_envelope_serializers_expose_data_key(self):
         bar_data = [{"label": "Line 1", "value": 10.0}]
         series_data = [{"name": "AQL", "data": [{"x": 1, "y": 2.5}]}]
-        donut_data = [{"name": "PASS", "value": 80}]
-        heatmap_data = [{"x": "Style-1", "y": "Loose thread", "value": 12}]
 
         self.assertEqual(KpiBarEnvelopeSerializer({"data": bar_data}).data, {"data": bar_data})
         self.assertEqual(KpiSeriesEnvelopeSerializer({"data": series_data}).data, {"data": series_data})
-        self.assertEqual(KpiDonutEnvelopeSerializer({"data": donut_data}).data, {"data": donut_data})
-        self.assertEqual(KpiHeatmapEnvelopeSerializer({"data": heatmap_data}).data, {"data": heatmap_data})
 
     def test_scalar_metric_serializer_contract(self):
         serializer = ScalarMetricSerializer(data={"label": "Defect Rate", "value": 2.34})

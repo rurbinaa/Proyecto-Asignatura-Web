@@ -70,18 +70,6 @@ class KpiSeriesEnvelopeSerializer(serializers.Serializer):
     data = KpiSeriesSerializer(many=True)
 
 
-class KpiDonutEnvelopeSerializer(serializers.Serializer):
-    """Envelope serializer for donut KPI families returned as {data:[...]}"""
-
-    data = KpiDonutSerializer(many=True)
-
-
-class KpiHeatmapEnvelopeSerializer(serializers.Serializer):
-    """Envelope serializer for heatmap KPI families returned as {data:[...]}"""
-
-    data = KpiHeatmapSerializer(many=True)
-
-
 class ScalarMetricSerializer(serializers.Serializer):
     """Serializer for scalar metric contract: {label, value}."""
 
