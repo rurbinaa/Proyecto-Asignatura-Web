@@ -141,7 +141,6 @@ export default function CaptureView() {
     
     // If we have an inspectionId stored from last submission, call the API
     // For now, we only clear local state since inspectionId isn't persisted
-    console.log("Undoing last defect submission locally");
     setCurrentDefects(lastSubmission);
     setLastSubmission(null);
     alert("Last submission cleared");
