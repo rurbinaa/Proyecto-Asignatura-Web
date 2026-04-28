@@ -1,7 +1,7 @@
-import { createContext, useState, useEffect, useContext, useCallback } from 'react';
-import axiosClient, { tokenStorage } from '../api/axiosClient';
-
-const AuthContext = createContext();
+import { useState, useEffect, useCallback } from 'react';
+import { tokenStorage } from '../api/axiosClient';
+import { getCurrentUserRequest, loginRequest, logoutRequest } from '../api/auth';
+import { AuthContext } from './auth-context';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -15,9 +15,9 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      const res = await axiosClient.get('/api/auth/me/');
-      setUser(res.data);
-    } catch (error) {
+      const userDto = await getCurrentUserRequest();
+      setUser(userDto);
+    } catch {
       setUser(null);
     } finally {
       setLoading(false);
@@ -40,10 +40,10 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     try {
-      const response = await axiosClient.post('/api/auth/login/', credentials);
+      const tokenDto = await loginRequest(credentials);
       tokenStorage.setTokens({
-        access: response.data.access,
-        refresh: response.data.refresh,
+        access: tokenDto.access,
+        refresh: tokenDto.refresh,
       });
       setLoading(true);
       await checkSession();
@@ -59,8 +59,10 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await axiosClient.post('/api/auth/logout/');
-    } catch {}
+      await logoutRequest();
+    } catch (error) {
+      void error;
+    }
     tokenStorage.clear();
     setUser(null);
   };
@@ -75,5 +77,3 @@ export const AuthProvider = ({ children }) => {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
-export const useAuth = () => useContext(AuthContext);

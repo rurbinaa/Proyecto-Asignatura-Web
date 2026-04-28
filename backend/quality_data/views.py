@@ -58,6 +58,18 @@ from quality_data.corporate_xlsx_service import (
     CorporateXlsxReportService,
     EmptyCorporateXlsxDataError,
 )
+from quality_data.serializers import (
+    KpiBarSerializer,
+    KpiSeriesSerializer,
+    KpiDonutSerializer,
+    KpiHeatmapSerializer,
+    KpiBarEnvelopeSerializer,
+    KpiSeriesEnvelopeSerializer,
+    KpiDonutEnvelopeSerializer,
+    KpiHeatmapEnvelopeSerializer,
+    ScalarMetricSerializer,
+    FilterOptionsSerializer,
+)
 
 def _get_incremental_rows(df, model_class, **filters):
     db_rows = model_class.objects.filter(**filters).count()
@@ -106,6 +118,18 @@ def _df_to_json_safe(df):
                 clean_row[key] = value
         result.append(clean_row)
     return result
+
+
+def _serialize_payload(serializer_cls, payload, many=False):
+    """Serialize a payload using a DTO serializer class."""
+    serializer = serializer_cls(payload, many=many)
+    return serializer.data
+
+
+def _serialize_envelope(envelope_serializer_cls, payload):
+    """Serialize a `{data: [...]}` response using an envelope serializer class."""
+    serializer = envelope_serializer_cls({"data": payload})
+    return serializer.data
 
 class Process(APIView):
     """
@@ -642,7 +666,8 @@ class TopDefectsView(KpiFilterMixin, APIView):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class FabricDefectsView(KpiFilterMixin, APIView):
@@ -704,7 +729,8 @@ class FabricDefectsView(KpiFilterMixin, APIView):
             for name in fabric_defect_names
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class DefectsByStyleTypeView(KpiFilterMixin, APIView):
@@ -760,7 +786,8 @@ class DefectsByStyleTypeView(KpiFilterMixin, APIView):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiHeatmapSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 # ─────────────────────────────────────────────────────────
@@ -792,7 +819,8 @@ class PassRejectDistributionView(KpiFilterMixin, APIView):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiDonutSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class RejectedEvolutionView(KpiFilterMixin, APIView):
@@ -824,7 +852,8 @@ class RejectedEvolutionView(KpiFilterMixin, APIView):
             ]
         }]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiSeriesSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class ContainersByStateView(KpiFilterMixin, APIView):
@@ -898,7 +927,8 @@ class ContainersByStateView(KpiFilterMixin, APIView):
         result_dict = {r["name"]: r["value"] for r in result}
         result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiDonutSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 class DefectRateView(KpiFilterMixin, APIView):
     """
@@ -926,7 +956,11 @@ class DefectRateView(KpiFilterMixin, APIView):
         if total_sample > 0:
             value = round((total_defects / total_sample) * 100, 2)
 
-        result = {"label": "Defect Rate", "value": value}
+        result = _serialize_payload(
+            ScalarMetricSerializer,
+            {"label": "Defect Rate", "value": value},
+            many=False,
+        )
 
         return Response(result, status=http_status.HTTP_200_OK)
 
@@ -996,7 +1030,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='seconds-rework')
     def seconds_rework(self, request):
@@ -1035,7 +1070,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             {"name": "Fabric", "data": fabric_data},
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiSeriesSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='performance-by-customer')
     def performance_by_customer(self, request):
@@ -1069,7 +1105,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='performance-by-line')
     def performance_by_line(self, request):
@@ -1102,7 +1139,8 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 # ─────────────────────────────────────────────────────────
@@ -1137,7 +1175,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiBarEnvelopeSerializer, []))
 
         # GROUP BY style: SUM(defects_total) / SUM(sample) * 100
         annotated = (
@@ -1165,7 +1203,8 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         # Sort by value descending
         result.sort(key=lambda x: x['value'], reverse=True)
 
-        return Response({"data": result})
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(_serialize_envelope(KpiBarEnvelopeSerializer, dto_data))
 
     @action(detail=False, methods=['get'], url_path='aql-weekly')
     def aql_weekly(self, request):
@@ -1178,7 +1217,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
         # GROUP BY week: SUM(defects_total) / SUM(sample) * 100
         annotated = (
@@ -1201,7 +1240,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             aql_data.append({"x": week, "y": round(aql, 2)})
 
         if not aql_data:
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
         # Calculate simple trend line (average of differences)
         if len(aql_data) >= 2:
@@ -1225,12 +1264,19 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             # Single point - trend = same value
             trend_data = [{"x": aql_data[0]['x'], "y": aql_data[0]['y']}]
 
-        return Response({
-            "data": [
-                {"name": "AQL", "data": aql_data},
-                {"name": "Trend", "data": trend_data},
-            ]
-        })
+        aql_series = _serialize_payload(
+            KpiSeriesSerializer,
+            {"name": "AQL", "data": aql_data},
+            many=False,
+        )
+        trend_series = _serialize_payload(
+            KpiSeriesSerializer,
+            {"name": "Trend", "data": trend_data},
+            many=False,
+        )
+        return Response(
+            _serialize_envelope(KpiSeriesEnvelopeSerializer, [aql_series, trend_series])
+        )
 
     @action(detail=False, methods=['get'], url_path='audited-pieces')
     def audited_pieces(self, request):
@@ -1242,7 +1288,7 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
-            return Response({"data": []})
+            return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
         # GROUP BY week: SUM(sample)
         annotated = (
@@ -1259,11 +1305,12 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
                 "y": row['total_sample'] or 0
             })
 
-        return Response({
-            "data": [
-                {"name": "Pieces", "data": pieces_data},
-            ]
-        })
+        pieces_series = _serialize_payload(
+            KpiSeriesSerializer,
+            {"name": "Pieces", "data": pieces_data},
+            many=False,
+        )
+        return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, [pieces_series]))
 
 
 # ─────────────────────────────────────────────────────────
@@ -1311,14 +1358,17 @@ class FilterOptionsView(APIView):
             .order_by('batch')
         )
 
-        return Response({
+        payload = {
             'week': [w for w in weeks if w is not None],
             'team': [t for t in teams if t is not None],
             'style': [s for s in styles if s is not None],
             'color': [c for c in colors if c is not None],
             'customer': [c for c in customers if c is not None],
             'batch': [b for b in batches if b is not None],
-        })
+        }
+
+        dto_data = _serialize_payload(FilterOptionsSerializer, payload, many=False)
+        return Response(dto_data)
 
 
 class VolatileKpiView(APIView):
@@ -1368,26 +1418,26 @@ class VolatileKpiView(APIView):
             except Exception:
                 containers = None
 
-            # Calcular los 14 KPIs usando pandas
+            # Calcular los 14 KPIs usando DTO serializers para mantener frontera explícita
             kpis = {
-                "aql_by_style": self._calc_aql_by_style(rows),
-                "aql_weekly": self._calc_aql_weekly(rows),
-                "audited_pieces": self._calc_audited_pieces(rows),
-                "ac_re_rate_by_line": self._calc_ac_re_rate(rows),
-                "seconds_rework": seconds_rework,
-                "performance_by_customer": self._calc_perf_by_customer(rows),
-                "performance_by_line": self._calc_perf_by_line(rows),
-                "top_defects": parse_top_defects(rows),
-                "fabric_defects": fabric_defects,
-                "defects_by_style_type": parse_defects_by_style(rows),
-                "pass_reject_distribution": self._calc_pass_reject(rows),
-                "rejected_evolution": self._calc_rejected_evolution(rows),
-                "containers_by_state": containers,
-                "defect_rate": self._calc_defect_rate(rows),
+                "aql_by_style": _serialize_payload(KpiBarSerializer, self._calc_aql_by_style(rows), many=True),
+                "aql_weekly": _serialize_payload(KpiSeriesSerializer, self._calc_aql_weekly(rows), many=True),
+                "audited_pieces": _serialize_payload(KpiSeriesSerializer, self._calc_audited_pieces(rows), many=True),
+                "ac_re_rate_by_line": _serialize_payload(KpiBarSerializer, self._calc_ac_re_rate(rows), many=True),
+                "seconds_rework": _serialize_payload(KpiSeriesSerializer, seconds_rework, many=True) if seconds_rework is not None else None,
+                "performance_by_customer": _serialize_payload(KpiBarSerializer, self._calc_perf_by_customer(rows), many=True),
+                "performance_by_line": _serialize_payload(KpiBarSerializer, self._calc_perf_by_line(rows), many=True),
+                "top_defects": _serialize_payload(KpiBarSerializer, parse_top_defects(rows), many=True),
+                "fabric_defects": _serialize_payload(KpiBarSerializer, fabric_defects, many=True) if fabric_defects is not None else None,
+                "defects_by_style_type": _serialize_payload(KpiHeatmapSerializer, parse_defects_by_style(rows), many=True),
+                "pass_reject_distribution": _serialize_payload(KpiDonutSerializer, self._calc_pass_reject(rows), many=True),
+                "rejected_evolution": _serialize_payload(KpiSeriesSerializer, self._calc_rejected_evolution(rows), many=True),
+                "containers_by_state": _serialize_payload(KpiDonutSerializer, containers, many=True) if containers is not None else None,
+                "defect_rate": _serialize_payload(ScalarMetricSerializer, self._calc_defect_rate(rows), many=False),
             }
 
             filter_options = self._compute_filter_options(rows)
-            kpis["filter_options"] = filter_options
+            kpis["filter_options"] = _serialize_payload(FilterOptionsSerializer, filter_options, many=False)
 
             return Response(kpis, status=200)
 

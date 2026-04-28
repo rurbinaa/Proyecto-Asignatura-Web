@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchVolatileKpis, getFilterOptions } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, getFilterOptions } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -264,5 +264,28 @@ describe('kpi.js - getFilterOptions', () => {
   it('throws error on HTTP failure', async () => {
     axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
     await expect(getFilterOptions()).rejects.toThrow('Not found');
+  });
+});
+
+describe('kpi.js - live DTO mapping boundary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('maps live defect-rate DTO object to scalar number', async () => {
+    axiosClient.get.mockResolvedValueOnce({
+      data: { label: 'Defect Rate', value: 4.25 },
+    });
+
+    const result = await fetchKpi('defect-rate/');
+    expect(result).toBe(4.25);
+  });
+
+  it('preserves wrapped live payload for chart endpoints', async () => {
+    const dto = { data: [{ label: 'Style-1', value: 2.1 }] };
+    axiosClient.get.mockResolvedValueOnce({ data: dto });
+
+    const result = await fetchKpi('aql-by-style/');
+    expect(result).toEqual(dto);
   });
 });
