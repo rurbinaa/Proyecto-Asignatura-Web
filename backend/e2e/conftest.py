@@ -6,11 +6,14 @@ Set E2E_BASE_URL env var or defaults to http://localhost:8000.
 """
 import os
 import pytest
-from django.contrib.auth.models import User
-from quality_data.models import Color
-
 
 BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:5173")
+
+
+def pytest_collection_modifyitems(items):
+    """Auto-mark all tests in e2e/ as e2e."""
+    for item in items:
+        item.add_marker(pytest.mark.e2e)
 
 
 @pytest.fixture(scope="session")
