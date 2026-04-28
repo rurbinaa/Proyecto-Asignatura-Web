@@ -112,51 +112,6 @@ def parse_seconds_rework(file_obj):
         return None
 
 
-def parse_cut_qty(file_obj):
-    """
-    Parse cut quantity pivot table from SecondsA4 sheet.
-
-    Expected columns after header row 70:
-        - Week
-        - Sum of CUT QTY
-
-    Includes 'Total Resultado' row.
-    Cleans thousand separators like "4,896" to int 4896.
-
-    Returns:
-        [{"name": "Cut Qty", "data": [{"x": week, "y": qty}, ...]}]
-        or None if parsing fails
-    """
-    try:
-        config = PIVOT_RANGES['cut_qty']
-        df = load_pivot_range(
-            file_obj,
-            sheet=config['sheet'],
-            header_row=config['header_row'],
-            usecols=config['usecols'],
-            nrows=config['nrows']
-        )
-
-        if df.empty:
-            return None
-
-        # Rename columns for clarity
-        df.columns = ['week', 'cut_qty']
-
-        # Clean integer values (handle thousand separators)
-        df['cut_qty'] = df['cut_qty'].apply(_clean_integer_value)
-
-        data = [
-            {"x": str(row['week']), "y": row['cut_qty']}
-            for _, row in df.iterrows()
-        ]
-
-        return [{"name": "Cut Qty", "data": data}]
-
-    except Exception:
-        return None
-
-
 def parse_fabric_defects(file_obj):
     """
     Parse fabric defects from two ranges in Seconds General sheet.
@@ -218,50 +173,6 @@ def parse_fabric_defects(file_obj):
         ]
 
         return result
-
-    except Exception:
-        return None
-
-
-def parse_enganche(file_obj):
-    """
-    Parse enganche pivot table from Seconds General sheet.
-
-    Expected columns after header row 42:
-        - Week
-        - Sum of Enganche
-
-    Includes 'Total Resultado' row.
-
-    Returns:
-        [{"name": "Enganche", "data": [{"x": week, "y": value}, ...]}]
-        or None if parsing fails
-    """
-    try:
-        config = PIVOT_RANGES['enganche']
-        df = load_pivot_range(
-            file_obj,
-            sheet=config['sheet'],
-            header_row=config['header_row'],
-            usecols=config['usecols'],
-            nrows=config['nrows']
-        )
-
-        if df.empty:
-            return None
-
-        # Rename columns for clarity
-        df.columns = ['week', 'enganche']
-
-        # Clean values
-        df['enganche'] = df['enganche'].apply(_clean_integer_value)
-
-        data = [
-            {"x": str(row['week']), "y": row['enganche']}
-            for _, row in df.iterrows()
-        ]
-
-        return [{"name": "Enganche", "data": data}]
 
     except Exception:
         return None

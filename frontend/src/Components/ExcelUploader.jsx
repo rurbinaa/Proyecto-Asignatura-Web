@@ -254,24 +254,6 @@ export default function ExcelUploader({ onVolatileDashboard }) {
 
   return (
     <div className="uploader-container">
-      {/*
-      reportType selector hidden - backend doesn't support filtering by report type yet.
-      All sheets are uploaded regardless of selection.
-      <div className="report-selector-group">
-        <label className="input-label">Data Import Type:</label>
-        <select 
-          className="input-field select-field" 
-          value={reportType} 
-          onChange={(e) => { setReportType(e.target.value); resetUploader(); }}
-        >
-          <option value="ALL">All Sheets (Import All)</option> 
-          <option value="QFA">QC FA (Plant & Customer)</option>
-          <option value="SECONDS">Seconds (A4 & General)</option>
-          <option value="CONTAINER">Container Inspection</option>
-        </select>
-      </div>
-      */}
-
       {/* State-based rendering */}
       {uploadState === 'analyzing' && renderAnalyzingState()}
       

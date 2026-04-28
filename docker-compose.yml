@@ -39,7 +39,10 @@ services:
       dockerfile: Dockerfile
     container_name: backend_app
     command: >
-      sh -c "python manage.py makemigrations && python manage.py migrate && python manage.py shell -c 'from quality_data.init_data_models import SaveColor, SaveDefects, SaveDefectsContainer; SaveColor(); SaveDefects(); SaveDefectsContainer()' && python manage.py bootstrap_auth_users &&
+      sh -c "python manage.py makemigrations &&
+             python manage.py migrate &&
+             python manage.py shell -c 'from quality_data.init_data_models import COMPANY_COLORS, GARMENT_DEFECT_TYPES, CONTAINER_DEFECT_TYPES; from quality_data.models import Color, DefectType, ContainerDefectType; [Color.objects.get_or_create(name=n, defaults={\"is_active\": True}) for n in COMPANY_COLORS]; [DefectType.objects.get_or_create(name=n) for n in GARMENT_DEFECT_TYPES]; [ContainerDefectType.objects.get_or_create(name=n) for n in CONTAINER_DEFECT_TYPES]; print(\"DB seeded\")' &&
+             python manage.py bootstrap_auth_users &&
              daphne -b 0.0.0.0 -p 8000 backend.asgi:application"
     volumes:
       - ./backend:/app

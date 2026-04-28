@@ -2,7 +2,7 @@ SHEET_NAMES = [
     ("QC FA Plant", 2, 67),
     ("QC FA Customer", 0, 64),
     ("SecondsA4", 1, 22),
-    ("Seconds General", 1, 22),
+    ("Seconds General", 1, 38),
     ("Container", 2, 24),
 ]
 
@@ -232,6 +232,32 @@ SECONDS_GENERAL_REMAP = {
     'Produced': 'produced',
     'Fixed': 'fixed',
     'Definitive': 'definitive',
+    'Picado de Aguja': 'picado_aguja',
+    'Manchas/Sucio': 'manchas_sucio',
+    'Grasa': 'grasa',
+    'Tono Tela': 'tono_tela',
+    'Fuera Medidas': 'fuera_medidas',
+    'Enganche': 'enganche',
+    'Costura Torcida/Insegura': 'costura_torcida_insegura',
+    'Hoyos Costura': 'hoyos_costura',
+    'Heat Transfer Defectuoso/Inclinado/Fuera de Posicion': 'heat_transfer',
+    'Mal Corte': 'mal_corte',
+    'Trapo': 'trapo',
+    'Corrido': 'corrido',
+    'Otros': 'otros',
+    'Total De Costura': 'total_de_costura',
+    'Desgarre/Def Tela': 'desgarre_def_tela',
+    'Contamination': 'contamination',
+    'Linea de Tela': 'linea_de_tela',
+    'Mill  Flaw': 'mill_flaw',
+    'Hoyos': 'hoyos',
+    'Manchas Tela': 'manchas_tela',
+    'Corrido2': 'corrido_2',
+    'Barre': 'barre',
+    'Otros3': 'otros_3',
+    'Degradacion': 'degradacion',
+    'Bordados': 'bordados',
+    'Total de Tela': 'total_de_tela',
 }
 
 SECONDS_GENERAL_NUMERIC_COLUMNS = [
@@ -240,6 +266,15 @@ SECONDS_GENERAL_NUMERIC_COLUMNS = [
 
 SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
     'date', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
+]
+
+SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS = [
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros',
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
 ]
 
 
@@ -290,24 +325,10 @@ CONTAINER_AMOUNT_DEFEACTS_FIELDS = [
 # Pivot table ranges for KPI dynamic parsing
 PIVOT_RANGES = {
     'seconds_rework': {'sheet': 'SecondsA4', 'header_row': 8, 'usecols': 'X:Z', 'nrows': 48},
-    'cut_qty': {'sheet': 'SecondsA4', 'header_row': 70, 'usecols': 'AE:AF', 'nrows': 48},
     'fabric_defects_corrido2': {'sheet': 'Seconds General', 'header_row': 3, 'usecols': 'AM:AN', 'nrows': 42},
     'fabric_defects_corrido': {'sheet': 'Seconds General', 'header_row': 49, 'usecols': 'AM:AN', 'nrows': 35},
-    'enganche': {'sheet': 'Seconds General', 'header_row': 42, 'usecols': 'AR:AS', 'nrows': 38},
 }
 
-
-CORPORATE_XLSX_CANONICAL_TEMPLATE_RELATIVE_PATH = (
-    "docs",
-    "plantilla.xlsx",
-)
-
-CORPORATE_XLSX_PLACEHOLDER_TEMPLATE_RELATIVE_PATH = (
-    "backend",
-    "excel_reports",
-    "excel_templates",
-    "plantilla_corporativa.xlsx",
-)
 
 QC_FA_PLANT_EXPORT_COLUMNS = list(QC_FA_PLANT_REMAP.values())
 QC_FA_CUSTOMER_EXPORT_COLUMNS = list(QC_FA_CUSTOMER_REMAP.values())

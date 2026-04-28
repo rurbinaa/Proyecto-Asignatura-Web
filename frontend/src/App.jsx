@@ -6,6 +6,7 @@ import CaptureView from './views/CaptureView.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
 import DashboardView from './views/DashboardView.jsx';
+import faviconUrl from './assets/RA-ICON_embed.svg?url';
 
 import { AuthProvider } from './contexts/AuthContext.jsx'; 
 import { useAuth } from './contexts/useAuth';
@@ -98,6 +99,13 @@ function AppContent() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+    link.rel = 'icon';
+    link.href = faviconUrl;
+    if (!link.parentNode) document.head.appendChild(link);
+  }, []);
+
   return (
     <AuthProvider>
       <AppContent />

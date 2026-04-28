@@ -7,6 +7,33 @@ import pandas as pd
 
 
 @pytest.fixture
+def seed_colors():
+    """Create all COMPANY_COLORS entries idempotently via get_or_create."""
+    from quality_data.models import Color
+    from quality_data.init_data_models import COMPANY_COLORS
+    for color_name in COMPANY_COLORS:
+        Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+
+
+@pytest.fixture
+def seed_defect_types():
+    """Create all GARMENT_DEFECT_TYPES entries idempotently via get_or_create."""
+    from quality_data.models import DefectType
+    from quality_data.init_data_models import GARMENT_DEFECT_TYPES
+    for defect_name in GARMENT_DEFECT_TYPES:
+        DefectType.objects.get_or_create(name=defect_name, defaults={"is_active": True})
+
+
+@pytest.fixture
+def seed_container_defect_types():
+    """Create all CONTAINER_DEFECT_TYPES entries idempotently via get_or_create."""
+    from quality_data.models import ContainerDefectType
+    from quality_data.init_data_models import CONTAINER_DEFECT_TYPES
+    for defect_name in CONTAINER_DEFECT_TYPES:
+        ContainerDefectType.objects.get_or_create(name=defect_name, defaults={"is_active": True})
+
+
+@pytest.fixture
 def excel_file_factory():
     """
     Factory fixture that creates in-memory Excel files for testing.

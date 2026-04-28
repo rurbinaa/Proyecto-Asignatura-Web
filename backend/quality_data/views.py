@@ -1,5 +1,5 @@
 from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FileUploadParser
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework import status as http_status
 from rest_framework.decorators import action
@@ -14,31 +14,23 @@ import datetime
 from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession, InspectionDefect, Color
 from excel_importer.handler_service import (
     load_and_clean,
-    bulk_insert,
-    bulk_insert_seconds_a4,
-    bulk_insert_seconds_general,
-    bulk_insert_container,
 )
 from excel_importer.sheet_configs import (
     SHEET_NAMES,
     QC_FA_PLANT_REMAP,
     QC_FA_PLANT_NUMERIC_COLUMNS,
-    QC_FA_PLANT_NOT_NUMERIC_COLUMNS,
     QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
     QC_FA_CUSTOMER_REMAP,
     QC_FA_CUSTOMER_NUMERIC_COLUMNS,
-    QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS,
     QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
     SECONDS_A4_REMAP,
     SECONDS_A4_NUMERIC_COLUMNS,
-    SECONDS_A4_NOT_NUMERIC_COLUMNS,
     SECONDS_GENERAL_REMAP,
     SECONDS_GENERAL_NUMERIC_COLUMNS,
-    SECONDS_GENERAL_NOT_NUMERIC_COLUMNS,
+    SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS,
     CONTAINER_REMAP,
     CONTAINER_NUMERIC_COLUMNS,
-    CONTAINER_NOT_NUMERIC_COLUMNS,
-    CONTAINER_AMOUNT_DEFEACTS_FIELDS
+    CONTAINER_AMOUNT_DEFEACTS_FIELDS,
 )
 from excel_importer.sync_service import (
     create_session_from_dataframes,
@@ -47,9 +39,7 @@ from excel_importer.sync_service import (
 )
 from excel_importer.pivot_parsers import (
     parse_seconds_rework,
-    parse_cut_qty,
     parse_fabric_defects,
-    parse_enganche,
     parse_top_defects,
     parse_defects_by_style,
     parse_containers_by_state,
@@ -65,22 +55,9 @@ from quality_data.serializers import (
     KpiHeatmapSerializer,
     KpiBarEnvelopeSerializer,
     KpiSeriesEnvelopeSerializer,
-    KpiDonutEnvelopeSerializer,
-    KpiHeatmapEnvelopeSerializer,
     ScalarMetricSerializer,
     FilterOptionsSerializer,
 )
-
-def _get_incremental_rows(df, model_class, **filters):
-    db_rows = model_class.objects.filter(**filters).count()
-    df_rows = len(df)
-    rows_to_insert = max(df_rows - db_rows, 0)
-
-    if rows_to_insert == 0:
-        return df.iloc[0:0]
-
-    return df.tail(rows_to_insert).copy()
-
 
 def _df_to_json_safe(df):
     """
@@ -151,7 +128,7 @@ class Process(APIView):
         # Only _qc_fa_plant_df is used for validation in this endpoint.
         # The other sheets are parsed but not used here - they will be
         # processed in ExcelConfirmView after user confirms the preview.
-        _qc_fa_plant_df = load_and_clean(
+        _ = load_and_clean(
             file_obj,
             QC_FA_PLANT_REMAP,
             QC_FA_PLANT_NUMERIC_COLUMNS,
@@ -181,7 +158,7 @@ class Process(APIView):
             file_obj,
             SECONDS_GENERAL_REMAP,
             SECONDS_GENERAL_NUMERIC_COLUMNS,
-            None,
+            SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS,
             *SHEET_NAMES[3],
         )
 
@@ -191,100 +168,6 @@ class Process(APIView):
             CONTAINER_NUMERIC_COLUMNS,
             CONTAINER_AMOUNT_DEFEACTS_FIELDS,
             *SHEET_NAMES[4],
-        )
-
-
-        return Response(status = 204)
-
-
-# DEPRECATED: Use ExcelPreviewView + ExcelConfirmView instead.
-# Kept for backward compatibility. Will be removed in a future version.
-class SaveData(APIView):
-    parser_classes = [MultiPartParser]
-
-    def post (self, request, filename, format = None):
-        file_obj = request.FILES.get('file')
-        if not file_obj:
-            return Response({"error": "No file provided"}, status=400)
-
-        qc_fa_plant_df = load_and_clean(
-            file_obj,
-            QC_FA_PLANT_REMAP,
-            QC_FA_PLANT_NUMERIC_COLUMNS,
-            QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
-            *SHEET_NAMES[0],
-        )
-        qc_fa_customer_df = load_and_clean(
-            file_obj,
-            QC_FA_CUSTOMER_REMAP,
-            QC_FA_CUSTOMER_NUMERIC_COLUMNS,
-            QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
-            *SHEET_NAMES[1],
-        )
-
-        seconds_a4_df = load_and_clean(
-            file_obj,
-            SECONDS_A4_REMAP,
-            SECONDS_A4_NUMERIC_COLUMNS,
-            None,
-            *SHEET_NAMES[2],
-        )
-
-        seconds_general_df = load_and_clean(
-            file_obj,
-            SECONDS_GENERAL_REMAP,
-            SECONDS_GENERAL_NUMERIC_COLUMNS,
-            None,
-            *SHEET_NAMES[3],
-        )
-
-        container_df = load_and_clean(
-            file_obj,
-            CONTAINER_REMAP,
-            CONTAINER_NUMERIC_COLUMNS,
-            CONTAINER_AMOUNT_DEFEACTS_FIELDS,
-            *SHEET_NAMES[4],
-        )
-
-        qc_fa_plant_new_rows = _get_incremental_rows(qc_fa_plant_df, QualityQcFa, table_type="QFA")
-        bulk_insert(
-            qc_fa_plant_new_rows,
-            QC_FA_PLANT_NUMERIC_COLUMNS,
-            QC_FA_PLANT_NOT_NUMERIC_COLUMNS,
-            QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
-            table_type="QFA",
-        )
-
-        qc_fa_customer_new_rows = _get_incremental_rows(qc_fa_customer_df, QualityQcFa, table_type="QFC")
-        bulk_insert(
-            qc_fa_customer_new_rows,
-            QC_FA_CUSTOMER_NUMERIC_COLUMNS,
-            QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS,
-            QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
-            table_type="QFC",
-        )
-
-        seconds_a4_new_rows = _get_incremental_rows(seconds_a4_df, SecondsA4)
-        seconds_general_new_rows = _get_incremental_rows(seconds_general_df, SecondsGeneral)
-        container_new_rows = _get_incremental_rows(container_df, Container)
-
-        bulk_insert_seconds_a4(
-            seconds_a4_new_rows,
-            SECONDS_A4_NUMERIC_COLUMNS,
-            SECONDS_A4_NOT_NUMERIC_COLUMNS,
-        )
-
-        bulk_insert_seconds_general(
-            seconds_general_new_rows,
-            SECONDS_GENERAL_NUMERIC_COLUMNS,
-            SECONDS_GENERAL_NOT_NUMERIC_COLUMNS,
-        )
-
-        bulk_insert_container(
-            container_new_rows,
-            CONTAINER_NUMERIC_COLUMNS,
-            CONTAINER_NOT_NUMERIC_COLUMNS,
-            CONTAINER_AMOUNT_DEFEACTS_FIELDS,
         )
 
 
@@ -310,8 +193,6 @@ class ExcelPreviewView(APIView):
             return Response({"error": "No file provided"}, status=http_status.HTTP_400_BAD_REQUEST)
 
         try:
-            import pandas as pd
-
             # Open the Excel file ONCE — all sheets are read from the same ExcelFile
             # object, avoiding 5 separate file open/parse cycles.
             # Gracefully fall back to per-sheet reading if ExcelFile creation fails
@@ -347,7 +228,7 @@ class ExcelPreviewView(APIView):
 
             seconds_general_df = load_and_clean(
                 file_obj, SECONDS_GENERAL_REMAP, SECONDS_GENERAL_NUMERIC_COLUMNS,
-                None, *SHEET_NAMES[3],
+                SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS, *SHEET_NAMES[3],
                 excel_file=excel_file,
             )
             dataframes["seconds_general"] = _df_to_json_safe(seconds_general_df)
@@ -686,8 +567,6 @@ class FabricDefectsView(KpiFilterMixin, APIView):
 
     def get(self, request):
         from quality_data.models import SecondsGeneralDefect
-        from django.db.models import Sum
-
         queryset = SecondsGeneral.objects.all()
         queryset = self._apply_date_range_filter(queryset, 'date')
 

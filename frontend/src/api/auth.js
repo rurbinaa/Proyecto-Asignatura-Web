@@ -7,10 +7,6 @@ export function mapLoginResponseDto(dto) {
   };
 }
 
-export function mapCurrentUserDto(dto) {
-  return dto;
-}
-
 export async function loginRequest(credentials) {
   const response = await axiosClient.post('/api/auth/login/', credentials);
   return mapLoginResponseDto(response.data);
@@ -18,7 +14,7 @@ export async function loginRequest(credentials) {
 
 export async function getCurrentUserRequest() {
   const response = await axiosClient.get('/api/auth/me/');
-  return mapCurrentUserDto(response.data);
+  return response.data;
 }
 
 export async function logoutRequest() {

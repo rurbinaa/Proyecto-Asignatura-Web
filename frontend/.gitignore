@@ -30,4 +30,4 @@ coverage/
 .turbo/
 .eslintcache
 *.sql
-react-router-dom/
+package-lock.json

@@ -10,9 +10,7 @@ import pandas as pd
 # Import the functions under test
 from excel_importer.pivot_parsers import (
     parse_seconds_rework,
-    parse_cut_qty,
     parse_fabric_defects,
-    parse_enganche,
     parse_top_defects,
     parse_defects_by_style,
     parse_containers_by_state,
@@ -150,48 +148,6 @@ class ParseSecondsReworkTest(TestCase):
         self.assertEqual(sewing['data'][1]['y'], 5.12)
 
 
-class ParseCutQtyTest(TestCase):
-    """Tests for parse_cut_qty parser."""
-
-    @patch('excel_importer.pivot_parsers.load_pivot_range')
-    def test_parse_cut_qty_parses_thousand_separators(self, mock_load):
-        """
-        parse_cut_qty should parse values like "4,896" as 4896 (int).
-        """
-        mock_df = pd.DataFrame({
-            'week': [1, 2],
-            'cut_qty': ['4,896', '5,231'],
-        })
-        mock_load.return_value = mock_df
-
-        result = parse_cut_qty(io.BytesIO())
-
-        cut_qty_series = result[0]
-        self.assertEqual(cut_qty_series['name'], 'Cut Qty')
-        self.assertEqual(cut_qty_series['data'][0]['y'], 4896)
-        self.assertEqual(cut_qty_series['data'][1]['y'], 5231)
-
-    @patch('excel_importer.pivot_parsers.load_pivot_range')
-    def test_parse_cut_qty_includes_total(self, mock_load):
-        """
-        parse_cut_qty should include 'Total Resultado' as the last data point.
-        """
-        mock_df = pd.DataFrame({
-            'week': [1, 2, 'Total Resultado'],
-            'cut_qty': [1000, 2000, 4896],
-        })
-        mock_load.return_value = mock_df
-
-        result = parse_cut_qty(io.BytesIO())
-
-        cut_qty_series = result[0]
-        data = cut_qty_series['data']
-        
-        # Last item should be Total Resultado
-        self.assertEqual(data[-1]['x'], 'Total Resultado')
-        self.assertEqual(data[-1]['y'], 4896)
-
-
 class ParseFabricDefectsTest(TestCase):
     """Tests for parse_fabric_defects parser."""
 
@@ -273,30 +229,6 @@ class ParseFabricDefectsTest(TestCase):
         self.assertEqual(len(result), 2)
 
 
-class ParseEngancheTest(TestCase):
-    """Tests for parse_enganche parser."""
-
-    @patch('excel_importer.pivot_parsers.load_pivot_range')
-    def test_parse_enganche_includes_total(self, mock_load):
-        """
-        parse_enganche should include 'Total Resultado' as last data point.
-        """
-        mock_df = pd.DataFrame({
-            'week': [1, 2, 'Total Resultado'],
-            'enganche': [100, 200, 1234],
-        })
-        mock_load.return_value = mock_df
-
-        result = parse_enganche(io.BytesIO())
-
-        enganche_series = result[0]
-        data = enganche_series['data']
-        
-        # Last item should be Total Resultado
-        self.assertEqual(data[-1]['x'], 'Total Resultado')
-        self.assertEqual(data[-1]['y'], 1234)
-
-
 class ParseNullHandlingTest(TestCase):
     """Tests for null/exception handling in parsers."""
 
@@ -312,15 +244,7 @@ class ParseNullHandlingTest(TestCase):
         self.assertIsNone(result)
         
         empty_file.seek(0)
-        result = parse_cut_qty(empty_file)
-        self.assertIsNone(result)
-        
-        empty_file.seek(0)
         result = parse_fabric_defects(empty_file)
-        self.assertIsNone(result)
-        
-        empty_file.seek(0)
-        result = parse_enganche(empty_file)
         self.assertIsNone(result)
 
 
