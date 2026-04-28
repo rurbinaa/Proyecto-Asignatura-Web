@@ -4,10 +4,7 @@ E2E test fixtures for Playwright + Django.
 Requires the app to be running (docker compose up or dev server).
 Set E2E_BASE_URL env var or defaults to http://localhost:8000.
 """
-import os
 import pytest
-
-BASE_URL = os.getenv("E2E_BASE_URL", "http://localhost:5173")
 
 
 def pytest_collection_modifyitems(items):
@@ -17,12 +14,9 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.fixture(scope="session")
-def browser_context_args(browser_context_args):
-    """Override browser context for consistent viewport."""
-    return {
-        **browser_context_args,
-        "viewport": {"width": 1280, "height": 800},
-    }
+def django_db_setup():
+    """E2E tests use the running app's DB, not a test DB."""
+    pass
 
 
 @pytest.fixture
@@ -31,17 +25,6 @@ def page(context):
     page = context.new_page()
     yield page
     page.close()
-
-
-@pytest.fixture
-def base_url():
-    return BASE_URL
-
-
-@pytest.fixture(scope="session")
-def django_db_setup():
-    """E2E tests use the running app's DB, not a test DB."""
-    pass
 
 
 @pytest.fixture
