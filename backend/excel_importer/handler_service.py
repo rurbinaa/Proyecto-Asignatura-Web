@@ -75,12 +75,11 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     defeacts_fields = _normalize_defects_fields(defeacts_fields)
 
     if excel_file is not None:
-        # Detect actual column count to avoid out-of-bounds usecols errors
-        # when the sheet has fewer columns than expected.
-        preview = pd.read_excel(excel_file, sheet_name=sheet, header=header, nrows=0)
-        actual_cols = preview.shape[1]
-        read_cols = min(cols, actual_cols) if actual_cols > 0 else cols
-        df = pd.read_excel(excel_file, sheet_name=sheet, header=header, usecols=range(read_cols))
+        # Read all columns, then slice to expected count.
+        # No need for preview read — ExcelFile reads are fast.
+        df = pd.read_excel(excel_file, sheet_name=sheet, header=header)
+        if df.shape[1] > cols:
+            df = df.iloc[:, :cols]
     else:
         file_obj.seek(0)
         preview = pd.read_excel(file_obj, engine='openpyxl', sheet_name=sheet, header=header, nrows=0)
