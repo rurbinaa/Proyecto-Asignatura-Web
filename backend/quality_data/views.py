@@ -1529,9 +1529,9 @@ class VolatileKpiView(APIView):
                 options[field] = []
 
         if 'color__name' in df.columns:
-            options['color'] = sorted(df['color__name'].dropna().unique().tolist())
+            options['color'] = sorted([str(x) for x in df['color__name'].dropna().unique().tolist()])
         elif 'color' in df.columns:
-            options['color'] = sorted(df['color'].dropna().unique().tolist())
+            options['color'] = sorted([str(x) for x in df['color'].dropna().unique().tolist()])
         else:
             options['color'] = []
 
