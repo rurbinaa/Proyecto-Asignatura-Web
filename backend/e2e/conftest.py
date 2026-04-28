@@ -4,7 +4,12 @@ E2E test fixtures for Playwright + Django.
 Requires the app to be running (docker compose up or dev server).
 Set E2E_BASE_URL env var or defaults to http://localhost:8000.
 """
+import os
 import pytest
+
+
+E2E_EMAIL = os.getenv("E2E_EMAIL", "gerente@uniwell.com")
+E2E_PASSWORD = os.getenv("E2E_PASSWORD", "password123")
 
 
 def pytest_collection_modifyitems(items):
@@ -34,9 +39,9 @@ def logged_in_page(page, base_url):
     # Wait for login form
     page.wait_for_selector('input[type="email"]', timeout=10000)
     
-    # Fill credentials (LoginView uses email + password)
-    page.locator('input[type="email"]').fill("admin@uniwell.com")
-    page.locator('input[type="password"]').fill("admin")
+    # Fill credentials (overridable via E2E_EMAIL / E2E_PASSWORD env vars)
+    page.locator('input[type="email"]').fill(E2E_EMAIL)
+    page.locator('input[type="password"]').fill(E2E_PASSWORD)
     
     # Click login button
     page.locator('button[type="submit"]').click()
