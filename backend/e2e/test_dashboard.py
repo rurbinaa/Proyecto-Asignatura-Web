@@ -13,10 +13,13 @@ from e2e.mocks.excel import mock_excel_preview
 def _navigate_to_dashboard(page):
     """Click the Dashboard nav item in the sidebar.
 
-    When sidebar is expanded (default), the ``title`` attribute is empty.
-    We use ``filter(has_text=...)`` which matches on span text content.
+    Uses expect() for auto-retry since React re-renders detach DOM elements
+    during view transitions.
     """
-    page.locator("button.sidebar-nav-item").filter(has_text="Dashboard").click()
+    from playwright.sync_api import expect
+    dashboard_btn = page.locator("button.sidebar-nav-item").filter(has_text="Dashboard")
+    expect(dashboard_btn).to_be_visible(timeout=10000)
+    dashboard_btn.click(force=True)
     page.wait_for_selector(".dashboard-view", timeout=10000)
 
 
@@ -85,7 +88,10 @@ def test_volatile_helper(logged_in_page, test_excel_file):
 
     # ── Sub-test 2: Fast mode → helper IS visible ──
     # Go to Import Batches
-    page.locator("button.sidebar-nav-item").filter(has_text="Import Batches").click()
+    from playwright.sync_api import expect
+    batches_btn = page.locator("button.sidebar-nav-item").filter(has_text="Import Batches")
+    expect(batches_btn).to_be_visible(timeout=10000)
+    batches_btn.click(force=True)
     page.wait_for_selector(".uploader-container", timeout=10000)
 
     # Upload the generated Excel file via the dropzone hidden input

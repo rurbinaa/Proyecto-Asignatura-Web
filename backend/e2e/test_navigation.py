@@ -26,13 +26,17 @@ def test_sidebar_switches_views(logged_in_page):
     page.wait_for_selector(".uploader-container", timeout=5000)
 
     # Switch to Dashboard
-    page.locator("button.sidebar-nav-item").filter(has_text="Dashboard").click()
+    dashboard_btn = page.locator("button.sidebar-nav-item").filter(has_text="Dashboard")
+    expect(dashboard_btn).to_be_visible(timeout=10000)
+    dashboard_btn.click(force=True)
     page.wait_for_selector(".dashboard-view", timeout=10000)
     assert page.locator(".dashboard-view").is_visible()
     assert page.locator(".uploader-container").count() == 0
 
     # Switch back to Import Batches
-    page.locator("button.sidebar-nav-item").filter(has_text="Import Batches").click()
+    batches_btn = page.locator("button.sidebar-nav-item").filter(has_text="Import Batches")
+    expect(batches_btn).to_be_visible(timeout=10000)
+    batches_btn.click(force=True)
     page.wait_for_selector(".uploader-container", timeout=10000)
     assert page.locator(".uploader-container").is_visible()
     assert page.locator(".dashboard-view").count() == 0
@@ -52,14 +56,18 @@ def test_active_nav_highlight(logged_in_page):
     expect(active_btn.locator("span")).to_have_text("Import Batches")
 
     # Click Dashboard
-    page.locator("button.sidebar-nav-item").filter(has_text="Dashboard").click()
+    dashboard_btn = page.locator("button.sidebar-nav-item").filter(has_text="Dashboard")
+    expect(dashboard_btn).to_be_visible(timeout=10000)
+    dashboard_btn.click(force=True)
 
     # expect() auto-retries until the condition is met
     active_btn = page.locator("button.sidebar-nav-item.active")
     expect(active_btn.locator("span")).to_have_text("Dashboard")
 
     # Click Import Batches again
-    page.locator("button.sidebar-nav-item").filter(has_text="Import Batches").click()
+    batches_btn = page.locator("button.sidebar-nav-item").filter(has_text="Import Batches")
+    expect(batches_btn).to_be_visible(timeout=10000)
+    batches_btn.click(force=True)
 
     active_btn = page.locator("button.sidebar-nav-item.active")
     expect(active_btn.locator("span")).to_have_text("Import Batches")
