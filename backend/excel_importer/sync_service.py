@@ -560,7 +560,7 @@ def create_session_from_dataframes(dataframes):
     qfa_plant_dates = extract_dates(qc_fa_plant_rows, "date_1")
     session.qc_fa_plant_preview = compute_preview_timewindow(
         qc_fa_plant_rows,
-        QualityQcFa.objects.filter(table_type="QFA", date_1__in=qfa_plant_dates)
+        QualityQcFa.objects.filter(table_type="QFA", date_1__in=qfa_plant_dates).select_related('color')
         if qfa_plant_dates else QualityQcFa.objects.none(),
         date_field="date_1",
     )
@@ -569,7 +569,7 @@ def create_session_from_dataframes(dataframes):
     qfa_customer_dates = extract_dates(qc_fa_customer_rows, "date_1")
     session.qc_fa_customer_preview = compute_preview_timewindow(
         qc_fa_customer_rows,
-        QualityQcFa.objects.filter(table_type="QFC", date_1__in=qfa_customer_dates)
+        QualityQcFa.objects.filter(table_type="QFC", date_1__in=qfa_customer_dates).select_related('color')
         if qfa_customer_dates else QualityQcFa.objects.none(),
         date_field="date_1",
     )
@@ -578,7 +578,7 @@ def create_session_from_dataframes(dataframes):
     seconds_a4_dates = extract_dates(seconds_a4_rows, "date")
     session.seconds_a4_preview = compute_preview_upsert(
         seconds_a4_rows,
-        SecondsA4.objects.filter(date__in=seconds_a4_dates)
+        SecondsA4.objects.filter(date__in=seconds_a4_dates).select_related('color')
         if seconds_a4_dates else SecondsA4.objects.none(),
         key_builder=build_seconds_a4_key,
         date_field="date",
