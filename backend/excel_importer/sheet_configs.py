@@ -2,7 +2,7 @@ SHEET_NAMES = [
     ("QC FA Plant", 2, 67),
     ("QC FA Customer", 0, 64),
     ("SecondsA4", 1, 22),
-    ("Seconds General", 1, 22),
+    ("Seconds General", 1, 38),
     ("Container", 2, 24),
 ]
 
@@ -232,6 +232,32 @@ SECONDS_GENERAL_REMAP = {
     'Produced': 'produced',
     'Fixed': 'fixed',
     'Definitive': 'definitive',
+    'Picado de Aguja': 'picado_aguja',
+    'Manchas/Sucio': 'manchas_sucio',
+    'Grasa': 'grasa',
+    'Tono Tela': 'tono_tela',
+    'Fuera Medidas': 'fuera_medidas',
+    'Enganche': 'enganche',
+    'Costura Torcida/Insegura': 'costura_torcida_insegura',
+    'Hoyos Costura': 'hoyos_costura',
+    'Heat Transfer Defectuoso/Inclinado/Fuera de Posicion': 'heat_transfer',
+    'Mal Corte': 'mal_corte',
+    'Trapo': 'trapo',
+    'Corrido': 'corrido',
+    'Otros': 'otros',
+    'Total De Costura': 'total_de_costura',
+    'Desgarre/Def Tela': 'desgarre_def_tela',
+    'Contamination': 'contamination',
+    'Linea de Tela': 'linea_de_tela',
+    'Mill  Flaw': 'mill_flaw',
+    'Hoyos': 'hoyos',
+    'Manchas Tela': 'manchas_tela',
+    'Corrido2': 'corrido_2',
+    'Barre': 'barre',
+    'Otros3': 'otros_3',
+    'Degradacion': 'degradacion',
+    'Bordados': 'bordados',
+    'Total de Tela': 'total_de_tela',
 }
 
 SECONDS_GENERAL_NUMERIC_COLUMNS = [
@@ -240,6 +266,15 @@ SECONDS_GENERAL_NUMERIC_COLUMNS = [
 
 SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
     'date', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
+]
+
+SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS = [
+    'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
+    'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',
+    'mal_corte', 'trapo', 'corrido', 'otros',
+    'desgarre_def_tela', 'contamination', 'linea_de_tela', 'mill_flaw',
+    'hoyos', 'manchas_tela',
+    'corrido_2', 'barre', 'otros_3', 'degradacion', 'bordados',
 ]
 
 
