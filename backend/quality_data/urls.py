@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    Process, SaveData, ExcelPreviewView, ExcelConfirmView, ExcelRejectView,
+    Process, ExcelPreviewView, ExcelConfirmView, ExcelRejectView,
     TopDefectsView, FabricDefectsView, DefectsByStyleTypeView,
     KpiViewSet, AqlKpiViewSet,
     PassRejectDistributionView, RejectedEvolutionView,
@@ -20,7 +20,6 @@ router.register(r'kpis/rendimiento', KpiViewSet, basename='kpi-rendimiento')
 urlpatterns = [
     # Legacy endpoints (kept for backward compatibility)
     path(r'process/<str:filename>/', Process.as_view(), name='process'),
-    path(r'savedata/<str:filename>/', SaveData.as_view(), name='savedata'),
 
     # V2 endpoints — Preview → Confirm → Apply workflow
     path(r'excel/preview/<str:filename>/', ExcelPreviewView.as_view(), name='excel-preview'),
