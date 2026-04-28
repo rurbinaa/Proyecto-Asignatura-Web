@@ -10,6 +10,7 @@ Tests cover:
 
 from django.contrib.auth.models import User
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 from quality_data.models import Color, DefectType, QualityQcFa
@@ -59,7 +60,7 @@ class CloseInspectionWithDefectsTest(APITestCase):
         self.qc_record = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=timezone.now().date().isocalendar()[1],
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -137,7 +138,7 @@ class CloseInspectionWithoutDefectsTest(APITestCase):
         self.qc_record = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=timezone.now().date().isocalendar()[1],
             customer="Test Customer",
             team=1,
             coord="Coord1",
@@ -209,7 +210,7 @@ class CloseInspectionBridgeSyncTest(APITestCase):
         self.qc_record = QualityQcFa.objects.create(
             table_type="QFA",
             date_1="2025-01-15",
-            week=3,
+            week=timezone.now().date().isocalendar()[1],
             customer="Test Customer",
             team=1,
             coord="Coord1",
