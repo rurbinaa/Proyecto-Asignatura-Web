@@ -1048,6 +1048,36 @@ class DefectRateTest(KpiTestMixin, TestCase):
         )
         self.assertEqual(response.data["value"], expected)
 
+
+class DefectOperationalDtoBoundaryTest(KpiTestMixin, TestCase):
+    def _assert_route_uses_payload_serializer(self, route_name):
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            response = self.client.get(reverse(route_name))
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(serialize_payload.call_count, 1)
+
+    def test_top_defects_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-top-defects")
+
+    def test_fabric_defects_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-fabric-defects")
+
+    def test_defects_by_style_type_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-defects-by-style-type")
+
+    def test_pass_reject_distribution_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-pass-reject-distribution")
+
+    def test_rejected_evolution_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-rejected-evolution")
+
+    def test_containers_by_state_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-containers-by-state")
+
+    def test_defect_rate_uses_dto_payload_serializer(self):
+        self._assert_route_uses_payload_serializer("quality_data:kpi-defect-rate")
+
     def test_defect_rate_week_filter(self):
         """week filter applies to defect rate calculation."""
         url = reverse("quality_data:kpi-defect-rate")

@@ -16,7 +16,7 @@ class KpiBarSerializer(serializers.Serializer):
         {"label": "Style A", "value": 42.5}
     """
     label = serializers.CharField()
-    value = serializers.FloatField()
+    value = serializers.JSONField()
 
 
 class KpiPointSerializer(serializers.Serializer):
@@ -43,7 +43,7 @@ class KpiDonutSerializer(serializers.Serializer):
         {"name": "Category", "value": 150}
     """
     name = serializers.CharField()
-    value = serializers.FloatField()
+    value = serializers.JSONField()
 
 
 class KpiHeatmapSerializer(serializers.Serializer):
@@ -55,7 +55,7 @@ class KpiHeatmapSerializer(serializers.Serializer):
     """
     x = serializers.CharField()
     y = serializers.CharField()
-    value = serializers.FloatField()
+    value = serializers.JSONField()
 
 
 class KpiBarEnvelopeSerializer(serializers.Serializer):

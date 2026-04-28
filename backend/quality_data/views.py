@@ -666,7 +666,8 @@ class TopDefectsView(KpiFilterMixin, APIView):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class FabricDefectsView(KpiFilterMixin, APIView):
@@ -728,7 +729,8 @@ class FabricDefectsView(KpiFilterMixin, APIView):
             for name in fabric_defect_names
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class DefectsByStyleTypeView(KpiFilterMixin, APIView):
@@ -784,7 +786,8 @@ class DefectsByStyleTypeView(KpiFilterMixin, APIView):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiHeatmapSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 # ─────────────────────────────────────────────────────────
@@ -816,7 +819,8 @@ class PassRejectDistributionView(KpiFilterMixin, APIView):
             for item in aggregated
         ]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiDonutSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class RejectedEvolutionView(KpiFilterMixin, APIView):
@@ -848,7 +852,8 @@ class RejectedEvolutionView(KpiFilterMixin, APIView):
             ]
         }]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiSeriesSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
 class ContainersByStateView(KpiFilterMixin, APIView):
@@ -922,7 +927,8 @@ class ContainersByStateView(KpiFilterMixin, APIView):
         result_dict = {r["name"]: r["value"] for r in result}
         result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
 
-        return Response(result, status=http_status.HTTP_200_OK)
+        dto_data = _serialize_payload(KpiDonutSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
 
 class DefectRateView(KpiFilterMixin, APIView):
     """
@@ -950,7 +956,11 @@ class DefectRateView(KpiFilterMixin, APIView):
         if total_sample > 0:
             value = round((total_defects / total_sample) * 100, 2)
 
-        result = {"label": "Defect Rate", "value": value}
+        result = _serialize_payload(
+            ScalarMetricSerializer,
+            {"label": "Defect Rate", "value": value},
+            many=False,
+        )
 
         return Response(result, status=http_status.HTTP_200_OK)
 
