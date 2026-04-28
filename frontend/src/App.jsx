@@ -24,17 +24,17 @@ function AppContent() {
   
   const [volatileData, setVolatileData] = useState(null);
   const [volatileFile, setVolatileFile] = useState(null);
+  const defaultView = user?.role === 'manager' ? 'excel' : 'capture';
+  const resolvedActiveView = activeView || (isAuthenticated && user ? defaultView : '');
 
   useEffect(() => {
     if (isAuthenticated && user) {
       const storedView = localStorage.getItem('rift-activeView');
       if (!storedView) {
-        const defaultView = user.role === 'manager' ? 'excel' : 'capture';
-        setActiveView(defaultView);
         localStorage.setItem('rift-activeView', defaultView);
       }
     }
-  }, [isAuthenticated, user]);
+  }, [defaultView, isAuthenticated, user]);
 
   const handleVolatileDashboard = (file) => {
     setVolatileFile(file);
@@ -58,13 +58,13 @@ function AppContent() {
   return (
     <div className="app-layout">
       
-      <Sidebar 
-        userRole={user.role} 
-        activeView={activeView} 
-        setActiveView={(view) => {
-          setActiveView(view);
-          localStorage.setItem('rift-activeView', view);
-        }} 
+        <Sidebar 
+          userRole={user.role} 
+          activeView={resolvedActiveView} 
+          setActiveView={(view) => {
+            setActiveView(view);
+            localStorage.setItem('rift-activeView', view);
+          }} 
         setVolatileData={setVolatileData}
         onLogout={handleLogout} 
       />
@@ -74,9 +74,9 @@ function AppContent() {
 
         <main className="content-area">
           
-          {activeView === 'capture' && user.role === 'operator' && <CaptureView />}
+          {resolvedActiveView === 'capture' && user.role === 'operator' && <CaptureView />}
 
-          {activeView === 'excel' && user.role === 'manager' && (
+          {resolvedActiveView === 'excel' && user.role === 'manager' && (
             <div className="card excel-view-card">
               <h2 className="section-title title-tight">Importation of batches (Excel)</h2>
               <p className="excel-subtitle">
@@ -86,7 +86,7 @@ function AppContent() {
             </div>
           )}
 
-          {activeView === 'dashboard' && (
+          {resolvedActiveView === 'dashboard' && (
             <DashboardView volatileData={volatileData} volatileFile={volatileFile} />
           )}
 

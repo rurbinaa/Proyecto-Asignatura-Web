@@ -27,7 +27,7 @@ export default function LoginView() {
       if (!success) {
         setError('Invalid credentials or server error.');
       }
-    } catch (err) {
+    } catch {
       setError('Connection error. Please try again later.');
     } finally {
       setIsLoading(false);
