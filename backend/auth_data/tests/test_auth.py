@@ -523,12 +523,10 @@ class SeedCommandTest(APITestCase):
         """Seed command can be run multiple times without duplicates."""
         from django.core.management import call_command
         import io
-        from django.core.management.base import CommandError
-        
         # Run seed command first time
         out = io.StringIO()
         call_command('seed_auth_users', stdout=out, verbosity=1)
-        first_output = out.getvalue()
+        _ = out.getvalue()
         
         # Count users created
         initial_user_count = User.objects.count()

@@ -106,7 +106,7 @@ class ExcelConfirmViewTest(TestCase):
 
     def test_confirm_applies_changes(self):
         """Confirm applies session and sets status to confirmed."""
-        _color = Color.objects.create(name="red", is_active=True)
+        Color.objects.create(name="red", is_active=True)
         session = ExcelSyncSession.objects.create(
             seconds_a4_data=[{
                 "date": "2025-01-15", "cut_num": 1, "color": "Red",

@@ -9,7 +9,6 @@ from excel_importer.sheet_configs import (
     CORPORATE_XLSX_EXPORT_CONFIG,
     QC_FA_CUSTOMER_REMAP,
     QC_FA_PLANT_REMAP,
-    SECONDS_GENERAL_REMAP,
 )
 from quality_data.corporate_xlsx_styles import CORPORATE_SHEET_ORDER
 from quality_data.models import (

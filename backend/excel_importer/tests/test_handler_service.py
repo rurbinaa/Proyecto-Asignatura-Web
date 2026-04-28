@@ -871,7 +871,7 @@ class BulkInsertSecondsCoverageTest(TestCase):
         from quality_data.models import SecondsGeneralDefectType, SecondsGeneralDefect
 
         for name in ["corrido_2", "barre", "otros_3", "degradacion", "bordados"]:
-            SecondsGeneralDefectType.objects.create(name=name)
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
 
         df = pd.DataFrame([
             {
