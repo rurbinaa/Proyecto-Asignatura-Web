@@ -1,5 +1,3 @@
-from .models import Color, DefectType, ContainerDefectType
-
 COMPANY_COLORS = [
     "athletic_orange",
     "black",
@@ -111,19 +109,3 @@ CONTAINER_DEFECT_TYPES = [
 ]
 
 
-def SaveColor():
-    for i in COMPANY_COLORS:
-        if not Color.objects.filter(name = i).exists():
-            Color.objects.create(name = i, is_active=True)
-
-    
-def SaveDefects():
-    for i in GARMENT_DEFECT_TYPES:
-        if not DefectType.objects.filter(name = i).exists():
-            DefectType.objects.create(name = i, is_active=True)
-      
-
-def SaveDefectsContainer():
-    for i in CONTAINER_DEFECT_TYPES:
-        if not ContainerDefectType.objects.filter(name = i).exists():
-            ContainerDefectType.objects.create(name = i, is_active=True)
