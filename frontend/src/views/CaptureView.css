@@ -45,6 +45,9 @@
   flex-direction: column;
   justify-content: flex-start;
   padding-top: 40px;
+  padding-left: 32px;
+  padding-right: 32px;
+  padding-bottom: 60px;
   height: 100%;
   gap: 0;
 }
@@ -58,6 +61,8 @@
 }
 
 .capture-header{
+  display: flex;
+  justify-content: center;
   margin-bottom: 15px;
   text-align: center;
 }
@@ -244,6 +249,27 @@
 
 .title-tight {
   margin-bottom: 4px;
+}
+
+.garment-area {
+  min-height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: crosshair;
+  margin-top: 20px;
+}
+
+.garment-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 40px;
 }
 
 @media (max-width: 1250px) {
