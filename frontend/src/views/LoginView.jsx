@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import RA_ICON from '../assets/RA-ICON_embed.svg';
 import { Factory } from 'lucide-react';
 import { useAuth } from '../contexts/useAuth';
