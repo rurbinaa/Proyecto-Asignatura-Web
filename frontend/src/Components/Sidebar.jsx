@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import './Sidebar.css';
-import { Factory, Hand, Database, LogOut, ChevronLeft, ChevronRight, ChartBar } from 'lucide-react';
+import { Hand, Database, LogOut, ChevronLeft, ChevronRight, ChartBar } from 'lucide-react';
+import RA_ICON from '../assets/RA-ICON_embed.svg';
 
 export default function Sidebar({ userRole, activeView, setActiveView, setVolatileData = () => {}, onLogout }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -9,7 +10,7 @@ export default function Sidebar({ userRole, activeView, setActiveView, setVolati
     <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}> 
     
       <div className="sidebar-logo">
-        <Factory className="sidebar-logo-icon" />
+        <img src={RA_ICON} alt="Rift Analytics" className="sidebar-logo-img" />
         
         {!isCollapsed && <span className="sidebar-logo-text">Rift Analytics</span>}
         

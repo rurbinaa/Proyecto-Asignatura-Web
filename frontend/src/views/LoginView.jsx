@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import RA_ICON from '../assets/RA-ICON_embed.svg';
 import { Factory } from 'lucide-react';
 import { useAuth } from '../contexts/useAuth';
 import './LoginView.css';
@@ -34,13 +36,14 @@ export default function LoginView() {
     }
   };
 
-  return (
+return (
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <Factory className="login-icon" />
-          <h2 className="login-title">Rift Analytics</h2>
-          <p className="login-subtitle">Enter your credentials</p>
+          <img src={RA_ICON} alt="Rift Analytics Logo" className="login-logo-img" />
+          <h2 className="login-title">Rift Analytics <span className="login-subtitle">for</span></h2>
+          <p className="login-company">Uniwell Apparel</p>
+          <p className="login-credentials">Enter your credentials</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>

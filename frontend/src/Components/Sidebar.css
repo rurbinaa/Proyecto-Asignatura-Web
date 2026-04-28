@@ -22,6 +22,12 @@
   margin-bottom: 32px;
 }
 
+.sidebar-logo-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
 .sidebar-logo-icon {
   width: 28px;
   height: 28px;
@@ -95,7 +101,7 @@
 }
 
 .sidebar-logout:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: #dc2626;
   color: var(--white);
 }
 

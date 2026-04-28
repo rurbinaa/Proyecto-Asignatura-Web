@@ -1,8 +1,10 @@
 .dashboard-view {
   padding: 24px;
-  background-color: #f9fafb;
+  background-color: var(--white);
+  border-radius: 12px;
   min-height: 100vh;
   box-sizing: border-box;
+  margin: 16px;
 }
 
 .dashboard-header {

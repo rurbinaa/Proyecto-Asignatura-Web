@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import './CaptureView.css';
-import urlShirt from '../assets/shirt.svg';
-import urlShirtBack from '../assets/shirt.svg';
-import urlPants from '../assets/pants.svg';
-import urlPantsBack from '../assets/pants.svg'; 
-import MockupContainer from '../Components/mockupContainer.jsx'; 
+import urlShirt from '../assets/camisa_front.svg';
+import urlShirtBack from '../assets/camisa_back.svg';
+import urlPants from '../assets/pants_front.svg';
+import urlPantsBack from '../assets/pants_back.svg';
+import MockupContainer from '../Components/mockupContainer.jsx';
 import DefectPopover from '../Components/DefectPopover.jsx'; 
 
 import { 
@@ -13,7 +13,7 @@ import {
   closeInspection,
 } from '../api/capture.js'; 
 
-import { 
+import {
   MdOutlineFormatColorFill, 
   MdDangerous, 
   MdStraighten, 
