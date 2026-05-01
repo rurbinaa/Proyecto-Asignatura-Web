@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
 
@@ -27,6 +28,8 @@ class CurrentUserView(APIView):
     def get(self, request):
         user = request.user
         profile = user.profile
+        if profile.role == 'operator':
+            raise PermissionDenied('Operator role is no longer supported.')
         return Response({
             'id': user.id,
             'email': user.email,

@@ -203,7 +203,7 @@ class LogoutTest(APITestCase):
 
 
 class OperatorRoleTest(APITestCase):
-    """Scenario: Operator role is correctly identified in tokens."""
+    """Scenario: Operator role is explicitly rejected."""
     
     def setUp(self):
         self.client = APIClient()
@@ -214,42 +214,20 @@ class OperatorRoleTest(APITestCase):
         )
         UserProfile.objects.create(user=self.user, role='operator')
     
-    def test_operator_login_returns_operator_role(self):
-        """Login as operator returns role='operator'."""
+    def test_operator_login_returns_403(self):
+        """Login as operator returns 403 (role obsolete)."""
         response = self.client.post('/api/auth/login/', {
             'email': 'operator1@uniwell.com',
             'password': 'password123'
         })
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['role'], 'operator')
-        
-        # Verify role claim is embedded in the token payload
-        decoded = jwt.decode(
-            response.data['access'],
-            settings.SECRET_KEY,
-            algorithms=['HS256'],
-            options={'verify_exp': False},
-        )
-        self.assertEqual(decoded['role'], 'operator')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
     
-    def test_operator_me_endpoint_shows_operator_role(self):
-        """GET /me/ as operator shows is_operator=True."""
-        # Get token
-        response = self.client.post('/api/auth/login/', {
-            'email': 'operator1@uniwell.com',
-            'password': 'password123'
-        })
-        token = response.data['access']
-        
-        # Get me
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    def test_operator_me_endpoint_returns_403(self):
+        """GET /me/ as operator is forbidden."""
+        self.client.force_authenticate(user=self.user)
         response = self.client.get('/api/auth/me/')
         
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['role'], 'operator')
-        self.assertFalse(response.data['is_manager'])
-        self.assertTrue(response.data['is_operator'])
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class InvalidTokenTest(APITestCase):
@@ -428,7 +406,7 @@ class TokenRoleImmutabilityTest(APITestCase):
             email='test@uniwell.com',
             password='password123'
         )
-        UserProfile.objects.create(user=user, role='operator')
+        UserProfile.objects.create(user=user, role='manager')
         
         # Login and get token
         response = self.client.post('/api/auth/login/', {
@@ -438,28 +416,25 @@ class TokenRoleImmutabilityTest(APITestCase):
         token = response.data['access']
         original_role = response.data['role']
         
-        self.assertEqual(original_role, 'operator')
+        self.assertEqual(original_role, 'manager')
         
         # Change user's role
-        user.profile.role = 'manager'
+        user.profile.role = 'operator'
         user.profile.save()
         
-        # Token should still have old role (operator)
+        # Token should still have old role (manager)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         response = self.client.get('/api/auth/me/')
         
-        # The role in token/response should still be operator
-        # (tokens are immutable until re-login)
-        self.assertEqual(response.data['role'], 'manager')  # Note: /me/ fetches from DB, not token
-        
-        # But if we decode the token itself, it should have old role
-        # This is tested by checking that a NEW login gives new role
+        # /me uses current DB role, now rejected explicitly
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # NEW login with operator role is rejected too
         response = self.client.post('/api/auth/login/', {
             'email': 'test@uniwell.com',
             'password': 'password123'
         })
-        
-        self.assertEqual(response.data['role'], 'manager')  # New login has new role
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class ConcurrentLoginTest(APITestCase):
@@ -498,7 +473,7 @@ class SeedCommandTest(APITestCase):
     """Scenario: Seed command creates users correctly."""
     
     def test_seed_command_creates_all_users(self):
-        """Seed command creates all 6 hardcoded users."""
+        """Seed command creates all 5 hardcoded manager users."""
         from django.core.management import call_command
         
         # Run seed command
@@ -510,7 +485,6 @@ class SeedCommandTest(APITestCase):
             ('gerencia@uniwell.com', 'manager'),
             ('manager@uniwell.com', 'manager'),
             ('admin@uniwell.com', 'manager'),
-            ('operator@uniwell.com', 'operator'),
             ('GERENCIA@uniwell.com', 'manager'),
         ]
         
@@ -551,7 +525,7 @@ class SeedCommandTest(APITestCase):
         call_command('seed_auth_users', verbosity=0)
         
         # Try to login with each user
-        for email in ['gerente@uniwell.com', 'operator@uniwell.com']:
+        for email in ['gerente@uniwell.com', 'manager@uniwell.com']:
             response = self.client.post('/api/auth/login/', {
                 'email': email,
                 'password': 'password123'
@@ -578,10 +552,22 @@ class SeedCommandTest(APITestCase):
         out = io.StringIO()
         call_command('seed_auth_users', stdout=out, verbosity=1)
         
-        # Should have created remaining 5 users
+        # Should have created remaining 4 users
         final_count = User.objects.count()
-        self.assertEqual(final_count, initial_count + 5)
+        self.assertEqual(final_count, initial_count + 4)
         
         # Original user should still have manual password
         user = User.objects.get(username='gerente@uniwell.com')
         self.assertTrue(user.check_password('manual123'))
+
+
+class LegacyCaptureRoutesRemovalTest(APITestCase):
+    """Scenario: legacy media_data routes are fully removed."""
+
+    def test_legacy_inspection_route_returns_404(self):
+        response = self.client.post('/api/v1/inspections/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_legacy_defects_route_returns_404(self):
+        response = self.client.post('/api/v1/defects/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
