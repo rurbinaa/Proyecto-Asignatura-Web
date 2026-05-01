@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchKpi, fetchVolatileKpis, getFilterOptions } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -235,6 +235,57 @@ describe('kpi.js - fetchVolatileKpis', () => {
     const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
     expect(result.filterOptions).toBeDefined();
     expect(result.filterOptions).toEqual(mockResponse.filter_options);
+  });
+
+  it('preserves explicit unavailable contract objects in volatile DTO mapping', async () => {
+    const mockResponse = {
+      seconds_rework: {
+        status: 'unavailable',
+        reason: 'excel_volatile_not_computable',
+        data: null,
+      },
+    };
+
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+
+    expect(result.secondsRework).toEqual({
+      status: 'unavailable',
+      reason: 'excel_volatile_not_computable',
+      data: null,
+    });
+  });
+});
+
+describe('kpi.js - fetchAllKpis unavailable contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('maps endpoint failures to explicit unavailable status objects', async () => {
+    axiosClient.get
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockRejectedValueOnce({ response: { data: { error: 'not available' }, status: 503 } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+      .mockResolvedValueOnce({ data: { label: 'Defect Rate', value: 2.5 } });
+
+    const result = await fetchAllKpis();
+
+    expect(result.secondsRework).toEqual({
+      status: 'unavailable',
+      reason: 'not available',
+      data: null,
+    });
   });
 });
 

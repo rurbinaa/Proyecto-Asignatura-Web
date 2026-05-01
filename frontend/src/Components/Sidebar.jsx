@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import './Sidebar.css';
-import { Hand, Database, LogOut, ChevronLeft, ChevronRight, ChartBar } from 'lucide-react';
+import { Database, LogOut, ChevronLeft, ChevronRight, ChartBar } from 'lucide-react';
 import RA_ICON from '../assets/RA-ICON_embed.svg';
 
 export default function Sidebar({ userRole, activeView, setActiveView, setVolatileData = () => {}, onLogout }) {
@@ -27,17 +27,6 @@ export default function Sidebar({ userRole, activeView, setActiveView, setVolati
       
       <nav className="sidebar-nav">
           
-          {userRole === 'operator' && (
-            <button 
-              className={`sidebar-nav-item ${activeView === 'capture' ? 'active' : ''}`} 
-              title={isCollapsed ? "Touch Capture" : ""}
-              onClick={() => setActiveView('capture')}
-            >
-              <Hand className="sidebar-nav-icon" />
-              {!isCollapsed && <span>Touch Capture</span>}
-            </button>
-          )}
-
           {userRole === 'manager' && (
             <button 
               className={`sidebar-nav-item ${activeView === 'excel' ? 'active' : ''}`} 

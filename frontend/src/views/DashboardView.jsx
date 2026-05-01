@@ -213,7 +213,7 @@ function DashboardView({ volatileData, volatileFile }) {
   const containersByStateData = transformContainersByState(kpiData?.containersByState);
   const defectsByStyleTypeData = transformDefectsByStyleType(kpiData?.defectsByStyleType);
 
-  const isNullOrError = (data) => data === null || (data && data.error);
+  const isNullOrError = (data) => data === null || (data && (data.error || data.status === 'unavailable'));
 
   const nullMessage = "No disponible en modo rápido";
   return (
