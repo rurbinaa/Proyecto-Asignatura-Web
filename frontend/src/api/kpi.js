@@ -70,8 +70,12 @@ function buildQueryString(filters = {}) {
   return qs ? `?${qs}` : '';
 }
 
-function resolveKpiUrl(endpoint, filters = {}) {
-  const queryString = buildQueryString(filters);
+function resolveKpiUrl(endpoint, filters = {}, context) {
+  const allParams = { ...filters };
+  if (context) {
+    allParams.context = context;
+  }
+  const queryString = buildQueryString(allParams);
 
   const aqlEndpoints = new Set(['aql-by-style/', 'aql-weekly/', 'audited-pieces/']);
   const rendimientoEndpoints = new Set([
@@ -98,8 +102,8 @@ function resolveKpiUrl(endpoint, filters = {}) {
  * @param {object} filters - Optional filters to apply
  * @returns {Promise<any>} JSON response data
  */
-export async function fetchKpi(endpoint, filters = {}) {
-  const url = resolveKpiUrl(endpoint, filters);
+export async function fetchKpi(endpoint, filters = {}, context) {
+  const url = resolveKpiUrl(endpoint, filters, context);
   try {
     const res = await axiosClient.get(url);
     return mapLiveKpiDto(endpoint, res.data);
@@ -133,73 +137,73 @@ export async function getFilterOptions() {
 }
 
 /** AQL grouped by style (defects/sample % per style). */
-export async function getAqlByStyle(filters) {
-  return fetchKpi('aql-by-style/', filters);
+export async function getAqlByStyle(filters, context) {
+  return fetchKpi('aql-by-style/', filters, context);
 }
 
 /** AQL trend by week — useful for control charts. */
-export async function getAqlWeekly(filters) {
-  return fetchKpi('aql-weekly/', filters);
+export async function getAqlWeekly(filters, context) {
+  return fetchKpi('aql-weekly/', filters, context);
 }
 
 /** Total audited pieces per week. */
-export async function getAuditedPieces(filters) {
-  return fetchKpi('audited-pieces/', filters);
+export async function getAuditedPieces(filters, context) {
+  return fetchKpi('audited-pieces/', filters, context);
 }
 
 /** Acceptance / Rejection rate per production line (team). */
-export async function getAcReRateByLine(filters) {
-  return fetchKpi('ac-re-rate-by-line/', filters);
+export async function getAcReRateByLine(filters, context) {
+  return fetchKpi('ac-re-rate-by-line/', filters, context);
 }
 
 /** Seconds spent on rework per inspection — requires capture data. */
-export async function getSecondsRework(filters) {
-  return fetchKpi('seconds-rework/', filters);
+export async function getSecondsRework(filters, context) {
+  return fetchKpi('seconds-rework/', filters, context);
 }
 
 /** Performance (% accepted) grouped by customer. */
-export async function getPerformanceByCustomer(filters) {
-  return fetchKpi('performance-by-customer/', filters);
+export async function getPerformanceByCustomer(filters, context) {
+  return fetchKpi('performance-by-customer/', filters, context);
 }
 
 /** Performance (% accepted) grouped by production line (team). */
-export async function getPerformanceByLine(filters) {
-  return fetchKpi('performance-by-line/', filters);
+export async function getPerformanceByLine(filters, context) {
+  return fetchKpi('performance-by-line/', filters, context);
 }
 
 /** Top defect types by frequency — requires capture defect types. */
-export async function getTopDefects(filters) {
-  return fetchKpi('top-defects/', filters);
+export async function getTopDefects(filters, context) {
+  return fetchKpi('top-defects/', filters, context);
 }
 
 /** Fabric defect distribution — requires fabric inspection data. */
-export async function getFabricDefects(filters) {
-  return fetchKpi('fabric-defects/', filters);
+export async function getFabricDefects(filters, context) {
+  return fetchKpi('fabric-defects/', filters, context);
 }
 
 /** Defect breakdown by style type — requires capture defect types. */
-export async function getDefectsByStyleType(filters) {
-  return fetchKpi('defects-by-style-type/', filters);
+export async function getDefectsByStyleType(filters, context) {
+  return fetchKpi('defects-by-style-type/', filters, context);
 }
 
 /** Pass vs. reject count distribution across all inspections. */
-export async function getPassRejectDistribution(filters) {
-  return fetchKpi('pass-reject-distribution/', filters);
+export async function getPassRejectDistribution(filters, context) {
+  return fetchKpi('pass-reject-distribution/', filters, context);
 }
 
 /** Rejected pieces evolution over weeks. */
-export async function getRejectedEvolution(filters) {
-  return fetchKpi('rejected-evolution/', filters);
+export async function getRejectedEvolution(filters, context) {
+  return fetchKpi('rejected-evolution/', filters, context);
 }
 
 /** Container inspection status counts. */
-export async function getContainersByState(filters) {
-  return fetchKpi('containers-by-state/', filters);
+export async function getContainersByState(filters, context) {
+  return fetchKpi('containers-by-state/', filters, context);
 }
 
 /** Overall defect rate (defects per 100 units inspected). */
-export async function getDefectRate(filters) {
-  return fetchKpi('defect-rate/', filters);
+export async function getDefectRate(filters, context) {
+  return fetchKpi('defect-rate/', filters, context);
 }
 
 // ─── Volatile (Excel upload) KPIs ─────────────────────────────────────────────
@@ -283,7 +287,7 @@ export async function fetchVolatileKpis(file) {
  * @param {object} filters - Optional shared filters for all KPIs
  * @returns {Promise<object>} { aqlByStyle, aqlWeekly, auditedPieces, ... }
  */
-export async function fetchAllKpis(filters = {}) {
+export async function fetchAllKpis(filters = {}, context) {
   const kpiMap = {
     aqlByStyle: getAqlByStyle,
     aqlWeekly: getAqlWeekly,
@@ -303,7 +307,7 @@ export async function fetchAllKpis(filters = {}) {
 
   const entries = Object.entries(kpiMap).map(([key, fn]) => [
     key,
-    fn(filters).catch((err) => unavailableKpi(err.message)),
+    fn(filters, context).catch((err) => unavailableKpi(err.message)),
   ]);
 
   const results = await Promise.allSettled(entries.map(([, p]) => p));

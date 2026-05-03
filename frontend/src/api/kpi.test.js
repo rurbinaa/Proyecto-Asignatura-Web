@@ -340,3 +340,96 @@ describe('kpi.js - live DTO mapping boundary', () => {
     expect(result).toEqual(dto);
   });
 });
+
+// ─── Task 4.1: context parameter support ───────────────────────────────────
+describe('kpi.js - context parameter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('includes context=plant in the URL query string for fetchKpi', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await fetchKpi('aql-by-style/', {}, 'plant');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=plant');
+    // Verify it's a proper query string parameter, not part of the path
+    expect(url).toMatch(/[?&]context=plant/);
+  });
+
+  it('includes context=customer in the URL query string for fetchKpi', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await fetchKpi('aql-by-style/', {}, 'customer');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=customer');
+  });
+
+  it('does NOT include context param when not provided (backward compatibility)', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await fetchKpi('aql-by-style/');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).not.toContain('context=');
+    expect(url).not.toMatch(/context/);
+  });
+
+  it('fetchAllKpis passes context to all 14 sub-calls via fetchKpi', async () => {
+    // Each individual KPI function calls fetchKpi, which calls axiosClient.get
+    // We mock axiosClient.get to resolve for all 14 calls
+    for (let i = 0; i < 14; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis({}, 'plant');
+
+    // All 14 calls should include context=plant
+    const calls = axiosClient.get.mock.calls;
+    expect(calls).toHaveLength(14);
+    calls.forEach(([url]) => {
+      expect(url).toContain('context=plant');
+    });
+  });
+
+  it('fetchAllKpis with context=customer passes it to all sub-calls', async () => {
+    for (let i = 0; i < 14; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis({}, 'customer');
+
+    const calls = axiosClient.get.mock.calls;
+    expect(calls).toHaveLength(14);
+    calls.forEach(([url]) => {
+      expect(url).toContain('context=customer');
+    });
+  });
+
+  it('fetchAllKpis without context does NOT inject context param', async () => {
+    for (let i = 0; i < 14; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis();
+
+    const calls = axiosClient.get.mock.calls;
+    expect(calls).toHaveLength(14);
+    calls.forEach(([url]) => {
+      expect(url).not.toContain('context=');
+    });
+  });
+
+  it('context coexists with other filter params in the URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await fetchKpi('aql-by-style/', { week: '5', team: '1' }, 'plant');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('week=5');
+    expect(url).toContain('team=1');
+    expect(url).toContain('context=plant');
+  });
+});
