@@ -1,7 +1,15 @@
+import QcfaKpiDashboard from './QcfaKpiDashboard';
+
 /**
  * CustomerDashboard — QC FA Customer view.
- * Placeholder. Full implementation in Phase 4.
+ * Fetches all QC FA KPIs with context=customer (table_type='QFC').
  */
 export default function CustomerDashboard({ volatileData, volatileFile }) {
-  return <div>CustomerDashboard</div>;
+  return (
+    <QcfaKpiDashboard
+      context="customer"
+      volatileData={volatileData}
+      volatileFile={volatileFile}
+    />
+  );
 }

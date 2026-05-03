@@ -1,7 +1,15 @@
+import QcfaKpiDashboard from './QcfaKpiDashboard';
+
 /**
  * PlantDashboard — QC FA Plant view.
- * Placeholder. Full implementation in Phase 4.
+ * Fetches all QC FA KPIs with context=plant (table_type='QFA').
  */
 export default function PlantDashboard({ volatileData, volatileFile }) {
-  return <div>PlantDashboard</div>;
+  return (
+    <QcfaKpiDashboard
+      context="plant"
+      volatileData={volatileData}
+      volatileFile={volatileFile}
+    />
+  );
 }
