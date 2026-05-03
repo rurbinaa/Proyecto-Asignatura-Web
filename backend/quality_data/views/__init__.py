@@ -76,8 +76,9 @@ def _df_to_json_safe(df):
     for col in df.select_dtypes(include=['datetime64', 'datetimetz']).columns:
         df[col] = df[col].dt.strftime('%Y-%m-%d')
 
-    # Replace NaN/NaT with None for JSON compatibility
-    df = df.where(pd.notna(df), None)
+    # Replace NaN/NaT with None for JSON compatibility. 
+    # Must cast to object first, otherwise float columns convert None back to NaN
+    df = df.astype(object).where(pd.notna(df), None)
 
     # Convert to dicts — pandas already handles numpy→Python type conversion
     return df.to_dict('records')
