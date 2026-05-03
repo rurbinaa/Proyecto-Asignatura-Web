@@ -72,8 +72,8 @@ vi.mock('./Components/ExcelUploader.jsx', () => ({
   ),
 }));
 
-vi.mock('./views/DashboardView.jsx', () => ({
-  default: () => <div data-testid="dashboard-view">DashboardView</div>,
+vi.mock('./views/DashboardShell.jsx', () => ({
+  default: () => <div data-testid="dashboard-shell">DashboardShell</div>,
 }));
 
 vi.mock('./assets/RA-ICON_embed.svg?url', () => ({
@@ -243,7 +243,7 @@ describe('App', () => {
   // Volatile (fast-mode) dashboard
   // -----------------------------------------------------------------------
   describe('volatile dashboard flow', () => {
-    it('should switch from ExcelUploader to DashboardView when fast-mode is triggered', () => {
+    it('should switch from ExcelUploader to DashboardShell when fast-mode is triggered', () => {
       mockAuthState({
         user: { id: 2, email: 'mgr@test.com', role: 'manager' },
         isAuthenticated: true,
@@ -257,7 +257,7 @@ describe('App', () => {
         screen.getByTestId('btn-dashboard-fast').click();
       });
 
-      expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-shell')).toBeInTheDocument();
       expect(screen.queryByTestId('excel-uploader')).not.toBeInTheDocument();
     });
   });

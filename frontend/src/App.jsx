@@ -4,7 +4,7 @@ import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
-import DashboardView from './views/DashboardView.jsx';
+import DashboardShell from './views/DashboardShell.jsx';
 import faviconUrl from './assets/RA-ICON_embed.svg?url';
 
 import { AuthProvider } from './contexts/AuthContext.jsx'; 
@@ -85,7 +85,7 @@ function AppContent() {
           )}
 
           {resolvedActiveView === 'dashboard' && (
-            <DashboardView volatileData={volatileData} volatileFile={volatileFile} />
+            <DashboardShell volatileData={volatileData} volatileFile={volatileFile} />
           )}
 
         </main>
