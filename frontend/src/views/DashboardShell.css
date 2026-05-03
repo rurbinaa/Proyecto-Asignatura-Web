@@ -1,0 +1,41 @@
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #f3f4f6;
+}
+
+.dashboard-shell-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 16px 16px 0;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dashboard-shell-tab {
+  padding: 12px 24px;
+  background-color: transparent;
+  color: #6b7280;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dashboard-shell-tab:hover {
+  color: #374151;
+  background-color: #f9fafb;
+}
+
+.dashboard-shell-tab.active {
+  color: #3b82f6;
+  border-bottom: 3px solid #3b82f6;
+}
+
+.dashboard-shell-content {
+  flex: 1;
+  overflow-y: auto;
+}

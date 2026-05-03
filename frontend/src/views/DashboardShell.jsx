@@ -1,4 +1,5 @@
 import { useState, Suspense, lazy } from 'react';
+import './DashboardShell.css';
 
 const PlantDashboard = lazy(() => import('./dashboards/PlantDashboard'));
 const CustomerDashboard = lazy(() => import('./dashboards/CustomerDashboard'));
