@@ -850,20 +850,30 @@ def _sync_defects_timewindow(excel_rows, model_class, table_type,
         return
     
     # For time-window, the parent records were already deleted (CASCADE deletes defects)
-    # So we just need to create new defect records for the new parent records
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
+    # So we just need to create new defect records for the new parent records.
+    # Forward table_type so the downstream handler queries the correct parent subset
+    # (QFA vs QFC) and picks the right defect field list for each sheet.
+    _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                              table_type=table_type, color_map=color_map)
 
 
-def _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=None):
+def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                              table_type=None, color_map=None):
     """
     Helper that delegates defect creation to handler_service.
-    
+
     The handler_service.bulk_insert functions already handle creating
     InspectionDefect/ContainerInspectionDefect records. We reuse that logic
     by passing the Excel rows through it.
 
     For QualityQcFa (time-window strategy): parent records are ALREADY created
     by apply_timewindow, so we use defects_only=True to only create defects.
+
+    Args:
+        table_type: 'QFA' for QC FA Plant, 'QFC' for QC FA Customer.
+            When provided, it overrides DataFrame-based detection and also
+            determines which defect field list to use. This is critical for
+            the time-window path where Excel rows lack a table_type column.
     """
     import pandas as pd
     from excel_importer.handler_service import (
@@ -871,29 +881,36 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=
         bulk_insert_container,
     )
     from quality_data.models import QualityQcFa, Container
-    
+
     if not excel_rows or not defect_fields:
         return
-    
+
     # Convert list of dicts to DataFrame (handler_service expects DataFrame)
     df = pd.DataFrame(excel_rows)
-    
+
     # Get column lists from sheet_configs
     numeric_cols = _get_numeric_columns_for_model(model_class)
     not_numeric_cols = _get_not_numeric_columns_for_model(model_class)
-    
-    # Determine table_type for QualityQcFa
-    table_type = None
-    if model_class == QualityQcFa:
-        # Check if this is QFA or QFC based on data
+
+    # Determine table_type for QualityQcFa.
+    # Prefer the caller-supplied value; fall back to DataFrame detection
+    # (which only works when the row dicts already carry the column).
+    if table_type is None and model_class == QualityQcFa:
         table_types = df['table_type'].unique() if 'table_type' in df.columns else []
         table_type = table_types[0] if len(table_types) == 1 else 'QFA'
-    
+
     # Call the appropriate handler based on model
     if model_class == QualityQcFa:
-        # Get QC defect field names
-        qc_defect_fields = _get_defect_fields('qc_fa_plant') or defect_fields
-        
+        # Use caller-provided defect_fields when available; fall back to the
+        # sheet-specific list. This preserves testability and lets callers
+        # scope defect processing without pulling in the full sheet list.
+        if defect_fields:
+            qc_defect_fields = defect_fields
+        elif table_type == 'QFC':
+            qc_defect_fields = _get_defect_fields('qc_fa_customer')
+        else:
+            qc_defect_fields = _get_defect_fields('qc_fa_plant')
+
         # For QC FA time-window: parent records are already created by apply_timewindow.
         # Use defects_only=True to only create InspectionDefect records.
         handler_bulk_insert_qcfa(

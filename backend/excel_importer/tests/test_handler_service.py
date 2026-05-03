@@ -283,6 +283,111 @@ class BulkInsertDefectsOnlyTest(TestCase):
         self.assertEqual(InspectionDefect.objects.count(), 0)
 
 
+class BulkInsertDefectsOnlyAutoSeedTest(TestCase):
+    """
+    Tests that _bulk_insert_defects_only auto-creates DefectType records
+    that don't exist yet, instead of silently skipping those defects.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="green", is_active=True)
+
+    def test_auto_creates_missing_defect_types(self):
+        """DefectType records are auto-seeded when they don't exist in DB."""
+        # Pre-condition: no DefectType named "auto_def" exists
+        self.assertEqual(DefectType.objects.filter(name="auto_def").count(), 0)
+
+        # Create parent QualityQcFa
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01",
+            week=10,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=9999,
+            style="AUTO",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-03-01",
+                "po": 9999,
+                "style": "AUTO",
+                "team": 1,
+                "color": "green",
+                "auto_def": 7,
+            }
+        ])
+
+        # Call with a defect field that has NO pre-existing DefectType
+        _bulk_insert_defects_only(df, ["auto_def"], "QFA")
+
+        # DefectType should now exist
+        self.assertEqual(DefectType.objects.filter(name="auto_def").count(), 1)
+
+        # InspectionDefect should have been created
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.defect_type.name, "auto_def")
+        self.assertEqual(defect.amount, 7)
+
+    def test_auto_seed_idempotent(self):
+        """Calling twice with the same missing defect field is idempotent."""
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-02",
+            week=10,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=8888,
+            style="IDEM",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=0,
+            aql=2.0,
+            pass_or_fail="PASS",
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-03-02",
+                "po": 8888,
+                "style": "IDEM",
+                "team": 1,
+                "color": "green",
+                "idem_def": 3,
+            }
+        ])
+
+        # First call — auto-creates DefectType
+        _bulk_insert_defects_only(df, ["idem_def"], "QFA")
+        self.assertEqual(DefectType.objects.filter(name="idem_def").count(), 1)
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+
+        # Second call — should NOT duplicate DefectType, should NOT crash
+        _bulk_insert_defects_only(df, ["idem_def"], "QFA")
+        self.assertEqual(DefectType.objects.filter(name="idem_def").count(), 1)
+
+
 class BulkInsertDefectsOnlyDedupeTest(TestCase):
     """Regression test: duplicate (inspection, defect_type) should not crash."""
 

@@ -5,6 +5,8 @@ from quality_data.models import (
     SecondsA4,
     Container,
     Color,
+    DefectType,
+    InspectionDefect,
     ExcelSyncSession,
 )
 from excel_importer.sync_service import (
@@ -19,6 +21,8 @@ from excel_importer.sync_service import (
     apply_session,
     create_session_from_dataframes,
     reject_session,
+    _sync_defects_via_handler,
+    _sync_defects_timewindow,
 )
 
 
@@ -455,6 +459,194 @@ class ApplyTimeWindowTest(TestCase):
 
         # Both records exist
         self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 2)
+
+
+class ApplyTimewindowDefectCreationTest(TestCase):
+    """
+    Integration tests verifying that apply_timewindow creates
+    InspectionDefect records when defect_fields are provided.
+    Regression coverage for the bug where defects were silently
+    skipped during the time-window sync strategy.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="navy", is_active=True)
+
+    def _make_excel_rows(self, **overrides):
+        """Build QC FA row dicts with sensible defaults and no defect values."""
+        base = {
+            "date_1": "2025-03-15",
+            "week": 12,
+            "customer": "CUST",
+            "team": 1,
+            "coord": "TEST",
+            "po": 1001,
+            "style": "STYLE-A",
+            "batch": 1,
+            "color": "navy",
+            "qty": 100,
+            "seconds": 10,
+            "accepted": 90,
+            "rejected": 10,
+            "sample": 10,
+            "defects_total": 0,
+            "aql": 2.5,
+            "pass_or_fail": "PASS",
+        }
+        base.update(overrides)
+        return [base]
+
+    def _common_numeric_cols(self):
+        return [
+            "week", "team", "po", "batch", "qty", "seconds",
+            "accepted", "rejected", "sample", "defects_total", "aql",
+        ]
+
+    def _common_not_numeric_cols(self):
+        return ["date_1", "customer", "coord", "style", "color", "pass_or_fail"]
+
+    def test_plant_defects_created_with_table_type_qfa(self):
+        """apply_timewindow with table_type='QFA' creates InspectionDefect records."""
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+        DefectType.objects.create(name="open_seam", is_active=True)
+
+        excel_rows = self._make_excel_rows(broken_stitch=3, open_seam=2, defects_total=5)
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            defect_fields=["broken_stitch", "open_seam"],
+            color_map={self.color.name: self.color},
+        )
+
+        # Parent record created
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 1)
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(parent.table_type, "QFA")
+
+        # Defects created
+        self.assertEqual(InspectionDefect.objects.count(), 2)
+        defects = InspectionDefect.objects.filter(inspection=parent)
+        defect_map = {d.defect_type.name: d.amount for d in defects}
+        self.assertEqual(defect_map.get("broken_stitch"), 3)
+        self.assertEqual(defect_map.get("open_seam"), 2)
+
+    def test_customer_defects_table_type_qfc(self):
+        """apply_timewindow with table_type='QFC' creates defects for customer sheet.
+
+        This directly tests the bug fix: _sync_defects_timewindow now forwards
+        table_type, so _sync_defects_via_handler queries parents with the
+        correct table_type ('QFC') instead of defaulting to 'QFA'.
+        """
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+
+        excel_rows = self._make_excel_rows(broken_stitch=3, defects_total=5)
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFC",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            defect_fields=["broken_stitch"],
+            color_map={self.color.name: self.color},
+        )
+
+        # Parent created with correct table_type
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFC").count(), 1)
+        parent = QualityQcFa.objects.get(table_type="QFC")
+
+        # Defect is linked to this parent, not to a (non-existent) QFA parent
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+        self.assertEqual(defect.amount, 3)
+
+    def test_defect_on_multiple_rows(self):
+        """Defects are created for each row that has matching parents."""
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+
+        excel_rows = [
+            self._make_excel_rows(po=1001, broken_stitch=5)[0],
+            self._make_excel_rows(po=1002, broken_stitch=7)[0],
+        ]
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            defect_fields=["broken_stitch"],
+            color_map={self.color.name: self.color},
+        )
+
+        parents = QualityQcFa.objects.filter(table_type="QFA").order_by("po")
+        self.assertEqual(parents.count(), 2)
+        self.assertEqual(InspectionDefect.objects.count(), 2)
+
+        amounts = {
+            d.inspection.po: d.amount
+            for d in InspectionDefect.objects.select_related("inspection")
+        }
+        self.assertEqual(amounts.get(1001), 5)
+        self.assertEqual(amounts.get(1002), 7)
+
+    def test_sync_defects_via_handler_forwards_table_type(self):
+        """
+        _sync_defects_via_handler uses caller-supplied table_type
+        and picks the correct defect field list for QFC.
+        """
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+
+        # Create a QFC parent first (simulating apply_timewindow already ran)
+        _ = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-04-01",
+            week=14,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=5001,
+            style="QFC-STYLE",
+            batch=1,
+            color=self.color,
+            qty=200,
+            seconds=20,
+            accepted=180,
+            rejected=20,
+            sample=20,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        excel_rows = [
+            {
+                "date_1": "2025-04-01",
+                "po": 5001,
+                "style": "QFC-STYLE",
+                "team": 1,
+                "color": "navy",
+                "broken_stitch": 4,
+            }
+        ]
+
+        _sync_defects_via_handler(
+            excel_rows,
+            QualityQcFa,
+            defect_fields=["broken_stitch"],
+            table_type="QFC",
+            color_map={self.color.name: self.color},
+        )
+
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection.table_type, "QFC")
+        self.assertEqual(defect.amount, 4)
 
 
 class SessionManagementTest(TestCase):

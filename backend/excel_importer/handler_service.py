@@ -210,7 +210,19 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     if df.empty:
         return
 
+    # ── Resolve DefectType records, auto-creating any that are missing ──
+    # Without this, the sync silently skips defects when DefectType records
+    # haven't been pre-seeded (e.g. fresh database, first-time import).
     defect_types = DefectType.objects.filter(name__in=defeacts_fields)
+    existing_names = set(defect_types.values_list('name', flat=True))
+    missing_names = [n for n in defeacts_fields if n not in existing_names]
+    if missing_names:
+        DefectType.objects.bulk_create(
+            [DefectType(name=n, is_active=True) for n in missing_names],
+            ignore_conflicts=True,
+        )
+        # Re-fetch to get PKs for the newly created DefectType records
+        defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
 
     # ── Batch-load ALL matching QualityQcFa parents in 1 query ──
