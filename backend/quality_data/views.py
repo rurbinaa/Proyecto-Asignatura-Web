@@ -94,6 +94,33 @@ def _serialize_envelope(envelope_serializer_cls, payload):
     serializer = envelope_serializer_cls({"data": payload})
     return serializer.data
 
+
+def _resolve_context_table_type(context_raw):
+    """
+    Map a context query parameter value to a QualityQcFa table_type.
+
+    Args:
+        context_raw: Raw string from query param (may be None, empty, or any case).
+
+    Returns:
+        'QFA' for plant (or omitted/empty), 'QFC' for customer.
+
+    Raises:
+        ValidationError if context is not a recognized value.
+    """
+    context = str(context_raw).strip().lower() if context_raw else "plant"
+    if context == "":
+        context = "plant"
+
+    if context == "plant":
+        return "QFA"
+    elif context == "customer":
+        return "QFC"
+    else:
+        raise rest_framework_exceptions.ValidationError({
+            "context": f"Unsupported context '{context}'. Valid values: plant, customer."
+        })
+
 class Process(APIView):
     """
     Process an uploaded Excel file for preview (V2 workflow).
@@ -428,6 +455,22 @@ class KpiFilterMixin:
             return 'inspection__'
         return ''
 
+    def _apply_context_filter(self, queryset, prefix):
+        """
+        Apply context filter to isolate QFA (Plant) or QFC (Customer) data.
+
+        Supported values:
+            - 'plant'    → table_type='QFA'
+            - 'customer' → table_type='QFC'
+            - omitted/empty → defaults to 'QFA' (plant)
+
+        Raises:
+            ValidationError if context value is unsupported.
+        """
+        context_raw = self.request.query_params.get('context')
+        table_type = _resolve_context_table_type(context_raw)
+        return queryset.filter(**{f'{prefix}table_type': table_type})
+
     def get_filtered_queryset(self, queryset):
         """
         Apply filters from query params to the given queryset.
@@ -441,6 +484,9 @@ class KpiFilterMixin:
         request = self.request
         filters = {}
         prefix = self._get_filter_prefix(queryset)
+
+        # context: plant → QFA, customer → QFC (applied before other filters)
+        queryset = self._apply_context_filter(queryset, prefix)
 
         # date_range: "start_date,end_date" → date_1__gte, date_1__lte
         date_range = request.query_params.get('date_range')
@@ -1188,21 +1234,33 @@ class FilterOptionsView(APIView):
 
     Returns distinct filter choices for week, team, style, color, customer, batch
     from the QualityQcFa table. Used to populate dynamic filter selects/datalists.
+
+    Supports context parameter:
+        - ?context=plant → filter by table_type='QFA' (default)
+        - ?context=customer → filter by table_type='QFC'
     """
 
     def get(self, request):
+        # Resolve context parameter → table_type filter
+        try:
+            table_type = _resolve_context_table_type(request.query_params.get('context'))
+        except rest_framework_exceptions.ValidationError as e:
+            return Response(e.detail, status=http_status.HTTP_400_BAD_REQUEST)
+
+        base_qs = QualityQcFa.objects.filter(table_type=table_type)
+
         weeks = list(
-            QualityQcFa.objects.values_list('week', flat=True)
+            base_qs.values_list('week', flat=True)
             .distinct()
             .order_by('week')
         )
         teams = list(
-            QualityQcFa.objects.values_list('team', flat=True)
+            base_qs.values_list('team', flat=True)
             .distinct()
             .order_by('team')
         )
         styles = list(
-            QualityQcFa.objects.values_list('style', flat=True)
+            base_qs.values_list('style', flat=True)
             .distinct()
             .order_by('style')
         )
@@ -1213,12 +1271,12 @@ class FilterOptionsView(APIView):
             .order_by('name')
         )
         customers = list(
-            QualityQcFa.objects.values_list('customer', flat=True)
+            base_qs.values_list('customer', flat=True)
             .distinct()
             .order_by('customer')
         )
         batches = list(
-            QualityQcFa.objects.values_list('batch', flat=True)
+            base_qs.values_list('batch', flat=True)
             .distinct()
             .order_by('batch')
         )
