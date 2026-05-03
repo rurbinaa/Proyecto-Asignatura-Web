@@ -28,7 +28,7 @@ describe('request interceptor — Authorization header', () => {
     expect(user).toEqual({
       id: 1,
       email: 'test@example.com',
-      role: 'operator',
+      role: 'manager',
     });
   });
 

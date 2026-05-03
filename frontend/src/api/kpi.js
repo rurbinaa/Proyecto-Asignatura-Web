@@ -1,5 +1,13 @@
 import axiosClient from './axiosClient';
 
+function unavailableKpi(reason) {
+  return {
+    status: 'unavailable',
+    reason: reason || 'KPI unavailable',
+    data: null,
+  };
+}
+
 /**
  * Unwrap a nested KPI value object to a scalar.
  * Handles { label: string, value: number } -> number, or returns the value as-is if already scalar.
@@ -295,7 +303,7 @@ export async function fetchAllKpis(filters = {}) {
 
   const entries = Object.entries(kpiMap).map(([key, fn]) => [
     key,
-    fn(filters).catch((err) => ({ error: err.message })),
+    fn(filters).catch((err) => unavailableKpi(err.message)),
   ]);
 
   const results = await Promise.allSettled(entries.map(([, p]) => p));
@@ -307,7 +315,7 @@ export async function fetchAllKpis(filters = {}) {
     if (result.status === 'fulfilled') {
       kpis[key] = result.value;
     } else {
-      kpis[key] = { error: result.reason?.message ?? 'Unknown error' };
+      kpis[key] = unavailableKpi(result.reason?.message ?? 'Unknown error');
     }
   });
 

@@ -25,38 +25,11 @@ export const handlers = [
       );
     }
     return HttpResponse.json(
-      { id: 1, email: 'test@example.com', role: 'operator' },
+      { id: 1, email: 'test@example.com', role: 'manager' },
     );
   }),
 
   http.post('http://localhost:8000/api/auth/logout/', () => {
     return HttpResponse.json({ detail: 'Logged out' });
   }),
-
-  // ── Capture ───────────────────────────────────────────────────
-  http.post('http://localhost:8000/api/v1/inspections/', async ({ request }) => {
-    const auth = request.headers.get('Authorization');
-    if (!auth) {
-      return HttpResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 },
-      );
-    }
-    const body = await request.json();
-    return HttpResponse.json({ id: 42, ...body }, { status: 201 });
-  }),
-
-  http.post('http://localhost:8000/api/v1/defects/', async ({ request }) => {
-    const body = await request.json();
-    return HttpResponse.json({ id: 1, ...body }, { status: 201 });
-  }),
-
-  http.post(
-    'http://localhost:8000/api/v1/inspections/:id/close_inspection/',
-    ({ params }) => {
-      return HttpResponse.json(
-        { id: Number(params.id), status: 'closed', result: 'PASS' },
-      );
-    },
-  ),
 ];

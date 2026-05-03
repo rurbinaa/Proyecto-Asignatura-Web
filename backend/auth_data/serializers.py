@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
@@ -47,6 +48,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Replace email with username for parent authentication
         attrs['username'] = user.username
         del attrs['email']
+
+        if user.profile.role == 'operator':
+            raise PermissionDenied('Operator role is no longer supported.')
         
         data = super().validate(attrs)
         data['role'] = self.user.profile.role

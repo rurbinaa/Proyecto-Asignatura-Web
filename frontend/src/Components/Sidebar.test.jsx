@@ -38,23 +38,6 @@ describe('Sidebar', () => {
     });
   });
 
-  describe('role-based navigation - operator', () => {
-    it('shows Touch Capture button for operator role', () => {
-      render(<Sidebar {...defaultProps} userRole="operator" />);
-      expect(screen.getByText('Touch Capture')).toBeInTheDocument();
-    });
-
-    it('does NOT show Import Batches for operator role', () => {
-      render(<Sidebar {...defaultProps} userRole="operator" />);
-      expect(screen.queryByText('Import Batches')).not.toBeInTheDocument();
-    });
-
-    it('does NOT show Dashboard for operator role', () => {
-      render(<Sidebar {...defaultProps} userRole="operator" />);
-      expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
-    });
-  });
-
   describe('role-based navigation - manager', () => {
     it('shows Import Batches button for manager role', () => {
       render(<Sidebar {...defaultProps} userRole="manager" />);
@@ -66,7 +49,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
     });
 
-    it('does NOT show Touch Capture for manager role', () => {
+    it('does NOT show Touch Capture action anymore', () => {
       render(<Sidebar {...defaultProps} userRole="manager" />);
       expect(screen.queryByText('Touch Capture')).not.toBeInTheDocument();
     });
@@ -104,19 +87,6 @@ describe('Sidebar', () => {
       );
       fireEvent.click(screen.getByText('Import Batches'));
       expect(setActiveView).toHaveBeenCalledWith('excel');
-    });
-
-    it('calls setActiveView with "capture" when Touch Capture is clicked', () => {
-      const setActiveView = vi.fn();
-      render(
-        <Sidebar
-          {...defaultProps}
-          userRole="operator"
-          setActiveView={setActiveView}
-        />,
-      );
-      fireEvent.click(screen.getByText('Touch Capture'));
-      expect(setActiveView).toHaveBeenCalledWith('capture');
     });
 
     it('calls setActiveView with "dashboard" when Dashboard is clicked', () => {

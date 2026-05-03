@@ -106,7 +106,7 @@ describe('AuthProvider', () => {
     });
 
     it('should restore user when a valid token exists', async () => {
-      const mockUser = { id: 1, email: 'op@test.com', role: 'operator' };
+      const mockUser = { id: 1, email: 'mgr@test.com', role: 'manager' };
       tokenStore.access = 'valid-token';
       getCurrentUserRequest.mockResolvedValue(mockUser);
 
@@ -136,7 +136,7 @@ describe('AuthProvider', () => {
   // -----------------------------------------------------------------------
   describe('login', () => {
     it('should call loginRequest with credentials, set tokens, and populate user on success', async () => {
-      const mockUser = { id: 1, email: 'test@test.com', role: 'operator' };
+      const mockUser = { id: 1, email: 'test@test.com', role: 'manager' };
       const credentials = { email: 'test@test.com', password: 's3cret' };
 
       loginRequest.mockResolvedValue({ access: 'new-token', refresh: 'new-refresh' });
@@ -191,7 +191,7 @@ describe('AuthProvider', () => {
   // -----------------------------------------------------------------------
   describe('logout', () => {
     async function arrangeAuthenticated() {
-      const mockUser = { id: 1, email: 'op@test.com', role: 'operator' };
+      const mockUser = { id: 1, email: 'mgr@test.com', role: 'manager' };
       tokenStore.access = 'has-token';
       getCurrentUserRequest.mockResolvedValue(mockUser);
 
@@ -255,7 +255,7 @@ describe('AuthProvider', () => {
   // -----------------------------------------------------------------------
   describe('auth-unauthorized event', () => {
     async function arrangeAuthenticated() {
-      const mockUser = { id: 1, email: 'op@test.com', role: 'operator' };
+      const mockUser = { id: 1, email: 'mgr@test.com', role: 'manager' };
       tokenStore.access = 'has-token';
       getCurrentUserRequest.mockResolvedValue(mockUser);
 
