@@ -4,6 +4,75 @@
  * All functions are side-effect free, deterministic, and return null for error/null inputs.
  */
 
+// ─── Chart-State Contract Helpers ──────────────────────────────────────────────
+
+/**
+ * Create a ready chart-state with data payload.
+ * @template T
+ * @param {T} data - The chart-ready data
+ * @returns {{ status: 'ready', data: T }}
+ */
+export function readyState(data) {
+  return { status: 'ready', data };
+}
+
+/**
+ * Create an empty chart-state with a descriptive message.
+ * @param {string} [message] - Custom message
+ * @returns {{ status: 'empty', message: string }}
+ */
+export function emptyState(message) {
+  return { status: 'empty', message: message || 'No data available for the selected filters' };
+}
+
+/**
+ * Create an unavailable chart-state with reason and message.
+ * @param {string} reason - Machine-readable reason code
+ * @param {string} [message] - Human-readable message (falls back to reason)
+ * @returns {{ status: 'unavailable', message: string, reason: string }}
+ */
+export function unavailableState(reason, message) {
+  return {
+    status: 'unavailable',
+    reason,
+    message: message || `Unavailable: ${reason}`,
+  };
+}
+
+/**
+ * Resolve raw API input into a chart-state object.
+ * - Explicit unavailable objects pass through unchanged.
+ * - null/undefined → empty
+ * - Error objects → unavailable
+ * - Transform result is empty → empty
+ * - Transform result is non-empty → ready
+ *
+ * @template T
+ * @param {any} input - Raw API response or DTO
+ * @param {(input: any) => T[]} transformFn - Function that extracts chart-ready array
+ * @returns {import('./chartTransforms').ChartState<T>}
+ */
+export function resolveChartState(input, transformFn) {
+  // Pass through explicit unavailable objects
+  if (input && typeof input === 'object' && input.status === 'unavailable') {
+    return input;
+  }
+  // Null/undefined → empty
+  if (input == null) {
+    return emptyState();
+  }
+  // Error objects → unavailable
+  if (input.error) {
+    return unavailableState('api_error', input.error);
+  }
+  // Transform and check result
+  const data = transformFn(input);
+  if (!data || (Array.isArray(data) && data.length === 0)) {
+    return emptyState();
+  }
+  return readyState(data);
+}
+
 /**
  * Transform pass/reject distribution for DonutChart.
  * API returns: [{name: "PASS", value: 85}, {name: "REJECT", value: 15}]
@@ -14,6 +83,27 @@ export function transformPassReject(data) {
     name: item.name,
     value: item.value,
   }));
+}
+
+/**
+ * Transform AQL by team/line for BarChart horizontal.
+ * API returns: {data: [{label: "Team-1", value: 1.5}, ...]}
+ * Handles explicit unavailable pass-through for non-live modes.
+ */
+export function transformAqlByTeam(data) {
+  // Pass through explicit unavailable objects
+  if (data && typeof data === 'object' && data.status === 'unavailable') {
+    return data;
+  }
+  if (!data || data.error) return null;
+  const arr = data.data || data;
+  return arr
+    .map((item) => ({
+      label: item.label,
+      value: Number(item.value) || 0,
+    }))
+    .filter((item) => item.value > 0)
+    .slice(0, 12);
 }
 
 /**
@@ -110,13 +200,15 @@ export function transformPerformanceByLine(data) {
 /**
  * Transform top defects for horizontal BarChart.
  * API returns: [{label: "Loose Thread", value: 234}, ...]
+ * Returns chart-state: ready | empty | unavailable
  */
 export function transformTopDefects(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
+  return resolveChartState(data, (d) =>
+    (d.result || d).map((item) => ({
+      label: item.label,
+      value: item.value,
+    })),
+  );
 }
 
 /**
@@ -146,14 +238,16 @@ export function transformContainersByState(data) {
 /**
  * Transform defects by style × type for Heatmap.
  * API returns: [{x: "Style-2", y: "Loose Thread", value: 45}, ...]
+ * Returns chart-state: ready | empty | unavailable
  */
 export function transformDefectsByStyleType(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    x: item.x,
-    y: item.y,
-    value: item.value,
-  }));
+  return resolveChartState(data, (d) =>
+    (d.result || d).map((item) => ({
+      x: item.x,
+      y: item.y,
+      value: item.value,
+    })),
+  );
 }
 
 /**
@@ -170,26 +264,50 @@ export function transformSecondsRework(data) {
 
 /**
  * Transform defect composition for DonutChart.
+ * Groups minor categories (beyond top 6) into "Other" slice with metadata.
  * API returns: [{name: "Loose Thread", value: 45}, {name: "Broken Stitch", value: 32}, ...]
+ * Returns chart-state: ready | empty | unavailable
  */
 export function transformDefectComposition(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    name: item.name,
-    value: item.value,
-  }));
+  return resolveChartState(data, (d) => {
+    const raw = d.result || d;
+    // Sort descending by value
+    const sorted = [...raw].sort((a, b) => (b.value || 0) - (a.value || 0));
+    const TOP_N = 6;
+
+    if (sorted.length <= TOP_N) {
+      return sorted.map((item) => ({ name: item.name, value: item.value }));
+    }
+
+    const top = sorted.slice(0, TOP_N);
+    const rest = sorted.slice(TOP_N);
+
+    const otherValue = rest.reduce((sum, item) => sum + (item.value || 0), 0);
+    const otherSlice = {
+      name: 'Other',
+      value: otherValue,
+      groupedItems: rest.map((item) => ({ name: item.name, value: item.value })),
+    };
+
+    return [
+      ...top.map((item) => ({ name: item.name, value: item.value })),
+      otherSlice,
+    ];
+  });
 }
 
 /**
  * Transform defect trend top 3 for LineChart.
  * API returns: [{name: "Loose Thread", data: [{x: 10, y: 5}, ...]}, ...]
+ * Returns chart-state: ready | empty | unavailable
  */
 export function transformDefectTrendTop3(data) {
-  if (!data || data.error) return null;
-  return (data.result || data).map(series => ({
-    name: series.name,
-    data: series.data,
-  }));
+  return resolveChartState(data, (d) =>
+    (d.result || d).map((series) => ({
+      name: series.name,
+      data: series.data,
+    })),
+  );
 }
 
 /**
@@ -232,7 +350,7 @@ export const formatWeekLabel = (value) => `Semana ${value}`;
  * @param {number} value - The numeric value to format
  * @returns {string} Formatted string (e.g., "95.00 idx")
  */
-export const formatAcceptanceIndex = (value) => `${Number(value).toFixed(2)} idx`;
+export const formatAcceptanceIndex = (value) => `${Number(value).toFixed(2)}%`;
 
 /**
  * Truncate category labels longer than 18 characters.

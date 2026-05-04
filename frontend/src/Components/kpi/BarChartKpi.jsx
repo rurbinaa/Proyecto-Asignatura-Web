@@ -38,7 +38,9 @@ export default function BarChartKpi({
   const resolvedChartHeight = chartHeight ?? (horizontal
     ? Math.min(560, Math.max(280, data.length * 28 + 140))
     : 300);
-  const horizontalCategoryInterval = data.length <= 12 ? 0 : 'preserveStartEnd';
+  const horizontalCategoryInterval = showAllCategoryTicks
+    ? 0
+    : (data.length <= 12 ? 0 : 'preserveStartEnd');
 
   return (
     <div className="bar-chart-kpi" style={{ padding: '16px', boxSizing: 'border-box' }}>

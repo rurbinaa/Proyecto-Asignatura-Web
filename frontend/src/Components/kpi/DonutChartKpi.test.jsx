@@ -227,7 +227,50 @@ describe('DonutChartKpi', () => {
       render(<DonutChartKpi data={[{ name: 'A' }, { name: 'B', value: 10 }]} />);
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
       const cells = screen.getByTestId('pie').querySelectorAll('[data-testid="cell"]');
-      // Both entries generate cells
+      // Both entries generate cells even when one has no value
+      expect(cells.length).toBe(2);
+    });
+  });
+
+  describe('Other slice grouping', () => {
+    it('RED - shows Other slice name and value in legend', () => {
+      const data = [
+        { name: 'Cat-A', value: 100 },
+        { name: 'Other', value: 85, groupedItems: [{ name: 'Cat-G', value: 40 }, { name: 'Cat-H', value: 45 }] },
+      ];
+      render(<DonutChartKpi data={data} valueFormatter={(v) => `${v} pcs`} />);
+      // Legend should show "Other (85 pcs)"
+      expect(legendCalls.length).toBeGreaterThan(0);
+      const legendFormatter = legendCalls[legendCalls.length - 1].formatter;
+      const result = legendFormatter('Other', { payload: { name: 'Other', value: 85, groupedItems: data[1].groupedItems } });
+      expect(result).toBe('Other (85 pcs)');
+    });
+
+    it('RED - Other slice tooltip shows grouped member details', () => {
+      const data = [
+        { name: 'Cat-A', value: 100 },
+        { name: 'Other', value: 60, groupedItems: [{ name: 'Cat-B', value: 35 }, { name: 'Cat-C', value: 25 }] },
+      ];
+      render(<DonutChartKpi data={data} valueFormatter={(v) => `${v} total`} />);
+      expect(tooltipCalls.length).toBeGreaterThan(0);
+      const formatter = tooltipCalls[tooltipCalls.length - 1].formatter;
+      // Default tooltip formatter uses valueFormatter
+      const otherPayload = { name: 'Other', value: 60, groupedItems: data[1].groupedItems };
+      const result = formatter(60, 'Other', { payload: otherPayload });
+      // Should show value and name
+      expect(result[0]).toBe('60 total');
+      expect(result[1]).toBe('Other');
+    });
+
+    it('RED - renders correct number of cells for data with Other slice', () => {
+      const data = [
+        { name: 'A', value: 100 },
+        { name: 'B', value: 80 },
+        { name: 'Other', value: 30, groupedItems: [{ name: 'C', value: 30 }] },
+      ];
+      const { container } = render(<DonutChartKpi data={data} />);
+      const cells = container.querySelectorAll('[data-testid="cell"]');
+      expect(cells.length).toBe(3);
     });
   });
 });

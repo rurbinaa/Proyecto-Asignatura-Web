@@ -77,7 +77,7 @@ function resolveKpiUrl(endpoint, filters = {}, context) {
   }
   const queryString = buildQueryString(allParams);
 
-  const aqlEndpoints = new Set(['aql-by-style/', 'aql-weekly/', 'audited-pieces/']);
+  const aqlEndpoints = new Set(['aql-by-style/', 'aql-weekly/', 'audited-pieces/', 'aql-by-team/']);
   const rendimientoEndpoints = new Set([
     'ac-re-rate-by-line/',
     'seconds-rework/',
@@ -139,6 +139,11 @@ export async function getFilterOptions() {
 /** AQL grouped by style (defects/sample % per style). */
 export async function getAqlByStyle(filters, context) {
   return fetchKpi('aql-by-style/', filters, context);
+}
+
+/** AQL grouped by team/line (defects/sample % per team). */
+export async function getAqlByTeam(filters, context) {
+  return fetchKpi('aql-by-team/', filters, context);
 }
 
 /** AQL trend by week — useful for control charts. */
@@ -231,6 +236,7 @@ export function mapVolatileKpisDto(response) {
 
   const snakeToCamel = {
     aql_by_style: 'aqlByStyle',
+    aql_by_team: 'aqlByTeam',
     aql_weekly: 'aqlWeekly',
     audited_pieces: 'auditedPieces',
     ac_re_rate_by_line: 'acReRateByLine',
@@ -279,9 +285,12 @@ export function mapVolatileKpisDto(response) {
  * @param {File} file - The Excel file to process
  * @returns {Promise<object>} KPI results object (same shape as fetchAllKpis), with camelCase keys
  */
-export async function fetchVolatileKpis(file) {
+export async function fetchVolatileKpis(file, context) {
   const formData = new FormData();
   formData.append('file', file);
+  if (context) {
+    formData.append('context', context);
+  }
   try {
     const res = await axiosClient.post('/quality/kpis/volatile/', formData);
     return mapVolatileKpisDto(res.data);
@@ -302,6 +311,7 @@ export async function fetchVolatileKpis(file) {
 export async function fetchAllKpis(filters = {}, context) {
   const kpiMap = {
     aqlByStyle: getAqlByStyle,
+    aqlByTeam: getAqlByTeam,
     aqlWeekly: getAqlWeekly,
     auditedPieces: getAuditedPieces,
     acReRateByLine: getAcReRateByLine,

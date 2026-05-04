@@ -17,6 +17,13 @@ import {
   // 2 New defect insight transforms
   transformDefectComposition,
   transformDefectTrendTop3,
+  // AQL by Team/Line
+  transformAqlByTeam,
+  // Chart-state helpers
+  readyState,
+  emptyState,
+  unavailableState,
+  resolveChartState,
   // 7 Formatters
   formatPercent,
   formatPieces,
@@ -137,6 +144,14 @@ const SAMPLE_DEFECT_TREND_TOP3 = {
   result: [
     { name: 'Loose Thread', data: [{ x: 10, y: 5 }, { x: 11, y: 8 }] },
     { name: 'Broken Stitch', data: [{ x: 10, y: 3 }, { x: 11, y: 12 }] },
+  ],
+};
+
+const SAMPLE_AQL_TEAM = {
+  data: [
+    { label: 'Team-A', value: 1.5 },
+    { label: 'Team-B', value: 2.3 },
+    { label: 'Team-C', value: 3.1 },
   ],
 };
 
@@ -356,24 +371,30 @@ describe('transformPerformanceByLine', () => {
 });
 
 describe('transformTopDefects', () => {
-  it('extracts label and value from result array', () => {
+  it('returns ready state with label and value from result array', () => {
     const result = transformTopDefects(SAMPLE_TOP_DEFECTS);
-    expect(result).toHaveLength(3);
-    expect(result[0]).toEqual({ label: 'Loose Thread', value: 234 });
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(3);
+    expect(result.data[0]).toEqual({ label: 'Loose Thread', value: 234 });
   });
 
   it('handles direct array input', () => {
     const input = [{ label: 'Defect A', value: 50 }];
     const result = transformTopDefects(input);
-    expect(result).toEqual(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toEqual([{ label: 'Defect A', value: 50 }]);
   });
 
-  it('returns null for null input', () => {
-    expect(transformTopDefects(null)).toBeNull();
+  it('returns empty state for null input', () => {
+    const result = transformTopDefects(null);
+    expect(result.status).toBe('empty');
+    expect(result.message).toBeTruthy();
   });
 
-  it('returns null for error object', () => {
-    expect(transformTopDefects({ error: 'failed' })).toBeNull();
+  it('returns unavailable state for error object', () => {
+    const result = transformTopDefects({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
   });
 });
 
@@ -422,24 +443,29 @@ describe('transformContainersByState', () => {
 });
 
 describe('transformDefectsByStyleType', () => {
-  it('extracts x, y, value from result array', () => {
+  it('returns ready state with x, y, value from result array', () => {
     const result = transformDefectsByStyleType(SAMPLE_DEFECTS_STYLE_TYPE);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({ x: 'Style-2', y: 'Loose Thread', value: 45 });
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toEqual({ x: 'Style-2', y: 'Loose Thread', value: 45 });
   });
 
   it('handles direct array input', () => {
     const input = [{ x: 'S1', y: 'Def1', value: 5 }];
     const result = transformDefectsByStyleType(input);
-    expect(result).toEqual(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toEqual(input);
   });
 
-  it('returns null for null input', () => {
-    expect(transformDefectsByStyleType(null)).toBeNull();
+  it('returns empty state for null input', () => {
+    const result = transformDefectsByStyleType(null);
+    expect(result.status).toBe('empty');
   });
 
-  it('returns null for error object', () => {
-    expect(transformDefectsByStyleType({ error: 'failed' })).toBeNull();
+  it('returns unavailable state for error object', () => {
+    const result = transformDefectsByStyleType({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
   });
 });
 
@@ -468,58 +494,55 @@ describe('transformSecondsRework', () => {
 // ─── Defect Insight Transform Tests ─────────────────────────────────────────────
 
 describe('transformDefectComposition', () => {
-  it('extracts name and value from result array for donut chart', () => {
+  it('returns ready state with name and value from result array for donut chart', () => {
     const result = transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
-    expect(result).toHaveLength(3);
-    expect(result[0]).toEqual({ name: 'Loose Thread', value: 45 });
-    expect(result[1]).toEqual({ name: 'Broken Stitch', value: 32 });
-    expect(result[2]).toEqual({ name: 'Color Fading', value: 18 });
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(3);
+    expect(result.data[0]).toEqual({ name: 'Loose Thread', value: 45 });
+    expect(result.data[1]).toEqual({ name: 'Broken Stitch', value: 32 });
+    expect(result.data[2]).toEqual({ name: 'Color Fading', value: 18 });
   });
 
   it('handles direct array input (no result wrapper)', () => {
     const input = [{ name: 'Hole', value: 12 }];
     const result = transformDefectComposition(input);
-    expect(result).toEqual([{ name: 'Hole', value: 12 }]);
+    expect(result.status).toBe('ready');
+    expect(result.data).toEqual([{ name: 'Hole', value: 12 }]);
   });
 
-  it('returns empty array for empty result', () => {
-    expect(transformDefectComposition({ result: [] })).toEqual([]);
+  it('returns empty state for empty result', () => {
+    const result = transformDefectComposition({ result: [] });
+    expect(result.status).toBe('empty');
+    expect(result.message).toBeTruthy();
   });
 
-  it('returns null for null input', () => {
-    expect(transformDefectComposition(null)).toBeNull();
+  it('returns empty state for null input', () => {
+    const result = transformDefectComposition(null);
+    expect(result.status).toBe('empty');
   });
 
-  it('returns null for undefined input', () => {
-    expect(transformDefectComposition(undefined)).toBeNull();
+  it('returns empty state for undefined input', () => {
+    const result = transformDefectComposition(undefined);
+    expect(result.status).toBe('empty');
   });
 
-  it('returns null for error object', () => {
-    expect(transformDefectComposition({ error: 'something went wrong' })).toBeNull();
-  });
-
-  it('does not mutate input (immutability)', () => {
-    const original = JSON.parse(JSON.stringify(SAMPLE_DEFECT_COMPOSITION));
-    transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
-    expect(SAMPLE_DEFECT_COMPOSITION).toEqual(original);
-  });
-
-  it('is deterministic', () => {
-    const r1 = transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
-    const r2 = transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
-    expect(r1).toEqual(r2);
+  it('returns unavailable state for error object', () => {
+    const result = transformDefectComposition({ error: 'something went wrong' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
   });
 });
 
 describe('transformDefectTrendTop3', () => {
-  it('preserves series name and data structure for line chart', () => {
+  it('returns ready state with series name and data structure for line chart', () => {
     const result = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toEqual({
       name: 'Loose Thread',
       data: [{ x: 10, y: 5 }, { x: 11, y: 8 }],
     });
-    expect(result[1]).toEqual({
+    expect(result.data[1]).toEqual({
       name: 'Broken Stitch',
       data: [{ x: 10, y: 3 }, { x: 11, y: 12 }],
     });
@@ -528,42 +551,38 @@ describe('transformDefectTrendTop3', () => {
   it('handles single-series input', () => {
     const input = { result: [{ name: 'Hole', data: [{ x: 1, y: 10 }] }] };
     const result = transformDefectTrendTop3(input);
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('Hole');
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].name).toBe('Hole');
   });
 
   it('handles direct array input (no result wrapper)', () => {
     const input = [{ name: 'Hole', data: [{ x: 1, y: 5 }] }];
     const result = transformDefectTrendTop3(input);
-    expect(result).toEqual(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toEqual(input);
   });
 
-  it('returns empty array for empty result', () => {
-    expect(transformDefectTrendTop3({ result: [] })).toEqual([]);
+  it('returns empty state for empty result', () => {
+    const result = transformDefectTrendTop3({ result: [] });
+    expect(result.status).toBe('empty');
+    expect(result.message).toBeTruthy();
   });
 
-  it('returns null for null input', () => {
-    expect(transformDefectTrendTop3(null)).toBeNull();
+  it('returns empty state for null input', () => {
+    const result = transformDefectTrendTop3(null);
+    expect(result.status).toBe('empty');
   });
 
-  it('returns null for undefined input', () => {
-    expect(transformDefectTrendTop3(undefined)).toBeNull();
+  it('returns empty state for undefined input', () => {
+    const result = transformDefectTrendTop3(undefined);
+    expect(result.status).toBe('empty');
   });
 
-  it('returns null for error object', () => {
-    expect(transformDefectTrendTop3({ error: 'failed' })).toBeNull();
-  });
-
-  it('does not mutate input (immutability)', () => {
-    const original = JSON.parse(JSON.stringify(SAMPLE_DEFECT_TREND_TOP3));
-    transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
-    expect(SAMPLE_DEFECT_TREND_TOP3).toEqual(original);
-  });
-
-  it('is deterministic', () => {
-    const r1 = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
-    const r2 = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
-    expect(r1).toEqual(r2);
+  it('returns unavailable state for error object', () => {
+    const result = transformDefectTrendTop3({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
   });
 });
 
@@ -807,6 +826,7 @@ describe('Transform functions are pure (do not mutate input)', () => {
     { name: 'transformSecondsRework', fn: transformSecondsRework, input: SAMPLE_SECONDS_REWORK },
     { name: 'transformDefectComposition', fn: transformDefectComposition, input: SAMPLE_DEFECT_COMPOSITION },
     { name: 'transformDefectTrendTop3', fn: transformDefectTrendTop3, input: SAMPLE_DEFECT_TREND_TOP3 },
+    { name: 'transformAqlByTeam', fn: transformAqlByTeam, input: SAMPLE_AQL_TEAM },
   ];
 
   mutations.forEach(({ name, fn, input }) => {
@@ -841,6 +861,7 @@ describe('Transform functions are deterministic', () => {
     { name: 'transformSecondsRework', fn: transformSecondsRework, input: SAMPLE_SECONDS_REWORK },
     { name: 'transformDefectComposition', fn: transformDefectComposition, input: SAMPLE_DEFECT_COMPOSITION },
     { name: 'transformDefectTrendTop3', fn: transformDefectTrendTop3, input: SAMPLE_DEFECT_TREND_TOP3 },
+    { name: 'transformAqlByTeam', fn: transformAqlByTeam, input: SAMPLE_AQL_TEAM },
   ];
 
   determinismTests.forEach(({ name, fn, input }) => {
@@ -855,5 +876,351 @@ describe('Transform functions are deterministic', () => {
     const result1 = buildLineCountDataByState(SAMPLE_LINE_COUNT_DATA, 'PASS');
     const result2 = buildLineCountDataByState(SAMPLE_LINE_COUNT_DATA, 'PASS');
     expect(result1).toEqual(result2);
+  });
+});
+
+// ─── Chart-State Contract Tests ────────────────────────────────────────────────
+
+describe('Chart-state helpers', () => {
+  describe('readyState', () => {
+    it('RED - wraps data in ready status object', () => {
+      const data = [{ label: 'A', value: 10 }];
+      const result = readyState(data);
+      expect(result).toEqual({ status: 'ready', data });
+      expect(result.data).toBe(data); // same reference
+    });
+
+    it('RED - handles empty array as ready (empty is different)', () => {
+      const result = readyState([]);
+      expect(result).toEqual({ status: 'ready', data: [] });
+    });
+  });
+
+  describe('emptyState', () => {
+    it('RED - returns empty status with default message', () => {
+      const result = emptyState();
+      expect(result.status).toBe('empty');
+      expect(result.message).toBeTruthy();
+      expect(result.data).toBeUndefined();
+    });
+
+    it('RED - accepts custom message', () => {
+      const result = emptyState('No defects found');
+      expect(result).toEqual({ status: 'empty', message: 'No defects found' });
+    });
+  });
+
+  describe('unavailableState', () => {
+    it('RED - returns unavailable status with reason and message', () => {
+      const result = unavailableState('volatile_unsupported', 'Customer volatile insights not supported');
+      expect(result).toEqual({
+        status: 'unavailable',
+        reason: 'volatile_unsupported',
+        message: 'Customer volatile insights not supported',
+      });
+    });
+
+    it('RED - uses reason as message fallback when no message provided', () => {
+      const result = unavailableState('endpoint_error');
+      expect(result).toEqual({
+        status: 'unavailable',
+        reason: 'endpoint_error',
+        message: 'Unavailable: endpoint_error',
+      });
+    });
+  });
+
+  describe('resolveChartState', () => {
+    it('RED - returns emptyState when input is null', () => {
+      const result = resolveChartState(null, () => []);
+      expect(result.status).toBe('empty');
+    });
+
+    it('RED - returns emptyState when input is undefined', () => {
+      const result = resolveChartState(undefined, () => []);
+      expect(result.status).toBe('empty');
+    });
+
+    it('RED - passes through explicit unavailable objects', () => {
+      const unavailableInput = { status: 'unavailable', reason: 'db_error', message: 'DB down', data: null };
+      const result = resolveChartState(unavailableInput, () => []);
+      expect(result).toBe(unavailableInput);
+    });
+
+    it('RED - returns unavailable for error objects', () => {
+      const result = resolveChartState({ error: 'something failed' }, () => []);
+      expect(result.status).toBe('unavailable');
+      expect(result.reason).toBe('api_error');
+    });
+
+    it('RED - returns empty when transform produces empty array', () => {
+      const result = resolveChartState({ result: [] }, (d) => d.result);
+      expect(result.status).toBe('empty');
+    });
+
+    it('RED - returns ready when transform produces non-empty array', () => {
+      const input = { result: [{ name: 'A', value: 5 }] };
+      const result = resolveChartState(input, (d) => d.result);
+      expect(result.status).toBe('ready');
+      expect(result.data).toEqual([{ name: 'A', value: 5 }]);
+    });
+  });
+});
+
+// ─── Top-6 + Other Grouping Tests ──────────────────────────────────────────────
+
+describe('transformDefectComposition — top-6 + Other grouping', () => {
+  it('RED - groups 10 categories into top 6 + Other', () => {
+    const input = {
+      result: [
+        { name: 'Cat-A', value: 100 },
+        { name: 'Cat-B', value: 90 },
+        { name: 'Cat-C', value: 80 },
+        { name: 'Cat-D', value: 70 },
+        { name: 'Cat-E', value: 60 },
+        { name: 'Cat-F', value: 50 },
+        { name: 'Cat-G', value: 40 },
+        { name: 'Cat-H', value: 30 },
+        { name: 'Cat-I', value: 20 },
+        { name: 'Cat-J', value: 10 },
+      ],
+    };
+
+    const result = transformDefectComposition(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(7); // 6 top + Other
+
+    // First 6 slices are the top categories
+    expect(result.data[0]).toEqual({ name: 'Cat-A', value: 100 });
+    expect(result.data[5]).toEqual({ name: 'Cat-F', value: 50 });
+
+    // 7th slice is Other
+    const otherSlice = result.data[6];
+    expect(otherSlice.name).toBe('Other');
+    expect(otherSlice.value).toBe(100); // 40+30+20+10 = 100
+    expect(otherSlice.groupedItems).toBeDefined();
+    expect(otherSlice.groupedItems).toHaveLength(4);
+    expect(otherSlice.groupedItems[0]).toEqual({ name: 'Cat-G', value: 40 });
+  });
+
+  it('RED - does NOT group when 6 or fewer categories', () => {
+    const input = {
+      result: [
+        { name: 'Cat-A', value: 100 },
+        { name: 'Cat-B', value: 90 },
+        { name: 'Cat-C', value: 80 },
+      ],
+    };
+
+    const result = transformDefectComposition(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(3);
+    // No Other slice
+    expect(result.data.find((s) => s.name === 'Other')).toBeUndefined();
+  });
+
+  it('RED - sorts by value descending', () => {
+    const input = {
+      result: [
+        { name: 'Small', value: 5 },
+        { name: 'Large', value: 100 },
+        { name: 'Medium', value: 50 },
+      ],
+    };
+
+    const result = transformDefectComposition(input);
+    expect(result.status).toBe('ready');
+    expect(result.data[0].name).toBe('Large');
+    expect(result.data[1].name).toBe('Medium');
+    expect(result.data[2].name).toBe('Small');
+  });
+
+  it('RED - handles exactly 7 categories (top 6 + Other with 1 item)', () => {
+    const input = {
+      result: [
+        { name: 'A', value: 10 },
+        { name: 'B', value: 9 },
+        { name: 'C', value: 8 },
+        { name: 'D', value: 7 },
+        { name: 'E', value: 6 },
+        { name: 'F', value: 5 },
+        { name: 'G', value: 4 },
+      ],
+    };
+
+    const result = transformDefectComposition(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(7);
+    const otherSlice = result.data[6];
+    expect(otherSlice.name).toBe('Other');
+    expect(otherSlice.value).toBe(4);
+    expect(otherSlice.groupedItems).toHaveLength(1);
+  });
+
+  it('RED - returns empty state for empty result', () => {
+    const result = transformDefectComposition({ result: [] });
+    expect(result.status).toBe('empty');
+  });
+
+  it('RED - returns unavailable for error input', () => {
+    const result = transformDefectComposition({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
+  });
+
+  it('RED - returns empty state for null input', () => {
+    const result = transformDefectComposition(null);
+    expect(result.status).toBe('empty');
+  });
+});
+
+// ─── Chart-State Contract for Top Defects ──────────────────────────────────────
+
+describe('transformTopDefects — chart-state contract', () => {
+  it('RED - returns ready state for valid non-empty data', () => {
+    const result = transformTopDefects(SAMPLE_TOP_DEFECTS);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(3);
+    expect(result.data[0]).toEqual({ label: 'Loose Thread', value: 234 });
+  });
+
+  it('RED - returns empty state for empty result array', () => {
+    const result = transformTopDefects({ result: [] });
+    expect(result.status).toBe('empty');
+    expect(result.message).toBeTruthy();
+  });
+
+  it('RED - returns unavailable for error objects', () => {
+    const result = transformTopDefects({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
+  });
+
+  it('RED - returns empty state for null input', () => {
+    const result = transformTopDefects(null);
+    expect(result.status).toBe('empty');
+  });
+});
+
+// ─── Chart-State Contract for Defects by Style × Type ──────────────────────────
+
+describe('transformDefectsByStyleType — chart-state contract', () => {
+  it('RED - returns ready state for valid non-empty data', () => {
+    const result = transformDefectsByStyleType(SAMPLE_DEFECTS_STYLE_TYPE);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toEqual({ x: 'Style-2', y: 'Loose Thread', value: 45 });
+  });
+
+  it('RED - returns empty state for empty result', () => {
+    const result = transformDefectsByStyleType({ result: [] });
+    expect(result.status).toBe('empty');
+  });
+
+  it('RED - returns unavailable for error', () => {
+    const result = transformDefectsByStyleType({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+  });
+
+  it('RED - returns empty for null input', () => {
+    const result = transformDefectsByStyleType(null);
+    expect(result.status).toBe('empty');
+  });
+});
+
+// ─── Task 2.2: transformAqlByTeam ──────────────────────────────────────────────
+
+describe('transformAqlByTeam', () => {
+  it('extracts label and numeric value from data array (bar chart contract)', () => {
+    const input = {
+      data: [
+        { label: 'Team-A', value: 1.8 },
+        { label: 'Team-B', value: 2.4 },
+        { label: 'Team-C', value: 3.1 },
+      ],
+    };
+    const result = transformAqlByTeam(input);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ label: 'Team-A', value: 1.8 });
+    expect(result[1]).toEqual({ label: 'Team-B', value: 2.4 });
+    expect(result[2]).toEqual({ label: 'Team-C', value: 3.1 });
+  });
+
+  it('handles direct array input (no data wrapper)', () => {
+    const input = [{ label: 'Line-1', value: 5.0 }];
+    const result = transformAqlByTeam(input);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ label: 'Line-1', value: 5.0 });
+  });
+
+  it('converts string values to numbers', () => {
+    const input = { data: [{ label: 'Team-X', value: '2.5' }] };
+    const result = transformAqlByTeam(input);
+    expect(result[0].value).toBe(2.5);
+  });
+
+  it('filters out items with zero or negative value', () => {
+    const input = {
+      data: [
+        { label: 'Zero', value: 0 },
+        { label: 'Negative', value: -1 },
+        { label: 'Valid', value: 3 },
+      ],
+    };
+    const result = transformAqlByTeam(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Valid');
+  });
+
+  it('handles unavailable contract pass-through', () => {
+    const unavailableInput = {
+      status: 'unavailable',
+      reason: 'aql_by_team_not_supported',
+      message: 'AQL by team not available in volatile mode',
+    };
+    const result = transformAqlByTeam(unavailableInput);
+    expect(result).toEqual(unavailableInput);
+  });
+
+  it('returns null for null input', () => {
+    expect(transformAqlByTeam(null)).toBeNull();
+  });
+
+  it('returns null for error object', () => {
+    expect(transformAqlByTeam({ error: 'failed' })).toBeNull();
+  });
+
+  it('limits to 12 items maximum (bar chart cap)', () => {
+    const manyItems = {
+      data: Array.from({ length: 20 }, (_, i) => ({ label: `Team-${i}`, value: i + 1 })),
+    };
+    const result = transformAqlByTeam(manyItems);
+    expect(result).toHaveLength(12);
+  });
+});
+
+// ─── Chart-State Contract for Defect Trend Top 3 ───────────────────────────────
+
+describe('transformDefectTrendTop3 — chart-state contract', () => {
+  it('RED - returns ready state for valid non-empty data', () => {
+    const result = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0].name).toBe('Loose Thread');
+  });
+
+  it('RED - returns empty state for empty result', () => {
+    const result = transformDefectTrendTop3({ result: [] });
+    expect(result.status).toBe('empty');
+  });
+
+  it('RED - returns unavailable for error', () => {
+    const result = transformDefectTrendTop3({ error: 'failed' });
+    expect(result.status).toBe('unavailable');
+  });
+
+  it('RED - returns empty for null input', () => {
+    const result = transformDefectTrendTop3(null);
+    expect(result.status).toBe('empty');
   });
 });

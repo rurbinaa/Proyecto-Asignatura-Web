@@ -1,9 +1,10 @@
-export default function HeatmapKpi({ data = [], title }) {
+export default function HeatmapKpi({ data = [], title, emptyMessage }) {
   if (!data || data.length === 0) {
+    const message = emptyMessage || 'No data';
     return (
       <div className="heatmap-kpi" style={{ padding: '16px', boxSizing: 'border-box' }}>
         {title && <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
-        <div style={{ textAlign: 'center', color: '#666' }}>No data</div>
+        <div style={{ textAlign: 'center', color: '#666' }}>{message}</div>
       </div>
     );
   }
@@ -37,7 +38,6 @@ export default function HeatmapKpi({ data = [], title }) {
   };
 
   const cellStyle = {
-    width: '60px',
     height: '40px',
     textAlign: 'center',
     verticalAlign: 'middle',
@@ -50,10 +50,10 @@ export default function HeatmapKpi({ data = [], title }) {
     <div className="heatmap-kpi" style={{ padding: '16px', boxSizing: 'border-box' }}>
       {title && <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600 }}>{title}</h3>}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ ...cellStyle, background: '#f9fafb' }}></th>
+              <th style={{ ...cellStyle, width: '24%', background: '#f9fafb' }}></th>
               {xLabels.map(x => (
                 <th key={x} style={{ ...cellStyle, background: '#f9fafb' }}>{x}</th>
               ))}
@@ -62,7 +62,20 @@ export default function HeatmapKpi({ data = [], title }) {
           <tbody>
             {yLabels.map(y => (
               <tr key={y}>
-                <td style={{ ...cellStyle, background: '#f9fafb', fontWeight: 600 }}>{y}</td>
+                <td
+                  style={{
+                    ...cellStyle,
+                    background: '#f9fafb',
+                    fontWeight: 600,
+                    whiteSpace: 'normal',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
+                    lineHeight: 1.15,
+                    padding: '6px 8px',
+                  }}
+                >
+                  {y}
+                </td>
                 {xLabels.map(x => {
                   const value = getValue(x, y);
                   return (

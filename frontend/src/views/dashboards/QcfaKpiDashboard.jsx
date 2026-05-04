@@ -18,7 +18,6 @@ import {
   unavailableState,
   formatPercent,
   formatPieces,
-  formatCount,
   formatWeekLabel,
   formatAcceptanceIndex,
   trimCategoryLabel,
@@ -237,6 +236,11 @@ function buildExcelSection(opts) {
               data={resolveChartData(topDefectsData)}
               horizontal
               color="#ef4444"
+              xAxisLabel="Cantidad de defectos"
+              yAxisLabel="Tipo de defecto"
+              xTickFormatter={formatPieces}
+              valueFormatter={(value) => `${Math.round(Number(value))} defectos`}
+              tooltipLabelFormatter={(label) => `Defecto: ${label}`}
             />
           )}
         </KpiCard>
@@ -281,11 +285,12 @@ function buildExcelSection(opts) {
                   data={acceptedByLineData}
                   color="#10b981"
                   horizontal
-                  xAxisLabel="Count (pieces)"
+                  xAxisLabel="Piezas aceptadas"
                   yAxisLabel="Line"
                   xTickFormatter={formatPieces}
                   yTickFormatter={trimCategoryLabel}
-                  valueFormatter={formatCount}
+                  valueFormatter={formatPieces}
+                  tooltipFormatter={(value) => [formatPieces(value), 'Piezas aceptadas']}
                   tooltipLabelFormatter={(label) => `Line (accepted): ${label}`}
                 />
               </div>
@@ -295,11 +300,11 @@ function buildExcelSection(opts) {
                   data={rejectedByLineData}
                   color="#ef4444"
                   horizontal
-                  xAxisLabel="Count (pieces)"
-                  yAxisLabel="Line"
+                  xAxisLabel="Piezas rechazadas"
                   xTickFormatter={formatPieces}
                   yTickFormatter={trimCategoryLabel}
-                  valueFormatter={formatCount}
+                  valueFormatter={formatPieces}
+                  tooltipFormatter={(value) => [formatPieces(value), 'Piezas rechazadas']}
                   tooltipLabelFormatter={(label) => `Line (rejected): ${label}`}
                 />
               </div>
@@ -322,6 +327,7 @@ function buildRiftSection(opts) {
     defectsByStyleTypeData, defectTrendTop3Data, defectCompositionData,
     loading, error, nullMessage, isNullOrError,
     shouldShowMessage, getChartMessage, getStateClass, resolveChartData,
+    formatSparseLineTick,
   } = opts;
 
   return [
@@ -372,34 +378,10 @@ function buildRiftSection(opts) {
       ),
     },
     {
-      title: 'Acceptance Rate by Line (accepted/sample × 100)',
-      chart: 'bar',
-      data: perfByLineData,
-      layoutRole: 'standard',
-      render: () => (
-        <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
-          {isNullOrError(perfByLineData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={perfByLineData}
-              horizontal
-              color="#f59e0b"
-              xAxisLabel="Acceptance Rate (accepted/sample × 100)"
-              yAxisLabel="Line"
-              xTickFormatter={(value) => Number(value).toFixed(0)}
-              valueFormatter={formatAcceptanceIndex}
-              tooltipLabelFormatter={(label) => `Line: ${label}`}
-            />
-          )}
-        </KpiCard>
-      ),
-    },
-    {
       title: 'Defects by Style × Type',
       chart: 'heatmap',
       data: defectsByStyleTypeData,
-      layoutRole: 'wide',
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Defects by Style × Type" loading={loading} error={error}>
           {shouldShowMessage(defectsByStyleTypeData) ? (
@@ -416,7 +398,7 @@ function buildRiftSection(opts) {
       title: 'Defect Trend Top 3',
       chart: 'line',
       data: defectTrendTop3Data,
-      layoutRole: 'standard',
+      layoutRole: 'full',
       render: () => (
         <KpiCard title="Defect Trend Top 3" loading={loading} error={error}>
           {shouldShowMessage(defectTrendTop3Data) ? (
@@ -429,7 +411,8 @@ function buildRiftSection(opts) {
               xAxisLabel="Week"
               yAxisLabel="Defects"
               xTickFormatter={formatWeekLabel}
-              valueFormatter={formatCount}
+              valueFormatter={(value) => `${Math.round(Number(value))} defectos`}
+              tooltipFormatter={(value, name) => [`${Math.round(Number(value))} defectos`, name]}
               tooltipLabelFormatter={formatWeekLabel}
             />
           )}
@@ -440,7 +423,7 @@ function buildRiftSection(opts) {
       title: 'Defect Composition',
       chart: 'donut',
       data: defectCompositionData,
-      layoutRole: 'standard',
+      layoutRole: 'wide',
       render: () => (
         <KpiCard title="Defect Composition" loading={loading} error={error}>
           {shouldShowMessage(defectCompositionData) ? (
@@ -450,8 +433,34 @@ function buildRiftSection(opts) {
           ) : (
             <DonutChartKpi
               data={resolveChartData(defectCompositionData)}
-              valueFormatter={formatCount}
+              valueFormatter={(value) => `${Math.round(Number(value))} defectos`}
               tooltipLabelFormatter={(label) => `Defect: ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Acceptance Rate by Line (accepted/sample × 100)',
+      chart: 'bar',
+      data: perfByLineData,
+      layoutRole: 'standard',
+      render: () => (
+        <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
+          {isNullOrError(perfByLineData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi
+              data={perfByLineData}
+              horizontal
+              color="#f59e0b"
+              xAxisLabel="Acceptance Rate (accepted/sample × 100)"
+              yAxisLabel="Line"
+              showAllCategoryTicks
+              xTickFormatter={(value) => Number(value).toFixed(0)}
+              yTickFormatter={formatSparseLineTick}
+              valueFormatter={formatAcceptanceIndex}
+              tooltipLabelFormatter={(label) => `Line: ${label}`}
             />
           )}
         </KpiCard>
@@ -659,6 +668,13 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
 
   const nullMessage = "No disponible en modo rápido";
 
+  const formatSparseLineTick = (value, index) => {
+    if (!Array.isArray(perfByLineData) || perfByLineData.length === 0) return value;
+    const lastIndex = perfByLineData.length - 1;
+    if (index === 0 || index === lastIndex || index % 3 === 0) return value;
+    return '';
+  };
+
   const excelSectionOpts = {
     defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
     aqlByTeamData, topDefectsData, rejectedEvolutionSeries,
@@ -672,6 +688,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     defectsByStyleTypeData, defectTrendTop3Data, defectCompositionData,
     loading, error, nullMessage, isNullOrError,
     shouldShowMessage, getChartMessage, getStateClass, resolveChartData,
+    formatSparseLineTick,
   };
 
   const excelCards = buildExcelSection(excelSectionOpts);
