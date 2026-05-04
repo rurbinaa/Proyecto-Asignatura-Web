@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     Process, ExcelPreviewView, ExcelConfirmView, ExcelRejectView,
     TopDefectsView, FabricDefectsView, DefectsByStyleTypeView,
+    DefectCompositionView, DefectTrendTop3View,
     KpiViewSet, AqlKpiViewSet,
     PassRejectDistributionView, RejectedEvolutionView,
     ContainersByStateView, DefectRateView,
@@ -35,6 +36,10 @@ urlpatterns = [
     path(r'kpis/top-defects/', TopDefectsView.as_view(), name='kpi-top-defects'),
     path(r'kpis/fabric-defects/', FabricDefectsView.as_view(), name='kpi-fabric-defects'),
     path(r'kpis/defects-by-style-type/', DefectsByStyleTypeView.as_view(), name='kpi-defects-by-style-type'),
+
+    # Grupo 3 - KPIs Defectos (new QFA/QFC-exclusive insight charts)
+    path(r'kpis/defect-composition/', DefectCompositionView.as_view(), name='kpi-defect-composition'),
+    path(r'kpis/defect-trend-top-3/', DefectTrendTop3View.as_view(), name='kpi-defect-trend-top-3'),
 
     # Grupo 4 - KPIs Operativos
     path(r'kpis/pass-reject-distribution/', PassRejectDistributionView.as_view(), name='kpi-pass-reject-distribution'),

@@ -429,3 +429,165 @@ class VolatileKpiViewTest(TestCase):
             # Should return error response, not crash
             self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
             self.assertIn('error', response.data)
+
+
+# ─────────────────────────────────────────────────────────
+# Volatile parity: defect_composition and defect_trend_top_3
+# ─────────────────────────────────────────────────────────
+
+class VolatileDefectInsightKpisTest(TestCase):
+    """Tests for volatile KPI helpers: _calc_defect_composition, _calc_defect_trend_top_3"""
+
+    def setUp(self):
+        # Instantiate view directly to test helper methods
+        self.view = VolatileKpiView()
+
+    # ── _calc_defect_composition ────────────────────────
+
+    def test_defect_composition_empty_rows(self):
+        """Empty rows → returns []."""
+        result = self.view._calc_defect_composition([])
+        self.assertEqual(result, [])
+
+    def test_defect_composition_shape_name_value(self):
+        """Returns [{name, value}] with integer values."""
+        rows = [
+            {
+                'uneven': 2, 'broken_stitch': 5, 'open_seam': 0,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 7, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_composition(rows)
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+        for item in result:
+            self.assertIn("name", item)
+            self.assertIn("value", item)
+            self.assertIsInstance(item["value"], int)
+
+    def test_defect_composition_excludes_zeros(self):
+        """Defect types with total=0 are excluded."""
+        rows = [
+            {
+                'uneven': 0, 'broken_stitch': 0, 'tear': 0,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 0, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_composition(rows)
+        self.assertEqual(result, [])
+
+    def test_defect_composition_sorted_by_value_desc_name_asc(self):
+        """Results sorted by value DESC, name ASC (tie-break)."""
+        rows = [
+            {
+                'broken_stitch': 5, 'loose_thread': 5, 'tear': 10, 'open_seam': 3,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 23, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_composition(rows)
+        sorted_items = sorted(result, key=lambda x: (-x["value"], x["name"]))
+        self.assertEqual(result, sorted_items)
+
+    def test_defect_composition_all_zeroes(self):
+        """All defect columns are zero → returns []."""
+        rows = [
+            {
+                'uneven': 0, 'broken_stitch': 0, 'tear': 0, 'loose_thread': 0,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 0, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_composition(rows)
+        self.assertEqual(result, [])
+
+    # ── _calc_defect_trend_top_3 ────────────────────────
+
+    def test_defect_trend_top_3_empty_rows(self):
+        """Empty rows → returns []."""
+        result = self.view._calc_defect_trend_top_3([])
+        self.assertEqual(result, [])
+
+    def test_defect_trend_top_3_shape_name_data_x_y(self):
+        """Returns [{name, data:[{x,y}]}] with integer y."""
+        rows = [
+            {
+                'uneven': 3, 'broken_stitch': 8,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 11, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_trend_top_3(rows)
+        self.assertIsInstance(result, list)
+        self.assertLessEqual(len(result), 3)
+        for series in result:
+            self.assertIn("name", series)
+            self.assertIn("data", series)
+            self.assertIsInstance(series["data"], list)
+            for point in series["data"]:
+                self.assertIn("x", point)
+                self.assertIn("y", point)
+                self.assertIsInstance(point["y"], (int, float))
+
+    def test_defect_trend_top_3_weeks_ascending(self):
+        """Weeks are ascending within each series."""
+        rows = [
+            {
+                'uneven': 3, 'broken_stitch': 8, 'tear': 5,
+                'style': 'N3165', 'week': 3, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 16, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+            {
+                'uneven': 2, 'broken_stitch': 4, 'tear': 1,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 7, 'sample': 100, 'color': 'blue', 'batch': 2,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_trend_top_3(rows)
+        for series in result:
+            weeks = [p["x"] for p in series["data"]]
+            self.assertEqual(weeks, sorted(weeks))
+
+    def test_defect_trend_top_3_zero_fill_missing_weeks(self):
+        """When a defect type is absent in a week, y=0 for that week."""
+        rows = [
+            {
+                'uneven': 10, 'broken_stitch': 0,  # uneven in week 1 only
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 10, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+            {
+                'broken_stitch': 8, 'uneven': 0,  # broken_stitch in week 2 only
+                'style': 'N3165', 'week': 2, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 8, 'sample': 100, 'color': 'blue', 'batch': 2,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_trend_top_3(rows)
+        # Both series should have week 1 and week 2
+        for series in result:
+            weeks = {p["x"] for p in series["data"]}
+            self.assertEqual(weeks, {1, 2})
+
+    def test_defect_trend_top_3_all_zero_amounts(self):
+        """When all defect amounts are zero → returns []."""
+        rows = [
+            {
+                'uneven': 0, 'broken_stitch': 0, 'tear': 0,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 0, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_trend_top_3(rows)
+        self.assertEqual(result, [])

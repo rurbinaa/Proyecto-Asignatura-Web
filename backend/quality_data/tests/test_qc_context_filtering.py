@@ -323,6 +323,78 @@ class DefectRateContextTest(QcContextFilteringMixin, TestCase):
         self.assertEqual(response.data["value"], 4.0)
 
 
+class DefectCompositionContextTest(QcContextFilteringMixin, TestCase):
+    """Tests context filtering on GET /quality/kpis/defect-composition/"""
+
+    def test_context_plant_returns_only_qfa_defect_types(self):
+        """?context=plant returns defect composition from QFA inspections only."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?context=plant")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # QFA data: 3 records × 2 amount = 6 total for "loose thread"
+        names = {item["name"] for item in response.data}
+        self.assertIn("loose thread", names)
+
+    def test_context_customer_returns_only_qfc_defect_types(self):
+        """?context=customer returns defect composition from QFC inspections only."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # QFC data: 2 records × 3 amount = 6 total for "loose thread"
+        names = {item["name"] for item in response.data}
+        self.assertIn("loose thread", names)
+
+    def test_context_plant_isolates_from_customer(self):
+        """Plant and customer compositions are fully isolated."""
+        url = reverse("quality_data:kpi-defect-composition")
+
+        plant_response = self.client.get(f"{url}?context=plant")
+        plant_values = {item["name"]: item["value"] for item in plant_response.data}
+        plant_loose = plant_values.get("loose thread", 0)
+
+        cust_response = self.client.get(f"{url}?context=customer")
+        cust_values = {item["name"]: item["value"] for item in cust_response.data}
+        cust_loose = cust_values.get("loose thread", 0)
+
+        # QFA: 3 records × 2 = 6
+        # QFC: 2 records × 3 = 6
+        # They happen to be equal in this test, but they come from different records
+        self.assertEqual(plant_loose, 6)
+        self.assertEqual(cust_loose, 6)
+
+
+class DefectTrendTop3ContextTest(QcContextFilteringMixin, TestCase):
+    """Tests context filtering on GET /quality/kpis/defect-trend-top-3/"""
+
+    def test_context_plant_returns_only_qfa_weeks(self):
+        """?context=plant returns trend data with only QFA weeks (1-3)."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?context=plant")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        for series in response.data:
+            weeks = {point["x"] for point in series["data"]}
+            self.assertTrue(weeks.issubset({1, 2, 3}))
+
+    def test_context_customer_returns_only_qfc_weeks(self):
+        """?context=customer returns trend data with only QFC weeks (5-6)."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        for series in response.data:
+            weeks = {point["x"] for point in series["data"]}
+            self.assertTrue(weeks.issubset({5, 6}))
+
+    def test_context_customer_no_qfa_weeks(self):
+        """?context=customer does not include any QFA week data."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        for series in response.data:
+            weeks = {point["x"] for point in series["data"]}
+            # QFA weeks 1,2,3 should NOT be in customer data
+            self.assertFalse({1, 2, 3} & weeks)
+
+
 # ─────────────────────────────────────────────────────────
 # Filter Options — context filtering
 # ─────────────────────────────────────────────────────────

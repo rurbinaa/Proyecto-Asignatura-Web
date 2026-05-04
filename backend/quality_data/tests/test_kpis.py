@@ -1494,6 +1494,7 @@ class KpiContractParityTest(KpiTestMixin, TestCase):
             ("quality_data:kpi-defects-by-style-type", None, {"x", "y", "value"}),
             ("quality_data:kpi-pass-reject-distribution", None, {"name", "value"}),
             ("quality_data:kpi-containers-by-state", None, {"name", "value"}),
+            ("quality_data:kpi-defect-composition", None, {"name", "value"}),
         ]
 
         for route_name, wrapped_key, expected_keys in cases:
@@ -1512,6 +1513,7 @@ class KpiContractParityTest(KpiTestMixin, TestCase):
             "quality_data:kpi-aql-audited-pieces",
             "quality_data:kpi-rendimiento-seconds-rework",
             "quality_data:kpi-rejected-evolution",
+            "quality_data:kpi-defect-trend-top-3",
         ]
 
         for route_name in series_routes:
@@ -1547,3 +1549,333 @@ class KpiContractParityTest(KpiTestMixin, TestCase):
         for key in ["week", "team", "style", "color", "customer", "batch"]:
             self.assertIsInstance(response.data[key], list)
             self.assertEqual(response.data[key], sorted(response.data[key]))
+
+
+# ─────────────────────────────────────────────────────────
+# QFA/QFC Exclusive Charts — New defect insight endpoints
+# ─────────────────────────────────────────────────────────
+
+class DefectCompositionTest(KpiTestMixin, TestCase):
+    """Tests for GET /quality/kpis/defect-composition/
+
+    Contract: [{name: string, value: integer}]
+    Sorted by value DESC, name ASC (stabilized tie-break).
+    Excludes zero totals.
+    Returns [] when no positive defect amounts remain.
+    """
+
+    def test_endpoint_returns_200(self):
+        """GET /quality/kpis/defect-composition/ returns 200."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+    # ── Shape contract ──────────────────────────────────
+
+    def test_response_items_have_name_and_integer_value(self):
+        """Every item has 'name' (string) and 'value' (integer)."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(url)
+        self.assertIsInstance(response.data, list)
+        self.assertGreater(len(response.data), 0)
+        for item in response.data:
+            self.assertIn("name", item)
+            self.assertIn("value", item)
+            self.assertIsInstance(item["value"], int)
+
+    # ── Sorting ─────────────────────────────────────────
+
+    def test_sorted_by_value_desc_then_name_asc(self):
+        """Items are sorted by value DESC, with name ASC as tie-breaker."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(url)
+        items = response.data
+        self.assertGreaterEqual(len(items), 2)
+
+        sorted_items = sorted(
+            items,
+            key=lambda x: (-x["value"], x["name"]),
+        )
+        self.assertEqual(items, sorted_items)
+
+    # ── Zero exclusion ──────────────────────────────────
+
+    def test_zeros_are_excluded(self):
+        """Items with value=0 are excluded from results."""
+        # Create a zero-amount defect
+        zero_defect_type = DefectType.objects.create(name="zero-only", is_active=True)
+        InspectionDefect.objects.create(
+            inspection=QualityQcFa.objects.first(),
+            defect_type=zero_defect_type,
+            amount=0,
+        )
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(url)
+        names = {item["name"] for item in response.data}
+        self.assertNotIn("zero-only", names)
+
+    # ── Empty data ──────────────────────────────────────
+
+    def test_empty_db_returns_empty_list(self):
+        """When no InspectionDefect records exist, returns []."""
+        InspectionDefect.objects.all().delete()
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: context (plant/customer) ────────────────
+
+    def test_context_plant_returns_only_qfa_defects(self):
+        """?context=plant returns only QFA (Plant) defects."""
+        # Create QFC record with a distinct defect type
+        qfc_defect_type = DefectType.objects.create(name="qfc-only-defect", is_active=True)
+        qfc_record = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-03-01", week=1, customer="CustOnly",
+            team=99, coord="C", po=999, style="QfcStyle", batch=999,
+            color=self.color, qty=50, seconds=5, accepted=45, rejected=5,
+            sample=50, defects_total=3, aql=2.0, pass_or_fail="PASS",
+        )
+        InspectionDefect.objects.create(
+            inspection=qfc_record,
+            defect_type=qfc_defect_type,
+            amount=10,
+        )
+
+        url = reverse("quality_data:kpi-defect-composition")
+        # With context=plant, we should NOT see qfc-only-defect
+        response = self.client.get(f"{url}?context=plant")
+        names = {item["name"] for item in response.data}
+        self.assertNotIn("qfc-only-defect", names)
+
+        # With context=customer, we SHOULD see qfc-only-defect
+        response2 = self.client.get(f"{url}?context=customer")
+        names2 = {item["name"] for item in response2.data}
+        self.assertIn("qfc-only-defect", names2)
+
+    # ── Filter: other params ────────────────────────────
+
+    def test_style_filter_works(self):
+        """?style= filter narrows to inspections with matching style."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?style=Style-0")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have data filtered to Style-0 only
+        self.assertGreater(len(response.data), 0)
+
+    def test_style_filter_no_match_returns_empty(self):
+        """?style=NONEXISTENT returns empty list."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?style=NONEXISTENT")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_team_filter_works(self):
+        """?team=1 filters by inspection__team."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?team=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+    # ── Triangulation ───────────────────────────────────
+
+    def test_tie_break_by_name_asc_when_values_equal(self):
+        """When two defect types have equal total, sort by name ASC."""
+        # Create two defect types with same total
+        dt_a = DefectType.objects.create(name="a-tie", is_active=True)
+        dt_b = DefectType.objects.create(name="b-tie", is_active=True)
+        record = QualityQcFa.objects.first()
+        InspectionDefect.objects.create(inspection=record, defect_type=dt_a, amount=15)
+        InspectionDefect.objects.create(inspection=record, defect_type=dt_b, amount=15)
+
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(url)
+        names = [item["name"] for item in response.data]
+        # "a-tie" should come before "b-tie" when values are tied
+        tie_idx_a = names.index("a-tie")
+        tie_idx_b = names.index("b-tie")
+        self.assertLess(tie_idx_a, tie_idx_b)
+
+
+class DefectTrendTop3Test(KpiTestMixin, TestCase):
+    """Tests for GET /quality/kpis/defect-trend-top-3/
+
+    Contract: [{name: string, data: [{x: integer, y: integer}]}]
+    Up to 3 series (top 3 defect types by total amount).
+    Every series includes every filtered week.
+    Missing weeks have y: 0.
+    x values are ascending.
+    Returns [] when no positive defect amounts remain.
+    """
+
+    def test_endpoint_returns_200(self):
+        """GET /quality/kpis/defect-trend-top-3/ returns 200."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+    # ── Shape contract ──────────────────────────────────
+
+    def test_response_is_list_of_series_with_name_and_data(self):
+        """Each item is {name, data:[{x,y}]} with numeric x,y."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        self.assertIsInstance(response.data, list)
+        self.assertLessEqual(len(response.data), 3)
+        for series in response.data:
+            self.assertIn("name", series)
+            self.assertIn("data", series)
+            self.assertIsInstance(series["data"], list)
+            for point in series["data"]:
+                self.assertIn("x", point)
+                self.assertIn("y", point)
+                self.assertIsInstance(point["x"], int)
+                self.assertIsInstance(point["y"], (int, float))
+
+    # ── Top-3 selection ─────────────────────────────────
+
+    def test_top_3_defect_types_by_total_amount(self):
+        """The 3 series correspond to the top 3 defect types by SUM(amount)."""
+        # Create 4 defect types with distinct totals
+        extras = []
+        for i, (name, amount) in enumerate([
+            ("type_a", 100),
+            ("type_b", 80),
+            ("type_c", 50),
+            ("type_d", 30),
+        ]):
+            dt = DefectType.objects.create(name=name, is_active=True)
+            InspectionDefect.objects.create(
+                inspection=QualityQcFa.objects.first(),
+                defect_type=dt,
+                amount=amount,
+            )
+            extras.append(name)
+
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        series_names = [s["name"] for s in response.data]
+        self.assertEqual(len(series_names), 3)
+        # Top 3: type_a (100), type_b (80), type_c (50)
+        self.assertIn("type_a", series_names)
+        self.assertIn("type_b", series_names)
+        self.assertIn("type_c", series_names)
+        self.assertNotIn("type_d", series_names)
+
+    # ── Week ordering and zero-fill ─────────────────────
+
+    def test_weeks_are_ascending(self):
+        """x values (weeks) are in ascending order."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        for series in response.data:
+            weeks = [point["x"] for point in series["data"]]
+            self.assertEqual(weeks, sorted(weeks))
+
+    def test_all_series_have_same_week_set(self):
+        """Every series includes every filtered week (same week set)."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        if len(response.data) < 2:
+            self.skipTest("Need at least 2 series to compare week sets")
+        week_sets = [
+            frozenset(point["x"] for point in series["data"])
+            for series in response.data
+        ]
+        self.assertEqual(len(set(week_sets)), 1)
+
+    def test_zero_fill_for_missing_weeks(self):
+        """When a top-3 defect is absent in a week, y=0 for that week."""
+        # Create a defect that appears only in week 1
+        dt_sparse = DefectType.objects.create(name="sparse-defect", is_active=True)
+        # Get a record with week=1
+        wk1_record = QualityQcFa.objects.filter(week=1).first()
+        InspectionDefect.objects.create(
+            inspection=wk1_record,
+            defect_type=dt_sparse,
+            amount=20,  # High enough to be in top 3
+        )
+
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        for series in response.data:
+            if series["name"] == "sparse-defect":
+                # Find a week that's in other series but might be missing for this one
+                points_by_week = {p["x"]: p["y"] for p in series["data"]}
+                # Check weeks 2, 3, 4, 5 — the defect should have y=0 there
+                missing_weeks_zero = [
+                    points_by_week.get(w, "missing") == 0
+                    for w in [2, 3, 4, 5]
+                ]
+                self.assertTrue(any(missing_weeks_zero))
+
+    # ── Empty data ──────────────────────────────────────
+
+    def test_empty_db_returns_empty_list(self):
+        """When no InfectionDefect records, returns []."""
+        InspectionDefect.objects.all().delete()
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_all_zero_amounts_returns_empty(self):
+        """When all defect amounts are 0, returns []."""
+        InspectionDefect.objects.all().update(amount=0)
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: context ─────────────────────────────────
+
+    def test_context_customer_isolates_qfc_defects(self):
+        """?context=customer returns only QFC defect trend data."""
+        qfc_defect_type = DefectType.objects.create(name="qfc-trend-defect", is_active=True)
+        qfc_record = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-03-01", week=10, customer="CustTrend",
+            team=99, coord="C", po=999, style="QfcTrend", batch=999,
+            color=self.color, qty=50, seconds=5, accepted=45, rejected=5,
+            sample=50, defects_total=3, aql=2.0, pass_or_fail="PASS",
+        )
+        InspectionDefect.objects.create(
+            inspection=qfc_record,
+            defect_type=qfc_defect_type,
+            amount=25,
+        )
+
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        names = {s["name"] for s in response.data}
+        self.assertIn("qfc-trend-defect", names)
+
+    # ── Filter: other params ────────────────────────────
+
+    def test_week_filter_works(self):
+        """?week=1 filters to only that week's inspections."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?week=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        for series in response.data:
+            weeks = {p["x"] for p in series["data"]}
+            self.assertTrue(weeks == {1} or series["data"] == [])
+
+    # ── Triangulation ───────────────────────────────────
+
+    def test_fewer_than_3_defect_types_returns_available_count(self):
+        """When only 2 defect types have positive amounts, returns 2 series."""
+        # Delete all existing defects, create only 2
+        InspectionDefect.objects.all().delete()
+        dt1 = DefectType.objects.create(name="only-a", is_active=True)
+        dt2 = DefectType.objects.create(name="only-b", is_active=True)
+        record = QualityQcFa.objects.first()
+        InspectionDefect.objects.create(inspection=record, defect_type=dt1, amount=5)
+        InspectionDefect.objects.create(inspection=record, defect_type=dt2, amount=8)
+
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual({s["name"] for s in response.data}, {"only-a", "only-b"})

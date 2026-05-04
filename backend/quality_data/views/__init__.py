@@ -43,6 +43,7 @@ from excel_importer.pivot_parsers import (
     parse_top_defects,
     parse_defects_by_style,
     parse_containers_by_state,
+    DEFECT_LABEL_MAP,
 )
 from quality_data.corporate_xlsx_service import (
     CorporateXlsxReportService,
@@ -702,6 +703,112 @@ class DefectsByStyleTypeView(KpiFilterMixin, APIView):
         return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
+class DefectCompositionView(KpiFilterMixin, APIView):
+    """
+    GET /api/kpis/defect-composition/
+
+    Returns donut-chart-ready composition of defect types.
+    Source: InspectionDefect → defect_type.name
+    Grouped by defect_type__name, SUM(amount).
+    Sorted by value DESC, name ASC. Excludes zero totals.
+
+    Response: [{ "name": "Loose Thread", "value": 234 }, ...]
+    """
+
+    def get(self, request):
+        queryset = InspectionDefect.objects.all()
+        queryset = self.get_filtered_queryset(queryset)
+
+        aggregated = (
+            queryset
+            .values(defect_type_name=F('defect_type__name'))
+            .annotate(total=Sum('amount'))
+            .filter(total__gt=0)
+            .order_by('-total', 'defect_type_name')
+        )
+
+        result = [
+            {"name": item['defect_type_name'], "value": item['total']}
+            for item in aggregated
+        ]
+
+        dto_data = _serialize_payload(KpiDonutSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
+
+
+class DefectTrendTop3View(KpiFilterMixin, APIView):
+    """
+    GET /api/kpis/defect-trend-top-3/
+
+    Returns up to 3 weekly trend series for the top 3 defect types.
+    Source: InspectionDefect → defect_type.name
+    Steps:
+      1. Pick top 3 defect types by filtered SUM(amount).
+      2. For each, aggregate weekly totals (inspection__week).
+      3. Build dense series: every filtered week present, y=0 for absent.
+    Weeks are ascending. Returns [] when no positive defect amounts.
+
+    Response: [
+      { "name": "Loose Thread", "data": [{ "x": 1, "y": 10 }, ...] },
+      ...
+    ]
+    """
+
+    def get(self, request):
+        queryset = InspectionDefect.objects.all()
+        queryset = self.get_filtered_queryset(queryset)
+
+        # Step 1: Top 3 defect types by SUM(amount), filtered to positive totals
+        top_defects = (
+            queryset
+            .values(defect_type_name=F('defect_type__name'))
+            .annotate(total=Sum('amount'))
+            .filter(total__gt=0)
+            .order_by('-total', 'defect_type_name')[:3]
+        )
+
+        top_names = [item['defect_type_name'] for item in top_defects]
+        if not top_names:
+            return Response([], status=http_status.HTTP_200_OK)
+
+        # Step 2: Distinct filtered weeks (ascending)
+        filtered_weeks = sorted(
+            queryset
+            .values_list('inspection__week', flat=True)
+            .distinct()
+        )
+
+        # Step 3: Weekly aggregation per top-defect type
+        weekly_aggregates = (
+            queryset
+            .filter(defect_type__name__in=top_names)
+            .values(defect_type_name=F('defect_type__name'), week=F('inspection__week'))
+            .annotate(weekly_total=Sum('amount'))
+            .order_by('defect_type_name', 'week')
+        )
+
+        # Build dense series: one per top_defect, all weeks present
+        series_by_name = {}
+        for agg in weekly_aggregates:
+            name = agg['defect_type_name']
+            week = agg['week']
+            weekly_total = agg['weekly_total']
+            if name not in series_by_name:
+                series_by_name[name] = {}
+            series_by_name[name][week] = weekly_total or 0
+
+        result = []
+        for name in top_names:
+            data = [
+                {"x": week, "y": series_by_name.get(name, {}).get(week, 0)}
+                for week in filtered_weeks
+            ]
+            result.append({"name": name, "data": data})
+
+        dto_data = _serialize_payload(KpiSeriesSerializer, result, many=True)
+        return Response(dto_data, status=http_status.HTTP_200_OK)
+
+
 # ─────────────────────────────────────────────────────────
 # Grupo 4 - KPIs Operativos Endpoints
 # ─────────────────────────────────────────────────────────
@@ -1300,7 +1407,7 @@ class VolatileKpiView(APIView):
     POST /api/kpis/volatile/
 
     Recibe un archivo Excel via FormData, lo procesa en memoria (sin guardar
-    en la base de datos) y devuelve los 14 KPIs en el mismo formato que los
+    en la base de datos) y devuelve 16 KPIs en el mismo formato que los
     endpoints live.
 
     Solo usa el sheet "QC FA Plant". Los KPIs que requieren datos de otras
@@ -1358,6 +1465,8 @@ class VolatileKpiView(APIView):
                 "rejected_evolution": _serialize_payload(KpiSeriesSerializer, self._calc_rejected_evolution(rows), many=True),
                 "containers_by_state": _serialize_payload(KpiDonutSerializer, containers, many=True) if containers is not None else None,
                 "defect_rate": _serialize_payload(ScalarMetricSerializer, self._calc_defect_rate(rows), many=False),
+                "defect_composition": _serialize_payload(KpiDonutSerializer, self._calc_defect_composition(rows), many=True),
+                "defect_trend_top_3": _serialize_payload(KpiSeriesSerializer, self._calc_defect_trend_top_3(rows), many=True),
             }
 
             filter_options = self._compute_filter_options(rows)
@@ -1581,3 +1690,89 @@ class VolatileKpiView(APIView):
             options['color'] = []
 
         return options
+
+    def _calc_defect_composition(self, rows):
+        """
+        Compute defect composition from parsed QC rows (volatile mode).
+
+        Sums each defect column across all rows, maps field names to human
+        labels via DEFECT_LABEL_MAP, excludes zero totals, and sorts by
+        value DESC, name ASC.
+
+        Returns: [{name: str, value: int}] — same shape as live endpoint.
+        """
+        if not rows:
+            return []
+
+        totals = {}
+        for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
+            total = sum(int(row.get(field, 0) or 0) for row in rows)
+            if total > 0:
+                label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
+                totals[label] = totals.get(label, 0) + total
+
+        result = [{"name": k, "value": v} for k, v in totals.items()]
+        result.sort(key=lambda x: (-x["value"], x["name"]))
+        return result
+
+    def _calc_defect_trend_top_3(self, rows):
+        """
+        Compute top-3 defect weekly trend from parsed QC rows (volatile mode).
+
+        Steps:
+          1. Sum each defect column across ALL rows to find top 3 by total.
+          2. Group by (week, defect field) for weekly totals.
+          3. Build dense series — every filtered week present, y=0 for absent.
+        Returns: [{name: str, data: [{x: int, y: int}]}] — up to 3 series.
+        Returns [] when no positive defect amounts.
+        """
+        if not rows:
+            return []
+
+        # Step 1: Global totals per defect field
+        global_totals = {}
+        for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
+            total = sum(int(row.get(field, 0) or 0) for row in rows)
+            if total > 0:
+                label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
+                global_totals[label] = global_totals.get(label, 0) + total
+
+        if not global_totals:
+            return []
+
+        # Top 3 by total, tie-break by name ASC
+        top_defects = sorted(
+            global_totals.items(),
+            key=lambda x: (-x[1], x[0]),
+        )[:3]
+        top_names = [name for name, _ in top_defects]
+
+        # Step 2: Weekly aggregation
+        # Collect weeks
+        weeks_set = set()
+        weekly_data = {}  # {defect_label: {week: amount}}
+        for row in rows:
+            week = int(row.get('week', 0) or 0)
+            weeks_set.add(week)
+            for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
+                label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
+                if label not in top_names:
+                    continue
+                amount = int(row.get(field, 0) or 0)
+                if label not in weekly_data:
+                    weekly_data[label] = {}
+                weekly_data[label][week] = weekly_data[label].get(week, 0) + amount
+
+        filtered_weeks = sorted(weeks_set)
+
+        # Step 3: Build dense series
+        result = []
+        for name in top_names:
+            data = [
+                {"x": week, "y": weekly_data.get(name, {}).get(week, 0)}
+                for week in filtered_weeks
+            ]
+            result.append({"name": name, "data": data})
+
+        return result
+
