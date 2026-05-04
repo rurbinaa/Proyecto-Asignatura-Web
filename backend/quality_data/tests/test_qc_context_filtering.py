@@ -552,3 +552,168 @@ class InvalidContextTest(TestCase):
         labels = [item["label"] for item in response.data["data"]]
         for label in labels:
             self.assertIn("Cust-Style", label)
+
+
+# ─────────────────────────────────────────────────────────
+# Phase 3: KPI Smoke Test — Synced Defects are Queryable
+# ─────────────────────────────────────────────────────────
+
+class SyncedDefectsKpiQueryableTest(TestCase):
+    """
+    Smoke test proving that after a valid sync persists InspectionDefect data
+    through the session flow, the defect KPI endpoints return meaningful
+    aggregates for the synced data (Task 3.4).
+
+    Spec reference: "Persisted sync data powers defect KPIs" — scenarios
+    "QFA synced defects are queryable" and "QFC synced defects are queryable".
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+
+        # ── Resolve colors that the sync flow will use ──
+        self.color_navy = Color.objects.create(name="navy", is_active=True)
+        self.color_red = Color.objects.create(name="red", is_active=True)
+
+        # ── Import QFA data via session flow with defects ──
+        from excel_importer.sync_service import (
+            create_session_from_dataframes,
+            apply_session,
+        )
+
+        dataframes = {
+            "qc_fa_plant": [
+                {
+                    "date_1": "2025-11-01",
+                    "week": 44,
+                    "customer": "PlantCust",
+                    "team": 10,
+                    "coord": "SMOKE",
+                    "po": 1,
+                    "style": "Style-A",
+                    "batch": 1,
+                    "color": "navy",
+                    "qty": 100,
+                    "seconds": 20,
+                    "accepted": 80,
+                    "rejected": 20,
+                    "sample": 100,
+                    "defects_total": 10,
+                    "aql": 2.5,
+                    "pass_or_fail": "REJECT",
+                    "broken_stitch": 5,
+                    "open_seam": 3,
+                },
+            ],
+            "qc_fa_customer": [
+                {
+                    "date_1": "2025-11-01",
+                    "week": 44,
+                    "customer": "CustCo",
+                    "team": 20,
+                    "coord": "SMOKE",
+                    "po": 100,
+                    "style": "Style-B",
+                    "batch": 1,
+                    "color": "red",
+                    "qty": 50,
+                    "seconds": 10,
+                    "accepted": 40,
+                    "rejected": 10,
+                    "sample": 50,
+                    "defects_total": 8,
+                    "aql": 2.5,
+                    "pass_or_fail": "FAIL",
+                    "broken_stitch": 4,
+                    "open_seam": 1,
+                },
+            ],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+    def test_top_defects_endpoint_returns_synced_qfa_data(self):
+        """Top Defects endpoint returns aggregates from synced QFA defects."""
+        url = reverse("quality_data:kpi-top-defects")
+        response = self.client.get(f"{url}?context=plant")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have data (not empty)
+        self.assertGreater(len(response.data), 0)
+        # broken_stitch should be the top defect (amount=5)
+        values = {item["label"]: item["value"] for item in response.data}
+        self.assertIn("broken_stitch", values)
+        self.assertEqual(values["broken_stitch"], 5)
+
+    def test_top_defects_endpoint_returns_synced_qfc_data(self):
+        """Top Defects endpoint returns aggregates from synced QFC defects."""
+        url = reverse("quality_data:kpi-top-defects")
+        response = self.client.get(f"{url}?context=customer")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+        values = {item["label"]: item["value"] for item in response.data}
+        self.assertIn("broken_stitch", values)
+        self.assertEqual(values["broken_stitch"], 4)
+
+    def test_defects_by_style_type_endpoint_returns_synced_qfa_data(self):
+        """Defects by Style × Type returns data from synced QFA defects."""
+        url = reverse("quality_data:kpi-defects-by-style-type")
+        response = self.client.get(f"{url}?context=plant")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+        # Check that Style-A appears with its defect amounts
+        style_a_entries = [e for e in response.data if e["x"] == "Style-A"]
+        self.assertTrue(len(style_a_entries) > 0, "Style-A should appear in response")
+
+    def test_defect_composition_endpoint_returns_synced_data(self):
+        """Defect Composition endpoint returns data from synced defects."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?context=plant")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        names = {item["name"] for item in response.data}
+        # At least one of our defect types should be present
+        # (names use underscores as stored in DB)
+        expected = {"broken_stitch", "open_seam"}
+        self.assertTrue(
+            bool(names & expected),
+            f"Expected at least one of {expected} in {names}"
+        )
+
+    def test_defect_trend_endpoint_returns_synced_data(self):
+        """Defect Trend Top 3 returns data with synced weeks."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?context=plant")
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have series data
+        self.assertGreater(len(response.data), 0)
+        for series in response.data:
+            weeks = {point["x"] for point in series.get("data", [])}
+            self.assertIn(44, weeks, f"Week 44 should appear in series {series.get('name')}")
+
+    def test_qfa_and_qfc_are_isolated_in_defect_responses(self):
+        """QFA (plant) and QFC (customer) defect responses are isolated."""
+        plant_url = reverse("quality_data:kpi-top-defects")
+        cust_url = reverse("quality_data:kpi-top-defects")
+
+        plant_resp = self.client.get(f"{plant_url}?context=plant")
+        cust_resp = self.client.get(f"{cust_url}?context=customer")
+
+        self.assertEqual(plant_resp.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(cust_resp.status_code, http_status.HTTP_200_OK)
+
+        plant_total = sum(item["value"] for item in plant_resp.data)
+        cust_total = sum(item["value"] for item in cust_resp.data)
+
+        # QFA: broken_stitch=5 + open_seam=3 = 8; QFC: broken_stitch=4 + open_seam=1 = 5
+        self.assertEqual(plant_total, 8)
+        self.assertEqual(cust_total, 5)

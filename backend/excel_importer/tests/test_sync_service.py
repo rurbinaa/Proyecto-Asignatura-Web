@@ -1,3 +1,4 @@
+from django.db.models import Sum
 from django.test import TestCase
 import datetime
 from quality_data.models import (
@@ -950,6 +951,557 @@ class ApplyTimewindowDefectStatsTest(TestCase):
         self.assertEqual(result.get("unmatched_defect_rows"), 0)
         self.assertEqual(result.get("created_defects"), 2)
         self.assertEqual(result.get("matched_parents"), 2)
+
+
+# ─────────────────────────────────────────────────────────
+# Phase 3: Regression Coverage — Session Flow with Mixed Dates
+# ─────────────────────────────────────────────────────────
+
+class SessionFlowQfaQfcRegressionTest(TestCase):
+    """
+    Regression tests proving that create_session_from_dataframes() →
+    apply_session() persists InspectionDefect rows for both QFA and QFC
+    under mixed date representations (Task 3.2).
+    """
+
+    def setUp(self):
+        self.color_black = Color.objects.create(name="black", is_active=True)
+        self.color_red = Color.objects.create(name="red", is_active=True)
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+        DefectType.objects.create(name="open_seam", is_active=True)
+
+    def _make_qfa_row(self, **overrides):
+        base = {
+            "date_1": "2025-09-01",
+            "week": 35,
+            "customer": "A4",
+            "team": 1,
+            "coord": "TEST",
+            "po": 10001,
+            "style": "QFA-FLOW",
+            "batch": 1,
+            "color": "black",
+            "qty": 200,
+            "seconds": 20,
+            "accepted": 180,
+            "rejected": 20,
+            "sample": 20,
+            "defects_total": 5,
+            "aql": 2.5,
+            "pass_or_fail": "PASS",
+        }
+        base.update(overrides)
+        return base
+
+    def _make_qfc_row(self, **overrides):
+        base = {
+            "date_1": "2025-09-01",
+            "week": 35,
+            "customer": "CUST",
+            "team": 3,
+            "coord": "TEST",
+            "po": 20001,
+            "style": "QFC-FLOW",
+            "batch": 1,
+            "color": "red",
+            "qty": 150,
+            "seconds": 15,
+            "accepted": 135,
+            "rejected": 15,
+            "sample": 15,
+            "defects_total": 8,
+            "aql": 2.5,
+            "pass_or_fail": "PASS",
+        }
+        base.update(overrides)
+        return base
+
+    def test_qfa_session_flow_persists_defects_with_iso_dates(self):
+        """Full session flow (create + apply) persists defects for QFA with ISO dates."""
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(broken_stitch=4, open_seam=3),
+            ],
+            "qc_fa_customer": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        self.assertEqual(session.status, "pending")
+
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        # Parent record exists
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 1)
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(parent.date_1, "2025-09-01")
+        self.assertEqual(parent.style, "QFA-FLOW")
+
+        # Defects were created
+        self.assertEqual(InspectionDefect.objects.count(), 2)
+        defects = InspectionDefect.objects.filter(inspection=parent)
+        defect_map = {d.defect_type.name: d.amount for d in defects}
+        self.assertEqual(defect_map.get("broken_stitch"), 4)
+        self.assertEqual(defect_map.get("open_seam"), 3)
+
+    def test_qfc_session_flow_persists_defects_with_iso_dates(self):
+        """Full session flow persists defects for QFC with ISO dates."""
+        dataframes = {
+            "qc_fa_plant": [],
+            "qc_fa_customer": [
+                self._make_qfc_row(broken_stitch=5),
+            ],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        # Parent record exists with correct table_type
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFC").count(), 1)
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 0)
+        parent = QualityQcFa.objects.get(table_type="QFC")
+
+        # Defect linked to QFC parent
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+        self.assertEqual(defect.amount, 5)
+
+    def test_qfa_session_flow_with_us_date_persists_defects(self):
+        """Session flow with US-format date persists defects correctly."""
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(date_1="09/15/2025", broken_stitch=6),
+            ],
+            "qc_fa_customer": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(parent.date_1, "2025-09-15")  # Stored as canonical ISO
+
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+        self.assertEqual(defect.amount, 6)
+
+    def test_qfc_session_flow_with_excel_serial_date_persists_defects(self):
+        """Session flow with Excel serial date for QFC persists defects."""
+        from datetime import date
+        epoch = date(1899, 12, 30)
+        target = date(2025, 9, 20)
+        serial = (target - epoch).days
+
+        dataframes = {
+            "qc_fa_plant": [],
+            "qc_fa_customer": [
+                self._make_qfc_row(date_1=serial, broken_stitch=7),
+            ],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        parent = QualityQcFa.objects.get(table_type="QFC")
+        self.assertEqual(parent.date_1, "2025-09-20")  # Canonical ISO
+
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+        self.assertEqual(defect.amount, 7)
+
+    def test_both_qfa_and_qfc_in_same_session(self):
+        """QFA and QFC both persist in the same session without interference."""
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(po=10001, broken_stitch=2),
+                self._make_qfa_row(po=10002, broken_stitch=3),
+            ],
+            "qc_fa_customer": [
+                self._make_qfc_row(po=20001, broken_stitch=4),
+                self._make_qfc_row(po=20002, broken_stitch=5),
+            ],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        # Both table types present
+        qfa_parents = QualityQcFa.objects.filter(table_type="QFA").order_by("po")
+        qfc_parents = QualityQcFa.objects.filter(table_type="QFC").order_by("po")
+        self.assertEqual(qfa_parents.count(), 2)
+        self.assertEqual(qfc_parents.count(), 2)
+
+        # All defects created (one per parent)
+        self.assertEqual(InspectionDefect.objects.count(), 4)
+
+        # Each defect links to correct parent type
+        for defect in InspectionDefect.objects.select_related("inspection").all():
+            if defect.inspection.po in (10001, 10002):
+                self.assertEqual(defect.inspection.table_type, "QFA")
+            else:
+                self.assertEqual(defect.inspection.table_type, "QFC")
+
+    def test_mixed_date_formats_in_same_session(self):
+        """
+        Multiple QFA rows with different date representations of the same
+        calendar day all persist and link to correct parents.
+        """
+        from datetime import date
+        epoch = date(1899, 12, 30)
+        target = date(2025, 9, 25)
+        serial = (target - epoch).days
+
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(date_1="2025-09-25", po=30001, broken_stitch=1),
+                self._make_qfa_row(date_1="09/25/2025", po=30002, broken_stitch=2),
+                self._make_qfa_row(date_1=serial, po=30003,  # Excel serial
+                                   broken_stitch=3),
+            ],
+            "qc_fa_customer": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        # All 3 parents created
+        parents = QualityQcFa.objects.filter(table_type="QFA").order_by("po")
+        self.assertEqual(parents.count(), 3)
+
+        # All dates stored as canonical ISO
+        for p in parents:
+            self.assertEqual(p.date_1, "2025-09-25")
+
+        # All 3 defects created
+        self.assertEqual(InspectionDefect.objects.count(), 3)
+
+    def test_session_defect_counts_match_expected(self):
+        """Defect counts after session flow match the row-level expectations."""
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(po=40001, broken_stitch=2, open_seam=1),
+                self._make_qfa_row(po=40002, broken_stitch=3, open_seam=0),
+                self._make_qfa_row(po=40003, broken_stitch=0, open_seam=4),
+            ],
+            "qc_fa_customer": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+
+        # Defect counts: 2 defects row1 + 1 defect row2 + 1 defect row3 = 4 total
+        self.assertEqual(InspectionDefect.objects.count(), 4)
+
+        # broken_stitch total: 2+3+0 = 5
+        broken_total = InspectionDefect.objects.filter(
+            defect_type__name="broken_stitch"
+        ).aggregate(total=Sum("amount"))["total"]
+        self.assertEqual(broken_total, 5)
+
+        # open_seam total: 1+0+4 = 5
+        open_total = InspectionDefect.objects.filter(
+            defect_type__name="open_seam"
+        ).aggregate(total=Sum("amount"))["total"]
+        self.assertEqual(open_total, 5)
+
+
+class LegacyRowReplacementRegressionTest(TestCase):
+    """
+    Regression tests proving canonical delete/reimport rewrites mixed
+    stored dates without duplicates (Task 3.3).
+    """
+
+    def setUp(self):
+        self.color_black = Color.objects.create(name="black", is_active=True)
+        self.color_white = Color.objects.create(name="white", is_active=True)
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+
+    def _make_qfa_row(self, **overrides):
+        base = {
+            "date_1": "2025-10-01",
+            "week": 40,
+            "customer": "A4",
+            "team": 1,
+            "coord": "TEST",
+            "po": 50001,
+            "style": "LEGACY-ROW",
+            "batch": 1,
+            "color": "black",
+            "qty": 100,
+            "seconds": 10,
+            "accepted": 90,
+            "rejected": 10,
+            "sample": 10,
+            "defects_total": 5,
+            "aql": 2.5,
+            "pass_or_fail": "PASS",
+        }
+        base.update(overrides)
+        return base
+
+    def test_legacy_us_date_replaced_by_canonical_iso_in_session_flow(self):
+        """
+        A legacy QFA row stored with US date '10/01/2025' is deleted and
+        replaced when reimported via session flow with ISO '2025-10-01'.
+        No duplicates remain.
+        """
+        # Create legacy parent directly in DB with US format date
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="10/01/2025",  # Legacy US format
+            week=40,
+            customer="A4",
+            team=1,
+            coord="TEST",
+            po=50001,
+            style="LEGACY-ROW",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # Now import via session flow with ISO date
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(date_1="2025-10-01", broken_stitch=3),
+            ],
+            "qc_fa_customer": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        # Only ONE QFA parent should exist (no duplicates)
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 1)
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        # Stored as canonical ISO
+        self.assertEqual(parent.date_1, "2025-10-01")
+
+        # Defect is linked
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+        self.assertEqual(defect.amount, 3)
+
+    def test_legacy_non_iso_date_is_replaced_without_duplicates(self):
+        """
+        Direct apply_timewindow call: legacy row with US date is deleted
+        and new ISO row inserted; no duplicates.
+        """
+        # Legacy parent with US date
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="10/01/2025",
+            week=40,
+            customer="A4",
+            team=1,
+            coord="TEST",
+            po=50002,
+            style="LEGACY-DIRECT",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        excel_rows = [{
+            "date_1": "2025-10-01",
+            "week": 40,
+            "customer": "A4",
+            "team": 1,
+            "coord": "TEST",
+            "po": 50002,
+            "style": "LEGACY-DIRECT",
+            "batch": 1,
+            "color": "black",
+            "qty": 100,
+            "seconds": 10,
+            "accepted": 90,
+            "rejected": 10,
+            "sample": 10,
+            "defects_total": 5,
+            "aql": 2.5,
+            "pass_or_fail": "PASS",
+            "broken_stitch": 4,
+        }]
+
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=["week", "team", "po", "batch", "qty", "seconds",
+                             "accepted", "rejected", "sample", "defects_total", "aql"],
+            not_numeric_columns=["date_1", "customer", "coord", "style",
+                                 "color", "pass_or_fail"],
+            defect_fields=["broken_stitch"],
+            color_map={"black": self.color_black},
+        )
+
+        # Only 1 QFA row, date is canonical
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 1)
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(parent.date_1, "2025-10-01")
+
+        # Defect linked
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+
+    def test_legacy_replacement_preserves_other_dates(self):
+        """
+        Canonical deletion for one date does NOT affect rows with different dates
+        or table types.
+        """
+        # Legacy QFA row on date A
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="10/01/2025",  # US format, date A
+            week=40,
+            customer="A4",
+            team=1,
+            coord="TEST",
+            po=50003,
+            style="DATE-A",
+            batch=1,
+            color=self.color_black,
+            qty=10,
+            seconds=1,
+            accepted=9,
+            rejected=1,
+            sample=1,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        # QFA row on date B (should NOT be deleted)
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-10-02",  # ISO, date B
+            week=40,
+            customer="A4",
+            team=1,
+            coord="TEST",
+            po=50004,
+            style="DATE-B",
+            batch=1,
+            color=self.color_white,
+            qty=10,
+            seconds=1,
+            accepted=9,
+            rejected=1,
+            sample=1,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        # QFC row on same logical date A (should NOT be deleted)
+        QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="10/01/2025",
+            week=40,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=50005,
+            style="QFC-DATE-A",
+            batch=1,
+            color=self.color_black,
+            qty=10,
+            seconds=1,
+            accepted=9,
+            rejected=1,
+            sample=1,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # Import QFA date A only with ISO format
+        dataframes = {
+            "qc_fa_plant": [
+                self._make_qfa_row(date_1="2025-10-01", po=50003, style="DATE-A-NEW"),
+            ],
+            "qc_fa_customer": [],
+            "seconds_a4": [],
+            "seconds_general": [],
+            "container": [],
+        }
+
+        session = create_session_from_dataframes(dataframes)
+        apply_session(session)
+        session.refresh_from_db()
+        self.assertEqual(session.status, "confirmed")
+
+        # Date A QFA legacy replaced by new row
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA", po=50003).count(), 1)
+        new_row = QualityQcFa.objects.get(table_type="QFA", po=50003)
+        self.assertEqual(new_row.style, "DATE-A-NEW")
+        self.assertEqual(new_row.date_1, "2025-10-01")  # Canonical
+
+        # Date B QFA row still exists (untouched)
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA", po=50004).count(), 1)
+        date_b = QualityQcFa.objects.get(table_type="QFA", po=50004)
+        self.assertEqual(date_b.date_1, "2025-10-02")
+
+        # QFC row on date A still exists (different table_type scoped out)
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFC").count(), 1)
+
+        # Total counts: QFA=2 (date A new + date B untouched), QFC=1
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 2)
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFC").count(), 1)
 
 
 class SessionManagementTest(TestCase):
