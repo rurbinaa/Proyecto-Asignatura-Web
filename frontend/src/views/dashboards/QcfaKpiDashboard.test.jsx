@@ -288,4 +288,24 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     render(<QcfaKpiDashboard context="plant" />);
     expect(screen.getByText('Defects by Style × Type')).toBeInTheDocument();
   });
+
+  // ── Volatile mode insight chart parity ────────────────────────
+
+  it('renders both Rift insight cards in volatile mode without crash', () => {
+    render(<QcfaKpiDashboard context="plant" volatileData={[{ id: 1, value: 'test' }]} />);
+
+    // Both insight cards should still render (with null/unavailable data)
+    expect(screen.getByText('Defect Trend Top 3')).toBeInTheDocument();
+    expect(screen.getByText('Defect Composition')).toBeInTheDocument();
+    // Section headers still present
+    expect(screen.getByText('Original Excel Reports')).toBeInTheDocument();
+    expect(screen.getByText('Rift Analytics Insights')).toBeInTheDocument();
+  });
+
+  it('renders both Rift insight cards in live mode without crash', () => {
+    render(<QcfaKpiDashboard context="customer" />);
+
+    expect(screen.getByText('Defect Trend Top 3')).toBeInTheDocument();
+    expect(screen.getByText('Defect Composition')).toBeInTheDocument();
+  });
 });

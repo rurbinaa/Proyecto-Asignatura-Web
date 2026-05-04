@@ -441,6 +441,8 @@ class VolatileDefectInsightKpisTest(TestCase):
     def setUp(self):
         # Instantiate view directly to test helper methods
         self.view = VolatileKpiView()
+        self.client = APIClient()
+        self.url = reverse('quality_data:kpi-volatile')
 
     # ── _calc_defect_composition ────────────────────────
 
@@ -591,3 +593,98 @@ class VolatileDefectInsightKpisTest(TestCase):
         ]
         result = self.view._calc_defect_trend_top_3(rows)
         self.assertEqual(result, [])
+
+    # ── Parity: fewer than 3 ─────────────────────────────
+
+    def test_defect_trend_top_3_fewer_than_3_types(self):
+        """When only 2 defect types have positive amounts, returns 2 series."""
+        rows = [
+            {
+                'uneven': 5, 'broken_stitch': 3, 'tear': 0, 'open_seam': 0,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 8, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_trend_top_3(rows)
+        self.assertEqual(len(result), 2)
+        names = {s["name"] for s in result}
+        self.assertEqual(names, {"Uneven", "Broken Stitch"})
+
+    # ── Parity: multi-row composition aggregation ────────
+
+    def test_defect_composition_multi_row_sums_correctly(self):
+        """Defect composition aggregates amounts across multiple rows."""
+        rows = [
+            {
+                'uneven': 5, 'broken_stitch': 0, 'tear': 3,
+                'style': 'A', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 8, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+            {
+                'uneven': 2, 'broken_stitch': 4, 'tear': 0,
+                'style': 'B', 'week': 2, 'team': 2, 'customer': 'CUST_A',
+                'defects_total': 6, 'sample': 100, 'color': 'blue', 'batch': 2,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_composition(rows)
+        # uneven: 5+2=7, broken_stitch: 0+4=4, tear: 3+0=3
+        values = {item["name"]: item["value"] for item in result}
+        self.assertEqual(values["Uneven"], 7)
+        self.assertEqual(values["Broken Stitch"], 4)
+        self.assertEqual(values["Tear"], 3)
+
+    # ── Full volatile endpoint DTO parity ────────────────
+
+    def test_volatile_post_includes_defect_insight_keys(self):
+        """POST /api/kpis/volatile/ response includes defect_composition and
+        defect_trend_top_3 when QC rows are provided."""
+        from django.test import override_settings
+        from unittest.mock import patch
+        import pandas as pd
+
+        file_obj = SimpleUploadedFile(
+            'test.xlsx',
+            b'fake excel content',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        qc_df = pd.DataFrame([
+            {
+                'uneven': 5, 'broken_stitch': 3,
+                'style': 'N3165', 'defects_total': 8, 'sample': 100,
+                'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'color': 'red', 'batch': 1, 'pass_or_fail': 'PASS',
+                'rejected': 5, 'accepted': 95,
+            },
+        ])
+
+        with patch('quality_data.views.load_and_clean', return_value=qc_df):
+            with patch('quality_data.views.parse_seconds_rework', return_value=[]):
+                with patch('quality_data.views.parse_fabric_defects', return_value=[]):
+                    with patch('quality_data.views.parse_containers_by_state', return_value=[]):
+                        with patch('quality_data.views.parse_top_defects', return_value=[]):
+                            with patch('quality_data.views.parse_defects_by_style', return_value=[]):
+                                response = self.client.post(
+                                    self.url,
+                                    {'file': file_obj},
+                                    format='multipart',
+                                )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIn('defect_composition', response.data)
+        self.assertIn('defect_trend_top_3', response.data)
+        # Verify DTO shapes match live contract
+        dc = response.data['defect_composition']
+        self.assertIsInstance(dc, list)
+        if dc:
+            self.assertIn('name', dc[0])
+            self.assertIn('value', dc[0])
+        dt = response.data['defect_trend_top_3']
+        self.assertIsInstance(dt, list)
+        if dt:
+            self.assertIn('name', dt[0])
+            self.assertIn('data', dt[0])
+            self.assertIsInstance(dt[0]['data'], list)

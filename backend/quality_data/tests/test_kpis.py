@@ -1696,6 +1696,77 @@ class DefectCompositionTest(KpiTestMixin, TestCase):
         tie_idx_b = names.index("b-tie")
         self.assertLess(tie_idx_a, tie_idx_b)
 
+    # ── Filter: date_range ───────────────────────────────
+
+    def test_date_range_filter_works(self):
+        """?date_range= filters defects by inspection date_1 range."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(
+            f"{url}?date_range=2025-01-10,2025-01-11"
+        )
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should narrow results to 2 records (weeks 1-2)
+        self.assertGreater(len(response.data), 0)
+
+    def test_date_range_filter_no_match_returns_empty(self):
+        """?date_range=NONMATCHING returns empty list."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(
+            f"{url}?date_range=2020-01-01,2020-01-02"
+        )
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: week ─────────────────────────────────────
+
+    def test_week_filter_works(self):
+        """?week=1 filters to that inspection week only."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?week=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    # ── Filter: color ────────────────────────────────────
+
+    def test_color_filter_no_match_returns_empty(self):
+        """?color=NONEXISTENT returns empty list."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?color=purple")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: customer ─────────────────────────────────
+
+    def test_customer_filter_works(self):
+        """?customer=TestCustomer filters to matching customer records."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?customer=TestCustomer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_customer_filter_no_match_returns_empty(self):
+        """?customer=NONEXISTENT returns empty list."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?customer=NONEXISTENT")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: batch ────────────────────────────────────
+
+    def test_batch_filter_works(self):
+        """?batch=100 filters to matching inspection batch."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?batch=100")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_batch_filter_no_match_returns_empty(self):
+        """?batch=99999 (non-existent) returns empty list."""
+        url = reverse("quality_data:kpi-defect-composition")
+        response = self.client.get(f"{url}?batch=99999")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
 
 class DefectTrendTop3Test(KpiTestMixin, TestCase):
     """Tests for GET /quality/kpis/defect-trend-top-3/
@@ -1879,3 +1950,89 @@ class DefectTrendTop3Test(KpiTestMixin, TestCase):
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertEqual(len(response.data), 2)
         self.assertEqual({s["name"] for s in response.data}, {"only-a", "only-b"})
+
+    # ── Filter: date_range ───────────────────────────────
+
+    def test_date_range_filter_works(self):
+        """?date_range= narrows trend data to matching date range."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(
+            f"{url}?date_range=2025-01-10,2025-01-11"
+        )
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_date_range_filter_no_match_returns_empty(self):
+        """?date_range=NONMATCHING returns empty list."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(
+            f"{url}?date_range=2020-01-01,2020-01-02"
+        )
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: style ────────────────────────────────────
+
+    def test_style_filter_works(self):
+        """?style=Style-0 narrows to matching inspection style."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?style=Style-0")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_style_filter_no_match_returns_empty(self):
+        """?style=NONEXISTENT returns empty list."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?style=NONEXISTENT")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: team ─────────────────────────────────────
+
+    def test_team_filter_works(self):
+        """?team=1 filters to matching inspection team."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?team=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    # ── Filter: color ────────────────────────────────────
+
+    def test_color_filter_no_match_returns_empty(self):
+        """?color=NONEXISTENT returns empty list."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?color=purple")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: customer ─────────────────────────────────
+
+    def test_customer_filter_works(self):
+        """?customer=TestCustomer filters to matching customer."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?customer=TestCustomer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_customer_filter_no_match_returns_empty(self):
+        """?customer=NONEXISTENT returns empty list."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?customer=NONEXISTENT")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    # ── Filter: batch ────────────────────────────────────
+
+    def test_batch_filter_works(self):
+        """?batch=100 filters to matching inspection batch."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?batch=100")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreater(len(response.data), 0)
+
+    def test_batch_filter_no_match_returns_empty(self):
+        """?batch=99999 (non-existent) returns empty list."""
+        url = reverse("quality_data:kpi-defect-trend-top-3")
+        response = self.client.get(f"{url}?batch=99999")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
