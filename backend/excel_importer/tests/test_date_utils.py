@@ -3,7 +3,12 @@ import datetime
 import numpy as np
 import pandas as pd
 
-from excel_importer.date_utils import parse_date, normalize_container_date
+from excel_importer.date_utils import (
+    parse_date,
+    normalize_container_date,
+    canonicalize_qc_fa_date,
+    build_qc_fa_key,
+)
 
 
 class ParseDateTest(TestCase):
@@ -136,3 +141,227 @@ class ParseDateAdditionalCoverageTest(TestCase):
     def test_parse_excel_serial_pandas_integer_scalar(self):
         serial = pd.array([45672], dtype="Int64")[0]
         self.assertEqual(parse_date(serial), "2025-01-15")
+
+
+class CanonicalizeQcFaDateTest(TestCase):
+    """Tests for canonicalize_qc_fa_date() — QC FA date canonicalization helper."""
+
+    # ── Happy path: equivalent formats produce same canonical output ──
+
+    def test_iso_date_stays_iso(self):
+        """ISO date string returns unchanged."""
+        self.assertEqual(canonicalize_qc_fa_date("2025-01-15"), "2025-01-15")
+
+    def test_us_date_canonicalizes_to_iso(self):
+        """US format '01/15/2025' canonicalizes to '2025-01-15'."""
+        self.assertEqual(canonicalize_qc_fa_date("01/15/2025"), "2025-01-15")
+
+    def test_eu_dot_date_canonicalizes_to_iso(self):
+        """EU dot format '15.01.2025' canonicalizes to '2025-01-15'."""
+        self.assertEqual(canonicalize_qc_fa_date("15.01.2025"), "2025-01-15")
+
+    def test_excel_serial_canonicalizes_to_iso(self):
+        """Excel serial number 45672 canonicalizes to '2025-01-15'."""
+        self.assertEqual(canonicalize_qc_fa_date(45672), "2025-01-15")
+
+    def test_datetime_object_canonicalizes_to_iso(self):
+        """Python datetime canonicalizes to ISO string."""
+        dt = datetime.datetime(2025, 3, 15)
+        self.assertEqual(canonicalize_qc_fa_date(dt), "2025-03-15")
+
+    def test_pandas_timestamp_canonicalizes_to_iso(self):
+        """Pandas Timestamp canonicalizes to ISO string."""
+        ts = pd.Timestamp("2025-06-20")
+        self.assertEqual(canonicalize_qc_fa_date(ts), "2025-06-20")
+
+    # ── Equivalent dates across formats all canonicalize to the SAME string ──
+
+    def test_equivalent_dates_produce_same_canonical_string(self):
+        """Different representations of 2025-01-15 yield identical canonical output."""
+        inputs = [
+            "2025-01-15",
+            "01/15/2025",
+            "1/15/2025",
+            "15.01.2025",
+            "15.1.2025",
+            "January 15, 2025",
+            "Jan 15 2025",
+            45672,
+            datetime.date(2025, 1, 15),
+            datetime.datetime(2025, 1, 15),
+            pd.Timestamp("2025-01-15"),
+        ]
+        results = {canonicalize_qc_fa_date(v) for v in inputs}
+        self.assertEqual(len(results), 1, f"All should normalize to the same string, got {results}")
+        self.assertIn("2025-01-15", results)
+
+    # ── Edge: empty, None, unparsable, whitespace ──
+
+    def test_empty_string_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date(""))
+
+    def test_none_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date(None))
+
+    def test_unparsable_placeholder_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date("UNKNOWN"))
+        self.assertIsNone(canonicalize_qc_fa_date("N/A"))
+        self.assertIsNone(canonicalize_qc_fa_date("NONE"))
+        self.assertIsNone(canonicalize_qc_fa_date("NULL"))
+
+    def test_pandas_nat_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date(pd.NaT))
+
+    def test_whitespace_only_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date("   "))
+
+    def test_garbage_string_returns_none(self):
+        """Totally unparsable string returns None."""
+        self.assertIsNone(canonicalize_qc_fa_date("not-a-date-at-all"))
+
+    # ── Edge: numeric zero and negative serials ──
+
+    def test_excel_serial_zero_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date(0))
+
+    def test_excel_serial_negative_returns_none(self):
+        self.assertIsNone(canonicalize_qc_fa_date(-1))
+
+
+class BuildQcFaKeyTest(TestCase):
+    """Tests for build_qc_fa_key() — shared QC FA natural-key builder."""
+
+    def _make_row(self, date_1="2025-01-15", po=12345, style="STYLE-A",
+                  team=1, color="red", table_type="QFA"):
+        return {
+            "date_1": date_1,
+            "po": po,
+            "style": style,
+            "team": team,
+            "color": color,
+            "table_type": table_type,
+        }
+
+    # ── Basic key construction ──
+
+    def test_builds_key_with_explicit_table_type(self):
+        """Key built from a QFA row dict includes (canonical_date, po, style, team, color, table_type)."""
+        row = self._make_row()
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key, ("2025-01-15", 12345, "STYLE-A", 1, "red", "QFA"))
+
+    def test_builds_key_for_qfc_with_explicit_table_type(self):
+        """Key built for a QFC row includes 'QFC' as table_type."""
+        row = self._make_row(table_type="QFC")
+        key = build_qc_fa_key(row, table_type="QFC")
+        self.assertEqual(key[-1], "QFC")
+
+    # ── Table type fallback from row ──
+
+    def test_falls_back_to_row_table_type_when_not_explicit(self):
+        """When table_type arg is None, derives from row['table_type']."""
+        row = self._make_row(table_type="QFC")
+        key = build_qc_fa_key(row)
+        self.assertEqual(key[-1], "QFC")
+
+    def test_defaults_to_qfa_when_table_type_missing(self):
+        """When neither arg nor row has table_type, defaults to 'QFA'."""
+        row = self._make_row()
+        del row["table_type"]
+        key = build_qc_fa_key(row)
+        self.assertEqual(key[-1], "QFA")
+
+    # ── Color normalization ──
+
+    def test_normalizes_color_to_lowercase_underscored(self):
+        """Color 'Dark Blue' becomes 'dark_blue' in the key."""
+        row = self._make_row(color="Dark Blue")
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[4], "dark_blue")
+
+    def test_strips_whitespace_from_color_and_style(self):
+        """Color and style have leading/trailing whitespace stripped."""
+        row = self._make_row(color="  red  ", style="  STYLE-X  ")
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[2], "STYLE-X")
+        self.assertEqual(key[4], "red")
+
+    # ── Equivalent dates produce identical keys ──
+
+    def test_equivalent_dates_produce_identical_keys(self):
+        """Two rows with different date representations of the same day yield identical keys."""
+        row_iso = self._make_row(date_1="2025-01-15")
+        row_us = self._make_row(date_1="01/15/2025")
+        row_serial = self._make_row(date_1=45672)
+        row_dt = self._make_row(date_1=datetime.date(2025, 1, 15))
+
+        key_iso = build_qc_fa_key(row_iso, table_type="QFA")
+        key_us = build_qc_fa_key(row_us, table_type="QFA")
+        key_serial = build_qc_fa_key(row_serial, table_type="QFA")
+        key_dt = build_qc_fa_key(row_dt, table_type="QFA")
+
+        self.assertEqual(key_iso, key_us, "ISO vs US should match")
+        self.assertEqual(key_iso, key_serial, "ISO vs Excel serial should match")
+        self.assertEqual(key_iso, key_dt, "ISO vs datetime.date should match")
+
+    # ── Keys are hashable and usable as dict keys ──
+
+    def test_key_is_hashable(self):
+        """The returned key tuple can be used as a dict key."""
+        row = self._make_row()
+        key = build_qc_fa_key(row, table_type="QFA")
+        d = {key: "found"}
+        self.assertEqual(d[key], "found")
+        # Prove that an otherwise identical QFC row gets a DIFFERENT key
+        row_qfc = self._make_row(table_type="QFC")
+        key_qfc = build_qc_fa_key(row_qfc, table_type="QFC")
+        self.assertNotEqual(key, key_qfc)
+        d[key_qfc] = "also found"
+        self.assertEqual(len(d), 2)
+
+    # ── Missing fields are handled gracefully ──
+
+    def test_missing_date_returns_none_first_element(self):
+        """When date_1 is absent from the row, canonical date is None."""
+        row = self._make_row()
+        del row["date_1"]
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsNone(key[0])
+
+    def test_missing_po_returns_zero(self):
+        row = self._make_row()
+        del row["po"]
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[1], 0)
+
+    def test_missing_style_returns_empty_string(self):
+        row = self._make_row()
+        del row["style"]
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[2], "")
+
+    def test_missing_team_returns_zero(self):
+        row = self._make_row()
+        del row["team"]
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[3], 0)
+
+    def test_missing_color_returns_unknown(self):
+        row = self._make_row()
+        del row["color"]
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[4], "unknown")
+
+    # ── PO and team are coerced to int ──
+
+    def test_po_string_coerced_to_int(self):
+        row = self._make_row(po="12345")
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsInstance(key[1], int)
+        self.assertEqual(key[1], 12345)
+
+    def test_team_string_coerced_to_int(self):
+        row = self._make_row(team="1")
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsInstance(key[3], int)
+        self.assertEqual(key[3], 1)
