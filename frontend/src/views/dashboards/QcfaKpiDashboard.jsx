@@ -354,12 +354,12 @@ function buildRiftSection(opts) {
       ),
     },
     {
-      title: 'Acceptance Rate by Customer (accepted/sample × 100)',
+      title: 'Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)',
       chart: 'bar',
       data: perfByCustomerData,
       layoutRole: 'standard',
       render: () => (
-        <KpiCard title="Acceptance Rate by Customer (accepted/sample × 100)" loading={loading} error={error}>
+        <KpiCard title="Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)" loading={loading} error={error}>
           {isNullOrError(perfByCustomerData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -367,7 +367,7 @@ function buildRiftSection(opts) {
               data={perfByCustomerData}
               color="#8b5cf6"
               xAxisLabel="Customer"
-              yAxisLabel="Acceptance Rate (accepted/sample × 100)"
+              yAxisLabel="Acceptance Rate (accepted / (accepted + rejected) × 100)"
               xTickFormatter={trimCategoryLabel}
               yTickFormatter={(value) => Number(value).toFixed(0)}
               valueFormatter={formatAcceptanceIndex}
@@ -441,12 +441,12 @@ function buildRiftSection(opts) {
       ),
     },
     {
-      title: 'Acceptance Rate by Line (accepted/sample × 100)',
+      title: 'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
       chart: 'bar',
       data: perfByLineData,
       layoutRole: 'standard',
       render: () => (
-        <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
+        <KpiCard title="Acceptance Rate by Line (accepted / (accepted + rejected) × 100)" loading={loading} error={error}>
           {isNullOrError(perfByLineData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
@@ -454,7 +454,7 @@ function buildRiftSection(opts) {
               data={perfByLineData}
               horizontal
               color="#f59e0b"
-              xAxisLabel="Acceptance Rate (accepted/sample × 100)"
+              xAxisLabel="Acceptance Rate (accepted / (accepted + rejected) × 100)"
               yAxisLabel="Line"
               showAllCategoryTicks
               xTickFormatter={(value) => Number(value).toFixed(0)}

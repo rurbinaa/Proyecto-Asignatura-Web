@@ -105,8 +105,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
       'Weekly Rejected Pieces',
       'Accepted / Rejected Absolute Volume',
       'Weekly Audited Pieces',
-      'Acceptance Rate by Customer (accepted/sample × 100)',
-      'Acceptance Rate by Line (accepted/sample × 100)',
+      'Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)',
+      'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
       'Defects by Style × Type',
       'Defect Trend Top 3',
       'Defect Composition',
@@ -221,8 +221,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
 
   const RIFT_TITLES = [
     'Weekly Audited Pieces',
-    'Acceptance Rate by Customer (accepted/sample × 100)',
-    'Acceptance Rate by Line (accepted/sample × 100)',
+    'Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)',
+    'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
     'Defects by Style × Type',
     'Defect Trend Top 3',
     'Defect Composition',
@@ -334,8 +334,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
 
     expect(titles).toEqual([
       'Weekly Audited Pieces',
-      'Acceptance Rate by Customer (accepted/sample × 100)',
-      'Acceptance Rate by Line (accepted/sample × 100)',
+      'Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)',
+      'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
       'Defects by Style × Type',
       'Defect Trend Top 3',
       'Defect Composition',
@@ -413,7 +413,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
   it('assigns data-layout-role="standard" to Acceptance Rate by Customer', () => {
     render(<QcfaKpiDashboard context="plant" />);
 
-    const card = screen.getByText('Acceptance Rate by Customer (accepted/sample × 100)');
+    const card = screen.getByText('Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)');
     const item = card.closest('.dashboard-section__item');
     expect(item).not.toBeNull();
     expect(item.dataset.layoutRole).toBe('standard');
@@ -422,7 +422,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
   it('assigns data-layout-role="standard" to Acceptance Rate by Line', () => {
     render(<QcfaKpiDashboard context="plant" />);
 
-    const card = screen.getByText('Acceptance Rate by Line (accepted/sample × 100)');
+    const card = screen.getByText('Acceptance Rate by Line (accepted / (accepted + rejected) × 100)');
     const item = card.closest('.dashboard-section__item');
     expect(item).not.toBeNull();
     expect(item.dataset.layoutRole).toBe('standard');
@@ -673,8 +673,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     await waitFor(() => {
       // All 6 Rift cards must exist
       expect(screen.getByText('Weekly Audited Pieces')).toBeInTheDocument();
-      expect(screen.getByText('Acceptance Rate by Customer (accepted/sample × 100)')).toBeInTheDocument();
-      expect(screen.getByText('Acceptance Rate by Line (accepted/sample × 100)')).toBeInTheDocument();
+      expect(screen.getByText('Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)')).toBeInTheDocument();
+      expect(screen.getByText('Acceptance Rate by Line (accepted / (accepted + rejected) × 100)')).toBeInTheDocument();
       expect(screen.getByText('Defects by Style × Type')).toBeInTheDocument();
       expect(screen.getByText('Defect Trend Top 3')).toBeInTheDocument();
       expect(screen.getByText('Defect Composition')).toBeInTheDocument();
@@ -696,8 +696,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     await waitFor(() => {
       // At least the first 4 Rift cards should show null messages
       // (defectTrendTop3 and defectComposition use state messages, not null-message)
-      ['Weekly Audited Pieces', 'Acceptance Rate by Customer (accepted/sample × 100)',
-        'Acceptance Rate by Line (accepted/sample × 100)'].forEach((title) => {
+      ['Weekly Audited Pieces', 'Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)',
+        'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)'].forEach((title) => {
         const card = screen.getByText(title).closest('.kpi-card');
         expect(card.querySelector('.null-message')).not.toBeNull();
       });
