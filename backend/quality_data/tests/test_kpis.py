@@ -340,6 +340,156 @@ class AuditedPiecesTest(KpiTestMixin, TestCase):
         self.assertEqual(week_1["y"], 150)
 
 
+class AqlByTeamTest(KpiTestMixin, TestCase):
+    """Tests for GET /quality/kpis/aql/aql-by-team/"""
+
+    def test_returns_200_with_data_envelope(self):
+        """Returns 200 with {data:[{label,value}]} envelope."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIn("data", response.data)
+        self.assertIsInstance(response.data["data"], list)
+        # 5 teams (1-5), one record each
+        self.assertEqual(len(response.data["data"]), 5)
+
+    def test_empty_db_returns_empty_data(self):
+        """Returns 200 with {data:[]} when no QualityQcFa records."""
+        QualityQcFa.objects.all().delete()
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+
+    def test_response_items_have_label_and_value(self):
+        """Each item has 'label' (team as string) and 'value' (float AQL %)."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(url)
+        for item in response.data["data"]:
+            self.assertIn("label", item)
+            self.assertIn("value", item)
+            self.assertIsInstance(item["value"], float)
+
+    def test_aggregates_repeated_team_rows(self):
+        """Multiple rows for same team sum defects_total and sample before AQL."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-02-01",
+            week=6,
+            customer="TestCustomer",
+            team=1,  # Existing team 1 to force aggregation
+            coord="COORD2",
+            po=999,
+            style="Style-Extra",
+            batch=999,
+            color=self.color,
+            qty=100,
+            seconds=30,
+            accepted=80,
+            rejected=20,
+            sample=50,
+            defects_total=5,
+            aql=0,
+            pass_or_fail="REJECT",
+        )
+
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        # Verify unique labels only
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(len(labels), len(set(labels)))
+
+        # Team 1: original (defects=3, sample=100) + new (defects=5, sample=50)
+        # Expected: (3+5)/(100+50) * 100 = 8/150 * 100 = 5.33
+        team_1 = next(item for item in response.data["data"] if item["label"] == "1")
+        self.assertAlmostEqual(team_1["value"], 5.33, places=2)
+
+    def test_zero_sample_team_returns_zero(self):
+        """A team with SUM(sample)=0 returns value=0.0 and does not crash."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-02-01",
+            week=6,
+            customer="TestCustomer",
+            team=99,
+            coord="COORD2",
+            po=999,
+            style="Style-Zero",
+            batch=999,
+            color=self.color,
+            qty=0,
+            seconds=0,
+            accepted=0,
+            rejected=0,
+            sample=0,
+            defects_total=0,
+            aql=0,
+            pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        team_99 = next(
+            (item for item in response.data["data"] if item["label"] == "99"),
+            None,
+        )
+        self.assertIsNotNone(team_99)
+        self.assertEqual(team_99["value"], 0.0)
+
+    def test_week_filter_narrows_results(self):
+        """?week=1 returns only team(s) from that week."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?week=1")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Only team 1 has week=1 in the base fixture
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(labels, ["1"])
+
+    def test_team_filter_narrows_results(self):
+        """?team=2 returns only team 2 data."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?team=2")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(labels, ["2"])
+
+    def test_combined_context_customer_week_team_filter(self):
+        """?context=customer&week=...&team=... composes filters correctly."""
+        # Create a QFC record to test combined context + week + team filter
+        QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-02-01",
+            week=6,
+            customer="CustFilter",
+            team=20,
+            coord="COORD_C",
+            po=200,
+            style="CustStyle",
+            batch=200,
+            color=self.color,
+            qty=100,
+            seconds=40,
+            accepted=80,
+            rejected=20,
+            sample=200,
+            defects_total=10,
+            aql=2.5,
+            pass_or_fail="FAIL",
+        )
+
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?context=customer&week=6&team=20")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["label"], "20")
+        # defects=10, sample=200 → AQL = 5.0
+        self.assertAlmostEqual(response.data["data"][0]["value"], 5.0, places=2)
+
+
 class AqlDtoBoundaryTest(KpiTestMixin, TestCase):
     def test_aql_by_style_uses_dto_serializer_helpers(self):
         url = reverse("quality_data:kpi-aql-aql-by-style")
@@ -363,6 +513,16 @@ class AqlDtoBoundaryTest(KpiTestMixin, TestCase):
 
     def test_audited_pieces_uses_dto_serializer_helpers(self):
         url = reverse("quality_data:kpi-aql-audited-pieces")
+        with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
+            with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
+                response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertGreaterEqual(serialize_payload.call_count, 1)
+        self.assertEqual(serialize_envelope.call_count, 1)
+
+    def test_aql_by_team_uses_dto_serializer_helpers(self):
+        url = reverse("quality_data:kpi-aql-aql-by-team")
         with patch("quality_data.views._serialize_payload", wraps=__import__("quality_data.views", fromlist=["_serialize_payload"])._serialize_payload) as serialize_payload:
             with patch("quality_data.views._serialize_envelope", wraps=__import__("quality_data.views", fromlist=["_serialize_envelope"])._serialize_envelope) as serialize_envelope:
                 response = self.client.get(url)
@@ -1486,6 +1646,7 @@ class KpiContractParityTest(KpiTestMixin, TestCase):
     def test_kpi_object_families_keep_expected_keys_and_types(self):
         cases = [
             ("quality_data:kpi-aql-aql-by-style", "data", {"label", "value"}),
+            ("quality_data:kpi-aql-aql-by-team", "data", {"label", "value"}),
             ("quality_data:kpi-rendimiento-ac-re-rate-by-line", None, {"label", "value"}),
             ("quality_data:kpi-rendimiento-performance-by-customer", None, {"label", "value"}),
             ("quality_data:kpi-rendimiento-performance-by-line", None, {"label", "value"}),

@@ -164,6 +164,57 @@ class AuditedPiecesContextTest(QcContextFilteringMixin, TestCase):
         self.assertEqual(weeks, {5, 6})
 
 
+class AqlByTeamContextTest(QcContextFilteringMixin, TestCase):
+    """Tests context filtering on GET /api/kpis/aql/aql-by-team/"""
+
+    def test_context_plant_returns_only_qfa_teams(self):
+        """?context=plant returns only QFA team data (teams 10-12)."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?context=plant")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(len(labels), 3)
+        for label in labels:
+            self.assertIn(label, {"10", "11", "12"})
+
+    def test_context_customer_returns_only_qfc_teams(self):
+        """?context=customer returns only QFC team data (teams 20-21)."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(len(labels), 2)
+        for label in labels:
+            self.assertIn(label, {"20", "21"})
+
+    def test_default_no_context_returns_plant_data(self):
+        """When context is omitted, default to plant (QFA) data."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        labels = [item["label"] for item in response.data["data"]]
+        self.assertEqual(len(labels), 3)
+        for label in labels:
+            self.assertIn(label, {"10", "11", "12"})
+
+    def test_context_customer_excludes_qfa_only_teams(self):
+        """?context=customer must NOT include QFA-only teams."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        labels = [item["label"] for item in response.data["data"]]
+        # QFA teams (10, 11, 12) should be absent
+        for label in labels:
+            self.assertNotIn(label, {"10", "11", "12"})
+
+    def test_invalid_context_returns_400(self):
+        """An invalid context value returns HTTP 400 for aql-by-team."""
+        url = reverse("quality_data:kpi-aql-aql-by-team")
+        response = self.client.get(f"{url}?context=invalid")
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn("context", response.data)
+
+
 # ─────────────────────────────────────────────────────────
 # Rendimiento endpoints — context filtering
 # ─────────────────────────────────────────────────────────

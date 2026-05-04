@@ -1183,6 +1183,45 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
     def get_queryset(self):
         return QualityQcFa.objects.all()
 
+    @action(detail=False, methods=['get'], url_path='aql-by-team')
+    def aql_by_team(self, request):
+        """
+        GET /api/kpis/aql/aql-by-team/
+
+        Returns AQL percentage grouped by team (line).
+        Formula: SUM(defects_total) / SUM(sample) * 100
+        """
+        queryset = self.get_filtered_queryset(self.get_queryset())
+
+        if not queryset.exists():
+            return Response(_serialize_envelope(KpiBarEnvelopeSerializer, []))
+
+        # GROUP BY team: SUM(defects_total) / SUM(sample) * 100
+        annotated = (
+            queryset
+            .values('team')
+            .annotate(
+                total_defects=Sum('defects_total'),
+                total_sample=Sum('sample'),
+            )
+        )
+
+        result = []
+        for row in annotated:
+            sample = row['total_sample'] or 0
+            defects = row['total_defects'] or 0
+            if sample > 0:
+                aql = (defects / sample) * 100
+            else:
+                aql = 0.0
+            result.append({
+                "label": str(row['team']),
+                "value": round(aql, 2),
+            })
+
+        dto_data = _serialize_payload(KpiBarSerializer, result, many=True)
+        return Response(_serialize_envelope(KpiBarEnvelopeSerializer, dto_data))
+
     @action(detail=False, methods=['get'], url_path='aql-by-style')
     def aql_by_style(self, request):
         """
