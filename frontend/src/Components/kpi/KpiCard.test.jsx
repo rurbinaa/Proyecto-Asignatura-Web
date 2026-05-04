@@ -9,7 +9,7 @@ describe('KpiCard', () => {
       expect(screen.getByText('Test Title')).toBeInTheDocument();
     });
 
-    it('body has min-height of 120px to support masonry packing', () => {
+    it('body has min-height of 120px for consistent card sizing in grid layout', () => {
       render(<KpiCard title="Test Card"><span>Content</span></KpiCard>);
       const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
       expect(bodyElement).toBeInTheDocument();
@@ -80,7 +80,7 @@ describe('KpiCard', () => {
       expect(chartContainer.style.width).toBe('100%');
     });
 
-    it('card has overflow visible for natural flow in masonry layout', () => {
+    it('card has overflow visible for natural flow in grid layout', () => {
       render(<KpiCard title="Test Card"><span>Content</span></KpiCard>);
       const cardElement = document.querySelector('.kpi-card');
       expect(cardElement).toBeInTheDocument();

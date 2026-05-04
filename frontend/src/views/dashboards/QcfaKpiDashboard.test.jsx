@@ -294,6 +294,54 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(screen.queryByText('Rejected by Line (count)')).not.toBeInTheDocument();
   });
 
+  // ── Intra-section DOM order (exact spec order per section) ──
+
+  it('renders Excel section cards in exact DOM order per spec', () => {
+    const { container } = render(<QcfaKpiDashboard context="plant" />);
+
+    const sections = container.querySelectorAll('.dashboard-section--qfa-qfc');
+    const excelGrid = sections[0].querySelector('.dashboard-section__grid');
+    const excelItems = excelGrid.querySelectorAll('.dashboard-section__item');
+    expect(excelItems).toHaveLength(8);
+
+    const titles = Array.from(excelItems).map(
+      (item) => item.querySelector('.kpi-card h2').textContent,
+    );
+
+    expect(titles).toEqual([
+      'Defect Rate (AQL %)',
+      'Pass / Reject Distribution',
+      'Weekly AQL (%)',
+      'AQL by Style',
+      'AQL by Team/Line',
+      'Top Defects',
+      'Weekly Rejected Pieces',
+      'Accepted / Rejected Absolute Volume',
+    ]);
+  });
+
+  it('renders Rift section cards in exact DOM order per spec', () => {
+    const { container } = render(<QcfaKpiDashboard context="plant" />);
+
+    const sections = container.querySelectorAll('.dashboard-section--qfa-qfc');
+    const riftGrid = sections[1].querySelector('.dashboard-section__grid');
+    const riftItems = riftGrid.querySelectorAll('.dashboard-section__item');
+    expect(riftItems).toHaveLength(6);
+
+    const titles = Array.from(riftItems).map(
+      (item) => item.querySelector('.kpi-card h2').textContent,
+    );
+
+    expect(titles).toEqual([
+      'Weekly Audited Pieces',
+      'Acceptance Rate by Customer (accepted/sample × 100)',
+      'Acceptance Rate by Line (accepted/sample × 100)',
+      'Defects by Style × Type',
+      'Defect Trend Top 3',
+      'Defect Composition',
+    ]);
+  });
+
   // ── Grid layout structure (replaces Masonry assertions) ──────
 
   it('renders two dashboard section containers with grid bodies', () => {
@@ -360,6 +408,24 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
       expect(item).not.toBeNull();
       expect(item.dataset.layoutRole).toBe('standard');
     });
+  });
+
+  it('assigns data-layout-role="standard" to Acceptance Rate by Customer', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+
+    const card = screen.getByText('Acceptance Rate by Customer (accepted/sample × 100)');
+    const item = card.closest('.dashboard-section__item');
+    expect(item).not.toBeNull();
+    expect(item.dataset.layoutRole).toBe('standard');
+  });
+
+  it('assigns data-layout-role="standard" to Acceptance Rate by Line', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+
+    const card = screen.getByText('Acceptance Rate by Line (accepted/sample × 100)');
+    const item = card.closest('.dashboard-section__item');
+    expect(item).not.toBeNull();
+    expect(item.dataset.layoutRole).toBe('standard');
   });
 
   it('does not render any masonry-related CSS classes', () => {
