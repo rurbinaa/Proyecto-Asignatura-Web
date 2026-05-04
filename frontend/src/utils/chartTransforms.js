@@ -169,6 +169,30 @@ export function transformSecondsRework(data) {
 }
 
 /**
+ * Transform defect composition for DonutChart.
+ * API returns: [{name: "Loose Thread", value: 45}, {name: "Broken Stitch", value: 32}, ...]
+ */
+export function transformDefectComposition(data) {
+  if (!data || data.error) return null;
+  return (data.result || data).map(item => ({
+    name: item.name,
+    value: item.value,
+  }));
+}
+
+/**
+ * Transform defect trend top 3 for LineChart.
+ * API returns: [{name: "Loose Thread", data: [{x: 10, y: 5}, ...]}, ...]
+ */
+export function transformDefectTrendTop3(data) {
+  if (!data || data.error) return null;
+  return (data.result || data).map(series => ({
+    name: series.name,
+    data: series.data,
+  }));
+}
+
+/**
  * Format a numeric value as a percentage with 2 decimal places.
  * @param {number} value - The numeric value to format
  * @returns {string} Formatted percentage string (e.g., "2.35%")

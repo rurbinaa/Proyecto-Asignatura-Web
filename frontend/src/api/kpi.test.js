@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3 } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -277,7 +277,9 @@ describe('kpi.js - fetchAllKpis unavailable contract', () => {
       .mockResolvedValueOnce({ data: { data: [] } })
       .mockResolvedValueOnce({ data: { data: [] } })
       .mockResolvedValueOnce({ data: { data: [] } })
-      .mockResolvedValueOnce({ data: { label: 'Defect Rate', value: 2.5 } });
+      .mockResolvedValueOnce({ data: { label: 'Defect Rate', value: 2.5 } })
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [] });
 
     const result = await fetchAllKpis();
 
@@ -377,46 +379,46 @@ describe('kpi.js - context parameter', () => {
     expect(url).not.toMatch(/context/);
   });
 
-  it('fetchAllKpis passes context to all 14 sub-calls via fetchKpi', async () => {
+  it('fetchAllKpis passes context to all 16 sub-calls via fetchKpi', async () => {
     // Each individual KPI function calls fetchKpi, which calls axiosClient.get
-    // We mock axiosClient.get to resolve for all 14 calls
-    for (let i = 0; i < 14; i++) {
+    // We mock axiosClient.get to resolve for all 16 calls
+    for (let i = 0; i < 16; i++) {
       axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
     }
 
     await fetchAllKpis({}, 'plant');
 
-    // All 14 calls should include context=plant
+    // All 16 calls should include context=plant
     const calls = axiosClient.get.mock.calls;
-    expect(calls).toHaveLength(14);
+    expect(calls).toHaveLength(16);
     calls.forEach(([url]) => {
       expect(url).toContain('context=plant');
     });
   });
 
   it('fetchAllKpis with context=customer passes it to all sub-calls', async () => {
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 16; i++) {
       axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
     }
 
     await fetchAllKpis({}, 'customer');
 
     const calls = axiosClient.get.mock.calls;
-    expect(calls).toHaveLength(14);
+    expect(calls).toHaveLength(16);
     calls.forEach(([url]) => {
       expect(url).toContain('context=customer');
     });
   });
 
   it('fetchAllKpis without context does NOT inject context param', async () => {
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 16; i++) {
       axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
     }
 
     await fetchAllKpis();
 
     const calls = axiosClient.get.mock.calls;
-    expect(calls).toHaveLength(14);
+    expect(calls).toHaveLength(16);
     calls.forEach(([url]) => {
       expect(url).not.toContain('context=');
     });
@@ -431,5 +433,262 @@ describe('kpi.js - context parameter', () => {
     expect(url).toContain('week=5');
     expect(url).toContain('team=1');
     expect(url).toContain('context=plant');
+  });
+});
+
+// ─── Task 3.1: New defect insight API helpers ───────────────────────────────
+describe('kpi.js - getDefectComposition', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches correct endpoint and returns raw DTO', async () => {
+    const mockDto = [
+      { name: 'Loose Thread', value: 45 },
+      { name: 'Broken Stitch', value: 32 },
+    ];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getDefectComposition();
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/defect-composition/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes context param in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    await getDefectComposition({}, 'plant');
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=plant');
+  });
+
+  it('returns empty array when no defects match', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    const result = await getDefectComposition();
+    expect(result).toEqual([]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Server error' }, status: 500 } });
+    await expect(getDefectComposition()).rejects.toThrow('Server error');
+  });
+});
+
+describe('kpi.js - getDefectTrendTop3', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches correct endpoint and returns series DTO', async () => {
+    const mockDto = [
+      { name: 'Loose Thread', data: [{ x: 10, y: 5 }, { x: 11, y: 8 }] },
+      { name: 'Broken Stitch', data: [{ x: 10, y: 3 }, { x: 11, y: 2 }] },
+    ];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getDefectTrendTop3();
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/defect-trend-top-3/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes context param in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    await getDefectTrendTop3({}, 'customer');
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=customer');
+  });
+
+  it('returns empty array when no defects found', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    const result = await getDefectTrendTop3();
+    expect(result).toEqual([]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
+    await expect(getDefectTrendTop3()).rejects.toThrow('Not found');
+  });
+});
+
+// ─── Task 3.1: Volatile DTO mapping for defect insights ────────────────────
+describe('kpi.js - fetchVolatileKpis_defect_insights', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('maps defect_composition snake_case to defectComposition camelCase', async () => {
+    const mockResponse = {
+      aql_by_style: [],
+      aql_weekly: [],
+      defect_composition: [
+        { name: 'Loose Thread', value: 45 },
+        { name: 'Broken Stitch', value: 32 },
+      ],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+    expect(result.defectComposition).toBeDefined();
+    expect(result.defectComposition).toEqual([
+      { name: 'Loose Thread', value: 45 },
+      { name: 'Broken Stitch', value: 32 },
+    ]);
+    // Snake_case key must not leak
+    expect(result.defect_composition).toBeUndefined();
+  });
+
+  it('maps defect_trend_top_3 snake_case to defectTrendTop3 camelCase', async () => {
+    const mockResponse = {
+      aql_by_style: [],
+      aql_weekly: [],
+      defect_trend_top_3: [
+        { name: 'Loose Thread', data: [{ x: 10, y: 5 }, { x: 11, y: 8 }] },
+      ],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+    expect(result.defectTrendTop3).toBeDefined();
+    expect(result.defectTrendTop3).toEqual([
+      { name: 'Loose Thread', data: [{ x: 10, y: 5 }, { x: 11, y: 8 }] },
+    ]);
+    expect(result.defect_trend_top_3).toBeUndefined();
+  });
+
+  it('handles empty arrays for both new volatile keys', async () => {
+    const mockResponse = {
+      aql_by_style: [],
+      aql_weekly: [],
+      defect_composition: [],
+      defect_trend_top_3: [],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+    expect(result.defectComposition).toEqual([]);
+    expect(result.defectTrendTop3).toEqual([]);
+  });
+
+  it('handles absent new keys gracefully (backward compat for old volatile responses)', async () => {
+    const mockResponse = {
+      aql_by_style: [],
+      aql_weekly: [],
+      // No defect_composition or defect_trend_top_3 at all
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+    // Should not crash — keys just won't be present
+    expect(result.defectComposition).toBeUndefined();
+    expect(result.defectTrendTop3).toBeUndefined();
+  });
+
+  it('full volatile contract regression now includes both new insight keys', async () => {
+    const snakeCaseApiResponse = {
+      aql_by_style: [{ style: 'A', aql: 1.5 }],
+      aql_weekly: [{ week: 1, aql: 2.0 }],
+      audited_pieces: 1000,
+      ac_re_rate_by_line: [{ line: '1', accept: 95, reject: 5 }],
+      seconds_rework: 150,
+      performance_by_customer: [{ customer: 'X', rate: 0.9 }],
+      performance_by_line: [{ line: '1', rate: 0.85 }],
+      top_defects: [{ defect: 'seam', count: 50 }],
+      fabric_defects: [{ type: 'hole', count: 20 }],
+      defects_by_style_type: [{ style: 'A', type: 'seam', count: 10 }],
+      pass_reject_distribution: { pass: 800, reject: 200 },
+      rejected_evolution: [{ week: 1, rejected: 50 }],
+      containers_by_state: { open: 10, closed: 20 },
+      defect_rate: 2.5,
+      defect_composition: [{ name: 'Loose Thread', value: 45 }],
+      defect_trend_top_3: [{ name: 'Loose Thread', data: [{ x: 10, y: 5 }] }],
+    };
+
+    axiosClient.post.mockResolvedValueOnce({ data: snakeCaseApiResponse });
+    const result = await fetchVolatileKpis(new File(['test'], 'test.xlsx'));
+
+    // All camelCase keys expected (existing + new)
+    const expectedKeys = [
+      'aqlByStyle', 'aqlWeekly', 'auditedPieces', 'acReRateByLine',
+      'secondsRework', 'performanceByCustomer', 'performanceByLine',
+      'topDefects', 'fabricDefects', 'defectsByStyleType',
+      'passRejectDistribution', 'rejectedEvolution', 'containersByState',
+      'defectRate', 'defectComposition', 'defectTrendTop3',
+    ];
+
+    expectedKeys.forEach((key) => {
+      expect(result).toHaveProperty(key);
+    });
+
+    // No snake_case keys leaked
+    const snakeCaseKeys = Object.keys(snakeCaseApiResponse);
+    snakeCaseKeys.forEach((key) => {
+      expect(result).not.toHaveProperty(key);
+    });
+  });
+});
+
+// ─── Task 3.1: fetchAllKpis includes defect insight KPIs ───────────────────
+describe('kpi.js - fetchAllKpis_includes_defect_insights', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetchAllKpis result includes defectComposition and defectTrendTop3 keys', async () => {
+    const mockComposition = [{ name: 'Loose Thread', value: 45 }];
+    const mockTrend = [{ name: 'Loose Thread', data: [{ x: 10, y: 5 }] }];
+
+    // 16 calls: 14 original + 2 new
+    for (let i = 0; i < 14; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+    // 15th call = defectComposition
+    axiosClient.get.mockResolvedValueOnce({ data: mockComposition });
+    // 16th call = defectTrendTop3
+    axiosClient.get.mockResolvedValueOnce({ data: mockTrend });
+
+    const result = await fetchAllKpis();
+
+    expect(result).toHaveProperty('defectComposition');
+    expect(result).toHaveProperty('defectTrendTop3');
+    expect(result.defectComposition).toEqual(mockComposition);
+    expect(result.defectTrendTop3).toEqual(mockTrend);
+  });
+
+  it('fetchAllKpis calls the defect composition endpoint with correct URL', async () => {
+    for (let i = 0; i < 16; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis({}, 'plant');
+
+    const urls = axiosClient.get.mock.calls.map(([url]) => url);
+    expect(urls.some((u) => u.includes('/quality/kpis/defect-composition/'))).toBe(true);
+    expect(urls.some((u) => u.includes('/quality/kpis/defect-trend-top-3/'))).toBe(true);
+  });
+
+  it('fetchAllKpis gracefully handles defect insight failures via unavailableKpi', async () => {
+    for (let i = 0; i < 14; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+    // defectComposition fails
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'DB error' }, status: 500 } });
+    // defectTrendTop3 succeeds
+    axiosClient.get.mockResolvedValueOnce({ data: [{ name: 'A', data: [{ x: 1, y: 1 }] }] });
+
+    const result = await fetchAllKpis();
+
+    expect(result.defectComposition).toEqual({
+      status: 'unavailable',
+      reason: 'DB error',
+      data: null,
+    });
+    expect(result.defectTrendTop3).toEqual([{ name: 'A', data: [{ x: 1, y: 1 }] }]);
   });
 });

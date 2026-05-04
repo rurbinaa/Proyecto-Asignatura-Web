@@ -60,6 +60,8 @@ function calculateAllKpis(rows) {
       rejectedEvolution: null,
       containersByState: null,
       defectRate: null,
+      defectComposition: null,
+      defectTrendTop3: null,
     };
   }
 
@@ -78,6 +80,8 @@ function calculateAllKpis(rows) {
     rejectedEvolution: calc.calculateRejectedEvolution(rows),
     containersByState: calc.calculateContainersByState(rows),
     defectRate: calc.calculateDefectRate(rows),
+    defectComposition: null,
+    defectTrendTop3: null,
   };
 }
 

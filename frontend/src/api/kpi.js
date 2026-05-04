@@ -186,6 +186,16 @@ export async function getDefectsByStyleType(filters, context) {
   return fetchKpi('defects-by-style-type/', filters, context);
 }
 
+/** Defect composition donut — requires InspectionDefect data. */
+export async function getDefectComposition(filters, context) {
+  return fetchKpi('defect-composition/', filters, context);
+}
+
+/** Top 3 defect types weekly trend — requires InspectionDefect data. */
+export async function getDefectTrendTop3(filters, context) {
+  return fetchKpi('defect-trend-top-3/', filters, context);
+}
+
 /** Pass vs. reject count distribution across all inspections. */
 export async function getPassRejectDistribution(filters, context) {
   return fetchKpi('pass-reject-distribution/', filters, context);
@@ -234,6 +244,8 @@ export function mapVolatileKpisDto(response) {
     rejected_evolution: 'rejectedEvolution',
     containers_by_state: 'containersByState',
     defect_rate: 'defectRate',
+    defect_composition: 'defectComposition',
+    defect_trend_top_3: 'defectTrendTop3',
     filter_options: 'filterOptions',
   };
 
@@ -303,6 +315,8 @@ export async function fetchAllKpis(filters = {}, context) {
     rejectedEvolution: getRejectedEvolution,
     containersByState: getContainersByState,
     defectRate: getDefectRate,
+    defectComposition: getDefectComposition,
+    defectTrendTop3: getDefectTrendTop3,
   };
 
   const entries = Object.entries(kpiMap).map(([key, fn]) => [

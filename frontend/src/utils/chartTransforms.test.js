@@ -14,6 +14,9 @@ import {
   transformContainersByState,
   transformDefectsByStyleType,
   transformSecondsRework,
+  // 2 New defect insight transforms
+  transformDefectComposition,
+  transformDefectTrendTop3,
   // 7 Formatters
   formatPercent,
   formatPieces,
@@ -119,6 +122,21 @@ const SAMPLE_SECONDS_REWORK = {
   result: [
     { name: 'Sewing', data: [{ x: 1, y: 12.3 }, { x: 2, y: 10.5 }] },
     { name: 'Fabric', data: [{ x: 1, y: 8.2 }, { x: 2, y: 7.8 }] },
+  ],
+};
+
+const SAMPLE_DEFECT_COMPOSITION = {
+  result: [
+    { name: 'Loose Thread', value: 45 },
+    { name: 'Broken Stitch', value: 32 },
+    { name: 'Color Fading', value: 18 },
+  ],
+};
+
+const SAMPLE_DEFECT_TREND_TOP3 = {
+  result: [
+    { name: 'Loose Thread', data: [{ x: 10, y: 5 }, { x: 11, y: 8 }] },
+    { name: 'Broken Stitch', data: [{ x: 10, y: 3 }, { x: 11, y: 12 }] },
   ],
 };
 
@@ -447,6 +465,108 @@ describe('transformSecondsRework', () => {
   });
 });
 
+// ─── Defect Insight Transform Tests ─────────────────────────────────────────────
+
+describe('transformDefectComposition', () => {
+  it('extracts name and value from result array for donut chart', () => {
+    const result = transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ name: 'Loose Thread', value: 45 });
+    expect(result[1]).toEqual({ name: 'Broken Stitch', value: 32 });
+    expect(result[2]).toEqual({ name: 'Color Fading', value: 18 });
+  });
+
+  it('handles direct array input (no result wrapper)', () => {
+    const input = [{ name: 'Hole', value: 12 }];
+    const result = transformDefectComposition(input);
+    expect(result).toEqual([{ name: 'Hole', value: 12 }]);
+  });
+
+  it('returns empty array for empty result', () => {
+    expect(transformDefectComposition({ result: [] })).toEqual([]);
+  });
+
+  it('returns null for null input', () => {
+    expect(transformDefectComposition(null)).toBeNull();
+  });
+
+  it('returns null for undefined input', () => {
+    expect(transformDefectComposition(undefined)).toBeNull();
+  });
+
+  it('returns null for error object', () => {
+    expect(transformDefectComposition({ error: 'something went wrong' })).toBeNull();
+  });
+
+  it('does not mutate input (immutability)', () => {
+    const original = JSON.parse(JSON.stringify(SAMPLE_DEFECT_COMPOSITION));
+    transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
+    expect(SAMPLE_DEFECT_COMPOSITION).toEqual(original);
+  });
+
+  it('is deterministic', () => {
+    const r1 = transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
+    const r2 = transformDefectComposition(SAMPLE_DEFECT_COMPOSITION);
+    expect(r1).toEqual(r2);
+  });
+});
+
+describe('transformDefectTrendTop3', () => {
+  it('preserves series name and data structure for line chart', () => {
+    const result = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      name: 'Loose Thread',
+      data: [{ x: 10, y: 5 }, { x: 11, y: 8 }],
+    });
+    expect(result[1]).toEqual({
+      name: 'Broken Stitch',
+      data: [{ x: 10, y: 3 }, { x: 11, y: 12 }],
+    });
+  });
+
+  it('handles single-series input', () => {
+    const input = { result: [{ name: 'Hole', data: [{ x: 1, y: 10 }] }] };
+    const result = transformDefectTrendTop3(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('Hole');
+  });
+
+  it('handles direct array input (no result wrapper)', () => {
+    const input = [{ name: 'Hole', data: [{ x: 1, y: 5 }] }];
+    const result = transformDefectTrendTop3(input);
+    expect(result).toEqual(input);
+  });
+
+  it('returns empty array for empty result', () => {
+    expect(transformDefectTrendTop3({ result: [] })).toEqual([]);
+  });
+
+  it('returns null for null input', () => {
+    expect(transformDefectTrendTop3(null)).toBeNull();
+  });
+
+  it('returns null for undefined input', () => {
+    expect(transformDefectTrendTop3(undefined)).toBeNull();
+  });
+
+  it('returns null for error object', () => {
+    expect(transformDefectTrendTop3({ error: 'failed' })).toBeNull();
+  });
+
+  it('does not mutate input (immutability)', () => {
+    const original = JSON.parse(JSON.stringify(SAMPLE_DEFECT_TREND_TOP3));
+    transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
+    expect(SAMPLE_DEFECT_TREND_TOP3).toEqual(original);
+  });
+
+  it('is deterministic', () => {
+    const r1 = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
+    const r2 = transformDefectTrendTop3(SAMPLE_DEFECT_TREND_TOP3);
+    expect(r1).toEqual(r2);
+  });
+});
+
 // ─── Formatter Tests ───────────────────────────────────────────────────────────
 
 describe('formatPercent', () => {
@@ -685,6 +805,8 @@ describe('Transform functions are pure (do not mutate input)', () => {
     { name: 'transformContainersByState', fn: transformContainersByState, input: SAMPLE_CONTAINERS },
     { name: 'transformDefectsByStyleType', fn: transformDefectsByStyleType, input: SAMPLE_DEFECTS_STYLE_TYPE },
     { name: 'transformSecondsRework', fn: transformSecondsRework, input: SAMPLE_SECONDS_REWORK },
+    { name: 'transformDefectComposition', fn: transformDefectComposition, input: SAMPLE_DEFECT_COMPOSITION },
+    { name: 'transformDefectTrendTop3', fn: transformDefectTrendTop3, input: SAMPLE_DEFECT_TREND_TOP3 },
   ];
 
   mutations.forEach(({ name, fn, input }) => {
@@ -717,6 +839,8 @@ describe('Transform functions are deterministic', () => {
     { name: 'transformContainersByState', fn: transformContainersByState, input: SAMPLE_CONTAINERS },
     { name: 'transformDefectsByStyleType', fn: transformDefectsByStyleType, input: SAMPLE_DEFECTS_STYLE_TYPE },
     { name: 'transformSecondsRework', fn: transformSecondsRework, input: SAMPLE_SECONDS_REWORK },
+    { name: 'transformDefectComposition', fn: transformDefectComposition, input: SAMPLE_DEFECT_COMPOSITION },
+    { name: 'transformDefectTrendTop3', fn: transformDefectTrendTop3, input: SAMPLE_DEFECT_TREND_TOP3 },
   ];
 
   determinismTests.forEach(({ name, fn, input }) => {
