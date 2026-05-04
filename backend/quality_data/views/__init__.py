@@ -123,6 +123,51 @@ def _resolve_context_table_type(context_raw):
             "context": f"Unsupported context '{context}'. Valid values: plant, customer."
         })
 
+# ─────────────────────────────────────────────────────────
+# Shared acceptance-rate and team-sanitization helpers
+# ─────────────────────────────────────────────────────────
+
+_valid_team_range = range(1, 37)
+
+
+def _calculate_acceptance_rate(total_accepted, total_rejected):
+    """
+    Compute acceptance rate as accepted / (accepted + rejected) * 100.
+
+    Returns a float rounded to 2 decimal places. Returns 0 when the
+    denominator (accepted + rejected) is zero. Handles None inputs by
+    treating them as 0.
+    """
+    accepted = total_accepted or 0
+    rejected = total_rejected or 0
+    denominator = accepted + rejected
+    if denominator > 0:
+        return round((accepted / denominator) * 100, 2)
+    return 0
+
+
+def _apply_team_sanitization_queryset(queryset):
+    """
+    Filter a QualityQcFa queryset to only include records where team is
+    within the valid range 1..36.
+
+    Returns the filtered queryset.
+    """
+    return queryset.filter(team__gte=1, team__lte=36)
+
+
+def _sanitize_team_dataframe(df):
+    """
+    Filter a pandas DataFrame to only include rows where the 'team' column
+    value is within the valid range 1..36.
+
+    Returns a filtered DataFrame (may be empty).
+    """
+    if df is None or df.empty:
+        return df
+    return df[df['team'].isin(_valid_team_range)]
+
+
 class Process(APIView):
     """
     Process an uploaded Excel file for preview (V2 workflow).
@@ -1098,19 +1143,18 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         GET /api/kpis/performance-by-customer/
 
         Source: QualityQcFa
-        GROUP BY customer: SUM(accepted) / SUM(sample) * 100.
-        Filter where sample > 0.
+        GROUP BY customer: accepted / (accepted + rejected) * 100.
 
         Response: [{"label": "Customer X", "value": 92.5}, ...]
         """
-        queryset = self.get_quality_queryset().filter(sample__gt=0)
+        queryset = self.get_quality_queryset()
 
         aggregated = (
             queryset
             .values(customer_name=F('customer'))
             .annotate(
                 total_accepted=Sum('accepted'),
-                total_sample=Sum('sample'),
+                total_rejected=Sum('rejected'),
             )
             .order_by('customer_name')
         )
@@ -1118,8 +1162,9 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         result = [
             {
                 "label": item['customer_name'],
-                "value": round((item['total_accepted'] / item['total_sample']) * 100, 2)
-                if item['total_sample'] > 0 else 0,
+                "value": _calculate_acceptance_rate(
+                    item['total_accepted'], item['total_rejected']
+                ),
             }
             for item in aggregated
         ]
@@ -1133,18 +1178,22 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         GET /api/kpis/performance-by-line/
 
         Source: QualityQcFa
-        GROUP BY team: SUM(accepted) / SUM(sample) * 100.
+        GROUP BY team: accepted / (accepted + rejected) * 100.
+        Teams outside 1..36 are excluded (metric-scoped sanitization).
 
         Response: [{"label": "Line 1", "value": 95.2}, ...]
         """
         queryset = self.get_quality_queryset()
+
+        # Sanitize: exclude teams outside valid range 1..36 (metric-scoped)
+        queryset = _apply_team_sanitization_queryset(queryset)
 
         aggregated = (
             queryset
             .values(team_name=F('team'))
             .annotate(
                 total_accepted=Sum('accepted'),
-                total_sample=Sum('sample'),
+                total_rejected=Sum('rejected'),
             )
             .order_by('team_name')
         )
@@ -1152,8 +1201,9 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         result = [
             {
                 "label": f"{item['team_name']}",
-                "value": round((item['total_accepted'] / item['total_sample']) * 100, 2)
-                if item['total_sample'] > 0 else 0,
+                "value": _calculate_acceptance_rate(
+                    item['total_accepted'], item['total_rejected']
+                ),
             }
             for item in aggregated
         ]
@@ -1605,43 +1655,51 @@ class VolatileKpiView(APIView):
         return result
 
     def _calc_perf_by_customer(self, rows):
-        """GROUP BY customer: SUM(accepted)/SUM(sample)*100"""
+        """GROUP BY customer: accepted / (accepted + rejected) * 100"""
         df = pd.DataFrame(rows)
         if df.empty:
             return []
 
-        df = df[df['sample'] > 0]
         grouped = df.groupby('customer').agg(
             total_accepted=('accepted', 'sum'),
-            total_sample=('sample', 'sum')
+            total_rejected=('rejected', 'sum'),
         ).reset_index()
 
         result = [
             {
                 "label": row['customer'],
-                "value": round((row['total_accepted'] / row['total_sample']) * 100, 2)
-                if row['total_sample'] > 0 else 0,
+                "value": _calculate_acceptance_rate(
+                    row['total_accepted'], row['total_rejected']
+                ),
             }
             for _, row in grouped.iterrows()
         ]
         return result
 
     def _calc_perf_by_line(self, rows):
-        """GROUP BY team: SUM(accepted)/SUM(sample)*100"""
+        """GROUP BY team: accepted / (accepted + rejected) * 100.
+        Teams outside 1..36 are excluded (metric-scoped sanitization)."""
         df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+
+        # Sanitize: exclude teams outside valid range 1..36
+        df = _sanitize_team_dataframe(df)
+
         if df.empty:
             return []
 
         grouped = df.groupby('team').agg(
             total_accepted=('accepted', 'sum'),
-            total_sample=('sample', 'sum')
+            total_rejected=('rejected', 'sum'),
         ).reset_index()
 
         result = [
             {
                 "label": str(int(row['team'])),
-                "value": round((row['total_accepted'] / row['total_sample']) * 100, 2)
-                if row['total_sample'] > 0 else 0,
+                "value": _calculate_acceptance_rate(
+                    row['total_accepted'], row['total_rejected']
+                ),
             }
             for _, row in grouped.iterrows()
         ]

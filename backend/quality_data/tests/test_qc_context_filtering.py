@@ -717,3 +717,89 @@ class SyncedDefectsKpiQueryableTest(TestCase):
         # QFA: broken_stitch=5 + open_seam=3 = 8; QFC: broken_stitch=4 + open_seam=1 = 5
         self.assertEqual(plant_total, 8)
         self.assertEqual(cust_total, 5)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 3.4: Context + sanitization interaction
+# ─────────────────────────────────────────────────────────
+
+class ContextWithLineSanitizationTest(TestCase):
+    """Tests that context filtering + team sanitization compose correctly."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.color = Color.objects.create(name="ctx_sanitize", is_active=True)
+
+        # QFA records: mix of valid and invalid teams
+        for team in [1, 0, 5, 60]:
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1="2025-04-01", week=20, customer="PlantCust",
+                team=team, coord="C", po=100,
+                style=f"PlantStyle-{team}", batch=1,
+                color=self.color, qty=50, seconds=20,
+                accepted=40, rejected=10, sample=50,
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+        # QFC records: mix of valid and invalid teams
+        for team in [20, 0, 25, 60]:
+            QualityQcFa.objects.create(
+                table_type="QFC",
+                date_1="2025-04-01", week=20, customer="CustCo",
+                team=team, coord="C", po=100,
+                style=f"CustStyle-{team}", batch=1,
+                color=self.color, qty=50, seconds=20,
+                accepted=40, rejected=10, sample=50,
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+    def test_context_plant_line_sanitization_excludes_dirty_teams(self):
+        """?context=plant on performance-by-line: only valid QFA teams appear."""
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(f"{url}?context=plant")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = {item["label"] for item in response.data}
+        # Valid QFA teams: 1, 5 (not 0, 60)
+        self.assertEqual(teams, {"1", "5"})
+
+    def test_context_customer_line_sanitization_excludes_dirty_teams(self):
+        """?context=customer on performance-by-line: only valid QFC teams appear."""
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = {item["label"] for item in response.data}
+        # Valid QFC teams: 20, 25 (not 0, 60)
+        self.assertEqual(teams, {"20", "25"})
+
+    def test_context_plant_not_leaked_to_customer_line_output(self):
+        """QFA teams should NOT appear in ?context=customer line output."""
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = {item["label"] for item in response.data}
+        self.assertNotIn("1", teams)
+        self.assertNotIn("5", teams)
+
+    def test_context_customer_not_leaked_to_plant_line_output(self):
+        """QFC teams should NOT appear in ?context=plant line output."""
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(f"{url}?context=plant")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = {item["label"] for item in response.data}
+        self.assertNotIn("20", teams)
+        self.assertNotIn("25", teams)
+
+    def test_context_does_not_affect_customer_endpoint_sanitization(self):
+        """performance-by-customer groups by customer, team sanitization is not applied."""
+        url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
+        response = self.client.get(f"{url}?context=plant")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        # Should find "PlantCust" regardless of team values
+        customers = {item["label"] for item in response.data}
+        self.assertIn("PlantCust", customers)

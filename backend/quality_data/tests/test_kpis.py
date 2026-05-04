@@ -2197,3 +2197,183 @@ class DefectTrendTop3Test(KpiTestMixin, TestCase):
         response = self.client.get(f"{url}?batch=99999")
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertEqual(response.data, [])
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 3.1: Corrected acceptance-rate formula
+# ─────────────────────────────────────────────────────────
+
+class AcceptanceRateFormulaTest(TestCase):
+    """Tests proving acceptance uses accepted/(accepted+rejected)*100, NOT sample."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.color = Color.objects.create(name="formula_test", is_active=True)
+
+    def test_performance_by_customer_uses_accepted_plus_rejected_denominator(self):
+        """When sample differs from accepted+rejected, formula uses the latter."""
+        # Create records where sample=100 but accepted+rejected=50
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01", week=10, customer="CustA",
+            team=1, coord="C", po=100, style="S1", batch=1,
+            color=self.color, qty=50, seconds=20, accepted=8, rejected=2,
+            sample=100,  # sample is much larger than accepted+rejected
+            defects_total=2, aql=2.5, pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        item = response.data[0]
+        # Correct: 8/(8+2)*100 = 80.0
+        # Buggy (old): 8/100*100 = 8.0
+        self.assertEqual(item["value"], 80.0)
+
+    def test_performance_by_line_uses_accepted_plus_rejected_denominator(self):
+        """When sample differs from accepted+rejected, line formula uses the latter."""
+        # Create records where sample=50 but accepted+rejected=30
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01", week=10, customer="CustB",
+            team=5, coord="C", po=100, style="S2", batch=1,
+            color=self.color, qty=30, seconds=15, accepted=9, rejected=1,
+            sample=50,  # sample differs from accepted+rejected
+            defects_total=1, aql=2.5, pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        item = response.data[0]
+        # Correct: 9/(9+1)*100 = 90.0
+        # Buggy (old): 9/50*100 = 18.0
+        self.assertEqual(item["value"], 90.0)
+
+    def test_performance_by_line_zero_denominator_safe(self):
+        """When accepted+rejected=0, returns 0 without error."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01", week=10, customer="CustC",
+            team=10, coord="C", po=100, style="S3", batch=1,
+            color=self.color, qty=0, seconds=0, accepted=0, rejected=0,
+            sample=0,
+            defects_total=0, aql=0.0, pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        item = response.data[0]
+        self.assertEqual(item["value"], 0)
+
+    def test_performance_by_customer_zero_denominator_safe(self):
+        """When accepted+rejected=0 in customer endpoint, returns 0."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01", week=10, customer="CustD",
+            team=10, coord="C", po=100, style="S4", batch=1,
+            color=self.color, qty=0, seconds=0, accepted=0, rejected=0,
+            sample=0,
+            defects_total=0, aql=0.0, pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        item = response.data[0]
+        self.assertEqual(item["value"], 0)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 3.2: Line sanitization in live endpoints
+# ─────────────────────────────────────────────────────────
+
+class LineSanitizationLiveTest(TestCase):
+    """Tests proving out-of-range teams are excluded from live line-based KPIs."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.color = Color.objects.create(name="sanitize_live", is_active=True)
+
+    def test_performance_by_line_excludes_invalid_teams(self):
+        """Teams 0, 60 should be excluded; valid teams 1, 36 should appear."""
+        for team in [1, 0, 36, 60]:
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1="2025-03-01", week=10, customer="CustX",
+                team=team, coord="C", po=100, style="SX", batch=1,
+                color=self.color, qty=50, seconds=20, accepted=40, rejected=10,
+                sample=50,  # sample == accepted+rejected to isolate sanitization
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = {item["label"] for item in response.data}
+        self.assertEqual(teams, {"1", "36"})
+        self.assertNotIn("0", teams)
+        self.assertNotIn("60", teams)
+
+    def test_performance_by_line_all_valid_teams_preserved(self):
+        """When all teams are valid (1..36), none are filtered out."""
+        for team in [5, 15, 25]:
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1="2025-03-01", week=10, customer="CustY",
+                team=team, coord="C", po=100, style="SY", batch=1,
+                color=self.color, qty=50, seconds=20, accepted=40, rejected=10,
+                sample=50,
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 3)
+
+    def test_performance_by_customer_not_affected_by_team_sanitization(self):
+        """performance_by_customer should NOT filter by team range — metric-scoped only."""
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01", week=10, customer="CustZ",
+            team=60,  # invalid team — but customer endpoint shouldn't filter it
+            coord="C", po=100, style="SZ", batch=1,
+            color=self.color, qty=50, seconds=20, accepted=8, rejected=2,
+            sample=100,  # intentionally not matching to show formula fix in isolation
+            defects_total=2, aql=2.5, pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-customer")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        # Customer endpoint groups by customer, not team. Invalid teams should
+        # NOT be filtered from customer views — sanitization is metric-scoped.
+        self.assertGreaterEqual(len(response.data), 1)
+
+    def test_performance_by_line_context_customer_with_invalid_team(self):
+        """QFC context + invalid team: sanitization still applies to line output."""
+        QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-03-01", week=10, customer="QCust",
+            team=0,  # invalid — should be excluded from line output
+            coord="C", po=100, style="SZ", batch=1,
+            color=self.color, qty=50, seconds=20, accepted=40, rejected=10,
+            sample=50,
+            defects_total=2, aql=2.5, pass_or_fail="PASS",
+        )
+
+        url = reverse("quality_data:kpi-rendimiento-performance-by-line")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        # team=0 should be excluded, so the result should be empty
+        teams = {item["label"] for item in response.data}
+        self.assertNotIn("0", teams)

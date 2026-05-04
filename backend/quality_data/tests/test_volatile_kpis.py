@@ -688,3 +688,305 @@ class VolatileDefectInsightKpisTest(TestCase):
             self.assertIn('name', dt[0])
             self.assertIn('data', dt[0])
             self.assertIsInstance(dt[0]['data'], list)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 1.1: _calculate_acceptance_rate helper
+# ─────────────────────────────────────────────────────────
+
+class AcceptanceRateHelperTest(TestCase):
+    """Unit tests for _calculate_acceptance_rate shared helper."""
+
+    def test_standard_rate_8_accepted_2_rejected(self):
+        """8 accepted, 2 rejected → 80.0%"""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(8, 2)
+        self.assertEqual(result, 80.0)
+
+    def test_all_accepted_no_rejected(self):
+        """10 accepted, 0 rejected → 100.0%"""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(10, 0)
+        self.assertEqual(result, 100.0)
+
+    def test_all_rejected_no_accepted(self):
+        """0 accepted, 5 rejected → 0.0%"""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(0, 5)
+        self.assertEqual(result, 0.0)
+
+    def test_zero_denominator_returns_zero(self):
+        """0 accepted, 0 rejected → 0 (no division error)."""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(0, 0)
+        self.assertEqual(result, 0)
+
+    def test_none_accepted_treated_as_zero(self):
+        """None accepted, 5 rejected → accepted treated as 0."""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(None, 5)
+        self.assertEqual(result, 0.0)
+
+    def test_none_rejected_treated_as_zero(self):
+        """5 accepted, None rejected → rejected treated as 0."""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(5, None)
+        self.assertEqual(result, 100.0)
+
+    def test_both_none_treated_as_zero(self):
+        """None accepted, None rejected → 0."""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(None, None)
+        self.assertEqual(result, 0)
+
+    def test_prevents_rate_above_100_from_sample_mismatch(self):
+        """9 accepted, 1 rejected → 90.0%, NOT using sample=5 denominator."""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(9, 1)
+        self.assertEqual(result, 90.0)
+
+    def test_large_numbers_rounded_to_2_decimals(self):
+        """950 accepted, 50 rejected → 95.0%"""
+        from quality_data.views import _calculate_acceptance_rate
+        result = _calculate_acceptance_rate(950, 50)
+        self.assertEqual(result, 95.0)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 1.2: Team sanitization helpers
+# ─────────────────────────────────────────────────────────
+
+class TeamSanitizationHelperTest(TestCase):
+    """Unit tests for team sanitization helpers."""
+
+    def test_queryset_sanitization_filters_out_of_range(self):
+        """Queryset sanitization removes teams <= 0 and > 36."""
+        from quality_data.views import _apply_team_sanitization_queryset
+        from quality_data.models import QualityQcFa, Color
+
+        color = Color.objects.create(name="test_sanitize", is_active=True)
+
+        # Valid teams
+        for team in [1, 5, 36]:
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1="2025-03-01", week=10, customer="Test", team=team,
+                coord="C", po=100, style="S", batch=1, color=color,
+                qty=50, seconds=20, accepted=40, rejected=10, sample=50,
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+        # Invalid teams (should be filtered out)
+        for team in [0, -1, 37, 60, 999]:
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1="2025-03-01", week=10, customer="Test", team=team,
+                coord="C", po=100, style="S", batch=1, color=color,
+                qty=50, seconds=20, accepted=40, rejected=10, sample=50,
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+        qs = QualityQcFa.objects.all()
+        sanitized = _apply_team_sanitization_queryset(qs)
+
+        teams = sorted(set(sanitized.values_list('team', flat=True)))
+        self.assertEqual(teams, [1, 5, 36])
+
+    def test_queryset_sanitization_all_valid_teams_preserved(self):
+        """When all teams are in range, none are removed."""
+        from quality_data.views import _apply_team_sanitization_queryset
+        from quality_data.models import QualityQcFa, Color
+
+        color = Color.objects.create(name="test_all_valid", is_active=True)
+
+        for team in [1, 10, 20, 36]:
+            QualityQcFa.objects.create(
+                table_type="QFA",
+                date_1="2025-03-01", week=10, customer="Test", team=team,
+                coord="C", po=100, style="S", batch=1, color=color,
+                qty=50, seconds=20, accepted=40, rejected=10, sample=50,
+                defects_total=2, aql=2.5, pass_or_fail="PASS",
+            )
+
+        qs = QualityQcFa.objects.all()
+        sanitized = _apply_team_sanitization_queryset(qs)
+        self.assertEqual(sanitized.count(), 4)
+
+    def test_dataframe_sanitization_filters_out_of_range(self):
+        """DataFrame sanitization removes rows with team <= 0 or > 36."""
+        import pandas as pd
+        from quality_data.views import _sanitize_team_dataframe
+
+        df = pd.DataFrame([
+            {'team': 1, 'accepted': 10, 'rejected': 2},
+            {'team': 0, 'accepted': 5, 'rejected': 1},
+            {'team': 36, 'accepted': 20, 'rejected': 5},
+            {'team': 60, 'accepted': 30, 'rejected': 10},
+            {'team': -1, 'accepted': 0, 'rejected': 0},
+            {'team': 5, 'accepted': 15, 'rejected': 3},
+        ])
+
+        sanitized = _sanitize_team_dataframe(df)
+        teams = sorted(sanitized['team'].unique().tolist())
+        self.assertEqual(teams, [1, 5, 36])
+
+    def test_dataframe_sanitization_preserves_all_valid(self):
+        """DataFrame with only valid teams keeps all rows."""
+        import pandas as pd
+        from quality_data.views import _sanitize_team_dataframe
+
+        df = pd.DataFrame([
+            {'team': 1, 'accepted': 10, 'rejected': 2},
+            {'team': 36, 'accepted': 20, 'rejected': 5},
+        ])
+
+        sanitized = _sanitize_team_dataframe(df)
+        self.assertEqual(len(sanitized), 2)
+
+    def test_dataframe_sanitization_all_invalid_returns_empty(self):
+        """DataFrame with all invalid teams returns empty DataFrame."""
+        import pandas as pd
+        from quality_data.views import _sanitize_team_dataframe
+
+        df = pd.DataFrame([
+            {'team': 0, 'accepted': 10, 'rejected': 2},
+            {'team': 60, 'accepted': 20, 'rejected': 5},
+        ])
+
+        sanitized = _sanitize_team_dataframe(df)
+        self.assertEqual(len(sanitized), 0)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 3.3: Volatile helper formula + sanitization
+# ─────────────────────────────────────────────────────────
+
+class VolatileAcceptanceRateTest(TestCase):
+    """Tests for corrected acceptance formula in volatile helpers."""
+
+    def setUp(self):
+        self.view = VolatileKpiView()
+
+    def test_calc_perf_by_customer_uses_accepted_plus_rejected(self):
+        """Volatile _calc_perf_by_customer uses accepted/(accepted+rejected)*100."""
+        rows = [
+            {
+                'customer': 'CUST_A', 'accepted': 8, 'rejected': 2,
+                'sample': 100,  # sample differs — proves formula change
+                'team': 1, 'style': 'S1', 'week': 1,
+                'batch': 1, 'color': 'red', 'pass_or_fail': 'PASS',
+            },
+        ]
+        result = self.view._calc_perf_by_customer(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], 'CUST_A')
+        self.assertEqual(result[0]['value'], 80.0)
+
+    def test_calc_perf_by_line_uses_accepted_plus_rejected(self):
+        """Volatile _calc_perf_by_line uses accepted/(accepted+rejected)*100."""
+        rows = [
+            {
+                'team': 5, 'accepted': 9, 'rejected': 1,
+                'sample': 50,  # sample differs
+                'customer': 'CUST_B', 'style': 'S2', 'week': 1,
+                'batch': 1, 'color': 'blue', 'pass_or_fail': 'PASS',
+            },
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], '5')
+        self.assertEqual(result[0]['value'], 90.0)
+
+    def test_calc_perf_by_customer_zero_denominator_safe(self):
+        """Volatile customer helper: accepted=0, rejected=0 → value=0 (no error)."""
+        rows = [
+            {
+                'customer': 'CUST_C', 'accepted': 0, 'rejected': 0,
+                'sample': 0,
+                'team': 1, 'style': 'S3', 'week': 1,
+                'batch': 1, 'color': 'red', 'pass_or_fail': 'PASS',
+            },
+        ]
+        result = self.view._calc_perf_by_customer(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], 'CUST_C')
+        self.assertEqual(result[0]['value'], 0)
+
+    def test_calc_perf_by_line_zero_denominator_safe(self):
+        """Volatile line helper: accepted=0, rejected=0 → value=0."""
+        rows = [
+            {
+                'team': 10, 'accepted': 0, 'rejected': 0,
+                'sample': 0,
+                'customer': 'CUST_D', 'style': 'S4', 'week': 1,
+                'batch': 1, 'color': 'blue', 'pass_or_fail': 'PASS',
+            },
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['value'], 0)
+
+
+class VolatileLineSanitizationTest(TestCase):
+    """Tests for team sanitization in volatile line-based helpers."""
+
+    def setUp(self):
+        self.view = VolatileKpiView()
+
+    def test_calc_perf_by_line_excludes_invalid_teams(self):
+        """Volatile line helper excludes teams <=0 and >36."""
+        rows = [
+            {'team': 1, 'accepted': 40, 'rejected': 10, 'sample': 50,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 1,
+             'color': 'red', 'pass_or_fail': 'PASS'},
+            {'team': 0, 'accepted': 5, 'rejected': 1, 'sample': 6,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 2,
+             'color': 'blue', 'pass_or_fail': 'PASS'},
+            {'team': 60, 'accepted': 30, 'rejected': 10, 'sample': 40,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 3,
+             'color': 'green', 'pass_or_fail': 'PASS'},
+            {'team': 36, 'accepted': 20, 'rejected': 5, 'sample': 25,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 4,
+             'color': 'yellow', 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        teams = {item['label'] for item in result}
+        self.assertEqual(teams, {'1', '36'})
+
+    def test_calc_perf_by_line_all_valid_teams_preserved(self):
+        """Volatile line helper keeps all rows when teams are valid."""
+        rows = [
+            {'team': 10, 'accepted': 40, 'rejected': 10, 'sample': 50,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 1,
+             'color': 'red', 'pass_or_fail': 'PASS'},
+            {'team': 20, 'accepted': 50, 'rejected': 0, 'sample': 50,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 2,
+             'color': 'blue', 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        self.assertEqual(len(result), 2)
+
+    def test_calc_perf_by_line_all_invalid_returns_empty(self):
+        """When all teams are invalid, returns empty list."""
+        rows = [
+            {'team': 0, 'accepted': 10, 'rejected': 2, 'sample': 12,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 1,
+             'color': 'red', 'pass_or_fail': 'PASS'},
+            {'team': 60, 'accepted': 20, 'rejected': 5, 'sample': 25,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 2,
+             'color': 'blue', 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        self.assertEqual(result, [])
+
+    def test_calc_perf_by_customer_not_affected_by_team_sanitization(self):
+        """Volatile customer helper should NOT filter by team range."""
+        rows = [
+            {'customer': 'CUST_X', 'team': 60, 'accepted': 8, 'rejected': 2,
+             'sample': 10, 'style': 'S', 'week': 1, 'batch': 1,
+             'color': 'red', 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_perf_by_customer(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], 'CUST_X')
+        self.assertEqual(result[0]['value'], 80.0)
