@@ -11,14 +11,12 @@ import {
   transformPerformanceByCustomer,
   transformPerformanceByLine,
   transformTopDefects,
-  transformFabricDefects,
-  transformContainersByState,
   transformDefectsByStyleType,
-  transformSecondsRework,
+  transformDefectComposition,
+  transformDefectTrendTop3,
   formatPercent,
   formatPieces,
   formatCount,
-  formatSeconds,
   formatWeekLabel,
   formatAcceptanceIndex,
   trimCategoryLabel,
@@ -50,15 +48,12 @@ function calculateAllKpis(rows) {
       aqlWeekly: null,
       auditedPieces: null,
       acReRateByLine: null,
-      secondsRework: null,
       performanceByCustomer: null,
       performanceByLine: null,
       topDefects: null,
-      fabricDefects: null,
       defectsByStyleType: null,
       passRejectDistribution: null,
       rejectedEvolution: null,
-      containersByState: null,
       defectRate: null,
       defectComposition: null,
       defectTrendTop3: null,
@@ -70,19 +65,335 @@ function calculateAllKpis(rows) {
     aqlWeekly: calc.calculateAqlWeekly(rows),
     auditedPieces: calc.calculateAuditedPieces(rows),
     acReRateByLine: calc.calculateAcReRateByLine(rows),
-    secondsRework: calc.calculateSecondsRework(rows),
     performanceByCustomer: calc.calculatePerformanceByCustomer(rows),
     performanceByLine: calc.calculatePerformanceByLine(rows),
     topDefects: calc.calculateTopDefects(rows),
-    fabricDefects: calc.calculateFabricDefects(rows),
     defectsByStyleType: calc.calculateDefectsByStyleType(rows),
     passRejectDistribution: calc.calculatePassRejectDistribution(rows),
     rejectedEvolution: calc.calculateRejectedEvolution(rows),
-    containersByState: calc.calculateContainersByState(rows),
     defectRate: calc.calculateDefectRate(rows),
     defectComposition: null,
     defectTrendTop3: null,
   };
+}
+
+/**
+ * Section descriptor for the exclusive QFA/QFC layout.
+ * @typedef {{ title: string, chart: string, data: any, chartProps?: object }} CardDescriptor
+ */
+
+/**
+ * Original Excel Reports — 12 cards, ordered per spec.
+ * @param {object} opts
+ * @returns {CardDescriptor[]}
+ */
+function buildExcelSection(opts) {
+  const {
+    defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
+    topDefectsData, auditedPiecesSeries, rejectedEvolutionSeries,
+    acReRateByLineData, acceptedByLineData, rejectedByLineData,
+    perfByCustomerData, perfByLineData, defectsByStyleTypeData,
+    loading, error, nullMessage, isNullOrError,
+  } = opts;
+
+  return [
+    {
+      title: 'Defect Rate (AQL %)',
+      chart: 'number',
+      data: defectRate,
+      render: () => (
+        <KpiCard title="Defect Rate (AQL %)" loading={loading} error={error}>
+          <KpiNumberCard
+            title="AQL"
+            value={defectRate !== null && !isNullOrError(defectRate) ? defectRate : null}
+            unit="%"
+            label="defects / sample × 100"
+          />
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Pass / Reject Distribution',
+      chart: 'donut',
+      data: passRejectData,
+      render: () => (
+        <KpiCard title="Pass / Reject Distribution" loading={loading} error={error}>
+          {isNullOrError(passRejectData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <DonutChartKpi
+              data={passRejectData}
+              valueFormatter={formatPieces}
+              tooltipLabelFormatter={(label) => `Status: ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Weekly AQL (%)',
+      chart: 'line',
+      data: aqlWeeklySeries,
+      render: () => (
+        <KpiCard title="Weekly AQL (%)" loading={loading} error={error}>
+          {isNullOrError(aqlWeeklySeries) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <LineChartKpi
+              series={aqlWeeklySeries}
+              xAxisLabel="Week"
+              yAxisLabel="AQL (%)"
+              xTickFormatter={formatWeekLabel}
+              yTickFormatter={(value) => `${value}%`}
+              valueFormatter={formatPercent}
+              tooltipLabelFormatter={formatWeekLabel}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'AQL by Style',
+      chart: 'bar',
+      data: aqlByStyleData,
+      render: () => (
+        <KpiCard title="AQL by Style" loading={loading} error={error}>
+          {isNullOrError(aqlByStyleData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi
+              data={aqlByStyleData}
+              horizontal
+              color="#3b82f6"
+              xAxisLabel="AQL (%)"
+              yAxisLabel="Style"
+              xTickFormatter={(value) => `${value}%`}
+              valueFormatter={formatPercent}
+              tooltipLabelFormatter={(label) => `Style: ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Top Defects',
+      chart: 'bar',
+      data: topDefectsData,
+      render: () => (
+        <KpiCard title="Top Defects" loading={loading} error={error}>
+          {isNullOrError(topDefectsData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi data={topDefectsData} horizontal color="#ef4444" />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Weekly Audited Pieces',
+      chart: 'line',
+      data: auditedPiecesSeries,
+      render: () => (
+        <KpiCard title="Weekly Audited Pieces" loading={loading} error={error}>
+          {isNullOrError(auditedPiecesSeries) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <LineChartKpi
+              series={auditedPiecesSeries}
+              xAxisLabel="Week"
+              yAxisLabel="Pieces"
+              xTickFormatter={formatWeekLabel}
+              valueFormatter={formatPieces}
+              tooltipLabelFormatter={formatWeekLabel}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Weekly Rejected Pieces',
+      chart: 'line',
+      data: rejectedEvolutionSeries,
+      render: () => (
+        <KpiCard title="Weekly Rejected Pieces" loading={loading} error={error}>
+          {isNullOrError(rejectedEvolutionSeries) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <LineChartKpi
+              series={rejectedEvolutionSeries}
+              xAxisLabel="Week"
+              yAxisLabel="Rejected Pieces"
+              xTickFormatter={formatWeekLabel}
+              valueFormatter={formatPieces}
+              tooltipLabelFormatter={formatWeekLabel}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Accepted by Line (count)',
+      chart: 'bar',
+      data: acceptedByLineData,
+      render: () => (
+        <KpiCard title="Accepted by Line (count)" loading={loading} error={error}>
+          {isNullOrError(acReRateByLineData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi
+              data={acceptedByLineData}
+              color="#10b981"
+              horizontal
+              xAxisLabel="Count (pieces)"
+              yAxisLabel="Line"
+              xTickFormatter={formatPieces}
+              yTickFormatter={trimCategoryLabel}
+              valueFormatter={formatCount}
+              tooltipLabelFormatter={(label) => `Line (accepted): ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Rejected by Line (count)',
+      chart: 'bar',
+      data: rejectedByLineData,
+      render: () => (
+        <KpiCard title="Rejected by Line (count)" loading={loading} error={error}>
+          {isNullOrError(acReRateByLineData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi
+              data={rejectedByLineData}
+              color="#ef4444"
+              horizontal
+              xAxisLabel="Count (pieces)"
+              yAxisLabel="Line"
+              xTickFormatter={formatPieces}
+              yTickFormatter={trimCategoryLabel}
+              valueFormatter={formatCount}
+              tooltipLabelFormatter={(label) => `Line (rejected): ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Acceptance Rate by Customer (accepted/sample × 100)',
+      chart: 'bar',
+      data: perfByCustomerData,
+      render: () => (
+        <KpiCard title="Acceptance Rate by Customer (accepted/sample × 100)" loading={loading} error={error}>
+          {isNullOrError(perfByCustomerData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi
+              data={perfByCustomerData}
+              color="#8b5cf6"
+              xAxisLabel="Customer"
+              yAxisLabel="Acceptance Rate (accepted/sample × 100)"
+              xTickFormatter={trimCategoryLabel}
+              yTickFormatter={(value) => Number(value).toFixed(0)}
+              valueFormatter={formatAcceptanceIndex}
+              tooltipLabelFormatter={(label) => `Customer: ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Acceptance Rate by Line (accepted/sample × 100)',
+      chart: 'bar',
+      data: perfByLineData,
+      render: () => (
+        <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
+          {isNullOrError(perfByLineData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <BarChartKpi
+              data={perfByLineData}
+              horizontal
+              color="#f59e0b"
+              xAxisLabel="Acceptance Rate (accepted/sample × 100)"
+              yAxisLabel="Line"
+              xTickFormatter={(value) => Number(value).toFixed(0)}
+              valueFormatter={formatAcceptanceIndex}
+              tooltipLabelFormatter={(label) => `Line: ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Defects by Style × Type',
+      chart: 'heatmap',
+      data: defectsByStyleTypeData,
+      render: () => (
+        <KpiCard title="Defects by Style × Type" loading={loading} error={error}>
+          {isNullOrError(defectsByStyleTypeData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <HeatmapKpi data={defectsByStyleTypeData} />
+          )}
+        </KpiCard>
+      ),
+    },
+  ];
+}
+
+/**
+ * Rift Analytics Insights — 2 cards, ordered per spec.
+ * @param {object} opts
+ * @returns {CardDescriptor[]}
+ */
+function buildRiftSection(opts) {
+  const {
+    defectTrendTop3Data, defectCompositionData, loading, error,
+    nullMessage, isNullOrError,
+  } = opts;
+
+  return [
+    {
+      title: 'Defect Trend Top 3',
+      chart: 'line',
+      data: defectTrendTop3Data,
+      render: () => (
+        <KpiCard title="Defect Trend Top 3" loading={loading} error={error}>
+          {isNullOrError(defectTrendTop3Data) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <LineChartKpi
+              series={defectTrendTop3Data}
+              xAxisLabel="Week"
+              yAxisLabel="Defects"
+              xTickFormatter={formatWeekLabel}
+              valueFormatter={formatCount}
+              tooltipLabelFormatter={formatWeekLabel}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+    {
+      title: 'Defect Composition',
+      chart: 'donut',
+      data: defectCompositionData,
+      render: () => (
+        <KpiCard title="Defect Composition" loading={loading} error={error}>
+          {isNullOrError(defectCompositionData) ? (
+            <div className="null-message">{nullMessage}</div>
+          ) : (
+            <DonutChartKpi
+              data={defectCompositionData}
+              valueFormatter={formatCount}
+              tooltipLabelFormatter={(label) => `Defect: ${label}`}
+            />
+          )}
+        </KpiCard>
+      ),
+    },
+  ];
 }
 
 function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
@@ -209,14 +520,30 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
   const rejectedByLineData = buildLineCountDataByState(acReRateByLineData, 'REJECT');
   const perfByCustomerData = transformPerformanceByCustomer(kpiData?.performanceByCustomer);
   const perfByLineData = transformPerformanceByLine(kpiData?.performanceByLine);
-  const secondsReworkSeries = transformSecondsRework(kpiData?.secondsRework);
-  const fabricDefectsData = transformFabricDefects(kpiData?.fabricDefects);
-  const containersByStateData = transformContainersByState(kpiData?.containersByState);
   const defectsByStyleTypeData = transformDefectsByStyleType(kpiData?.defectsByStyleType);
+  const defectCompositionData = transformDefectComposition(kpiData?.defectComposition);
+  const defectTrendTop3Data = transformDefectTrendTop3(kpiData?.defectTrendTop3);
 
   const isNullOrError = (data) => data === null || (data && (data.error || data.status === 'unavailable'));
 
   const nullMessage = "No disponible en modo rápido";
+
+  const excelSectionOpts = {
+    defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
+    topDefectsData, auditedPiecesSeries, rejectedEvolutionSeries,
+    acReRateByLineData, acceptedByLineData, rejectedByLineData,
+    perfByCustomerData, perfByLineData, defectsByStyleTypeData,
+    loading, error, nullMessage, isNullOrError,
+  };
+
+  const riftSectionOpts = {
+    defectTrendTop3Data, defectCompositionData,
+    loading, error, nullMessage, isNullOrError,
+  };
+
+  const excelCards = buildExcelSection(excelSectionOpts);
+  const riftCards = buildRiftSection(riftSectionOpts);
+
   return (
     <div className="dashboard-view">
       <div className="dashboard-header">
@@ -245,230 +572,28 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
         </div>
       )}
 
+      {/* ── Section 1: Original Excel Reports ── */}
+      <h2 className="dashboard-section__title">Original Excel Reports</h2>
       <Masonry
         breakpointCols={{ default: 3, 1100: 2, 768: 1 }}
         className="dashboard-masonry"
         columnClassName="dashboard-masonry-column"
       >
-        {/* Row 1: Defect Rate, Pass/Reject, AQL Weekly */}
-        <KpiCard title="Defect Rate (AQL %)" loading={loading} error={error}>
-          <KpiNumberCard
-            title="AQL"
-            value={defectRate !== null && !isNullOrError(defectRate) ? defectRate : null}
-            unit="%"
-            label="defects / sample × 100"
-          />
-        </KpiCard>
+        {excelCards.map((card) => (
+          <div key={card.title}>{card.render()}</div>
+        ))}
+      </Masonry>
 
-        <KpiCard title="Pass / Reject Distribution" loading={loading} error={error}>
-          {isNullOrError(passRejectData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <DonutChartKpi
-              data={passRejectData}
-              valueFormatter={formatPieces}
-              tooltipLabelFormatter={(label) => `Status: ${label}`}
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Weekly AQL (%)" loading={loading} error={error}>
-          {isNullOrError(aqlWeeklySeries) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <LineChartKpi
-              series={aqlWeeklySeries}
-              xAxisLabel="Week"
-              yAxisLabel="AQL (%)"
-              xTickFormatter={formatWeekLabel}
-              yTickFormatter={(value) => `${value}%`}
-              valueFormatter={formatPercent}
-              tooltipLabelFormatter={formatWeekLabel}
-            />
-          )}
-        </KpiCard>
-
-        {/* Row 2: AQL by Style, Top Defects */}
-        <KpiCard title="AQL by Style" loading={loading} error={error}>
-          {isNullOrError(aqlByStyleData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={aqlByStyleData}
-              horizontal
-              color="#3b82f6"
-              xAxisLabel="AQL (%)"
-              yAxisLabel="Style"
-              xTickFormatter={(value) => `${value}%`}
-              valueFormatter={formatPercent}
-              tooltipLabelFormatter={(label) => `Style: ${label}`}
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Top Defects" loading={loading} error={error}>
-          {isNullOrError(topDefectsData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi data={topDefectsData} horizontal color="#ef4444" />
-          )}
-        </KpiCard>
-
-        {/* Row 3: Audited Pieces, Rejected Evolution */}
-        <KpiCard title="Weekly Audited Pieces" loading={loading} error={error}>
-          {isNullOrError(auditedPiecesSeries) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <LineChartKpi
-              series={auditedPiecesSeries}
-              xAxisLabel="Week"
-              yAxisLabel="Pieces"
-              xTickFormatter={formatWeekLabel}
-              valueFormatter={formatPieces}
-              tooltipLabelFormatter={formatWeekLabel}
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Weekly Rejected Pieces" loading={loading} error={error}>
-          {isNullOrError(rejectedEvolutionSeries) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <LineChartKpi
-              series={rejectedEvolutionSeries}
-              xAxisLabel="Week"
-              yAxisLabel="Rejected Pieces"
-              xTickFormatter={formatWeekLabel}
-              valueFormatter={formatPieces}
-              tooltipLabelFormatter={formatWeekLabel}
-            />
-          )}
-        </KpiCard>
-
-        {/* Row 4: Acceptance/Reject counts by line, Perf by Customer */}
-        <KpiCard title="Accepted by Line (count)" loading={loading} error={error}>
-          {isNullOrError(acReRateByLineData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={acceptedByLineData}
-              color="#10b981"
-              horizontal
-              xAxisLabel="Count (pieces)"
-              yAxisLabel="Line"
-              xTickFormatter={formatPieces}
-              yTickFormatter={trimCategoryLabel}
-              valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Line (accepted): ${label}`}
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Rejected by Line (count)" loading={loading} error={error}>
-          {isNullOrError(acReRateByLineData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={rejectedByLineData}
-              color="#ef4444"
-              horizontal
-              xAxisLabel="Count (pieces)"
-              yAxisLabel="Line"
-              xTickFormatter={formatPieces}
-              yTickFormatter={trimCategoryLabel}
-              valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Line (rejected): ${label}`}
-            />
-          )}
-        </KpiCard>
-
-        {/* Row 5: Perf by Customer, Perf by Line */}
-        <KpiCard title="Acceptance Rate by Customer (accepted/sample × 100)" loading={loading} error={error}>
-          {isNullOrError(perfByCustomerData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={perfByCustomerData}
-              color="#8b5cf6"
-              xAxisLabel="Customer"
-              yAxisLabel="Acceptance Rate (accepted/sample × 100)"
-              xTickFormatter={trimCategoryLabel}
-              yTickFormatter={(value) => Number(value).toFixed(0)}
-              valueFormatter={formatAcceptanceIndex}
-              tooltipLabelFormatter={(label) => `Customer: ${label}`}
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
-          {isNullOrError(perfByLineData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={perfByLineData}
-              horizontal
-              color="#f59e0b"
-              xAxisLabel="Acceptance Rate (accepted/sample × 100)"
-              yAxisLabel="Line"
-              xTickFormatter={(value) => Number(value).toFixed(0)}
-              valueFormatter={formatAcceptanceIndex}
-              tooltipLabelFormatter={(label) => `Line: ${label}`}
-            />
-          )}
-        </KpiCard>
-
-        {/* Row 6: Seconds Rework, Fabric Defects */}
-        <KpiCard title="Weekly Rework (seconds)" loading={loading} error={error}>
-          {isNullOrError(secondsReworkSeries) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <LineChartKpi
-              series={secondsReworkSeries}
-              xAxisLabel="Week"
-              yAxisLabel="Seconds"
-              xTickFormatter={formatWeekLabel}
-              valueFormatter={formatSeconds}
-              tooltipLabelFormatter={formatWeekLabel}
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Fabric Defects" loading={loading} error={error}>
-          {isNullOrError(fabricDefectsData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <BarChartKpi
-              data={fabricDefectsData}
-              color="#ec4899"
-              showAllCategoryTicks
-              chartHeight={340}
-              xAxisLabel="Defect Type"
-              yAxisLabel="Count"
-            />
-          )}
-        </KpiCard>
-
-        {/* Row 7: Containers by State, Defects Heatmap */}
-        <KpiCard title="Containers by Status" loading={loading} error={error}>
-          {isNullOrError(containersByStateData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <DonutChartKpi
-              data={containersByStateData}
-              valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Range: ${label}`}
-              showSliceLabels
-            />
-          )}
-        </KpiCard>
-
-        <KpiCard title="Defects by Style × Type" loading={loading} error={error}>
-          {isNullOrError(defectsByStyleTypeData) ? (
-            <div className="null-message">{nullMessage}</div>
-          ) : (
-            <HeatmapKpi data={defectsByStyleTypeData} />
-          )}
-        </KpiCard>
+      {/* ── Section 2: Rift Analytics Insights ── */}
+      <h2 className="dashboard-section__title">Rift Analytics Insights</h2>
+      <Masonry
+        breakpointCols={{ default: 3, 1100: 2, 768: 1 }}
+        className="dashboard-masonry"
+        columnClassName="dashboard-masonry-column"
+      >
+        {riftCards.map((card) => (
+          <div key={card.title}>{card.render()}</div>
+        ))}
       </Masonry>
     </div>
   );

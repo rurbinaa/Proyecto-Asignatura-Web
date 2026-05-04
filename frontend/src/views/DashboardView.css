@@ -59,6 +59,15 @@
   background-attachment: local;
 }
 
+.dashboard-section__title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #374151;
+  margin: 32px 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
 /* Vertical spacing between cards inside each masonry column */
 .dashboard-masonry-column > * {
   margin-bottom: 16px;

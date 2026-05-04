@@ -53,13 +53,45 @@ vi.mock('../../Components/ReportGenerator', () => ({
   default: () => <div>ReportGenerator</div>,
 }));
 
-describe('QcfaKpiDashboard', () => {
+describe('QcfaKpiDashboard — exclusive layout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchAllKpis.mockResolvedValue({});
   });
 
-  it('renders all 15 KPI card titles in DOM order', () => {
+  // ── Section headers ──────────────────────────────────────────
+
+  it('renders section headers in order: Original Excel Reports then Rift Analytics Insights', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+
+    const excelHeader = screen.getByText('Original Excel Reports');
+    const riftHeader = screen.getByText('Rift Analytics Insights');
+
+    expect(excelHeader).toBeInTheDocument();
+    expect(riftHeader).toBeInTheDocument();
+
+    // Order: Excel section must appear before Rift section in the DOM
+    const excelPos = excelHeader.compareDocumentPosition(riftHeader);
+    expect(excelPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders section headers when volatileData is provided', () => {
+    render(<QcfaKpiDashboard context="plant" volatileData={[{ id: 1, value: 'test' }]} />);
+
+    expect(screen.getByText('Original Excel Reports')).toBeInTheDocument();
+    expect(screen.getByText('Rift Analytics Insights')).toBeInTheDocument();
+  });
+
+  // ── 14-card membership (not 15) ──────────────────────────────
+
+  it('renders exactly 14 KPI card titles total (3 removed, 2 added)', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+
+    const kpiCards = document.querySelectorAll('.kpi-card h2');
+    expect(kpiCards).toHaveLength(14);
+  });
+
+  it('renders all 14 expected card titles in DOM order', () => {
     render(<QcfaKpiDashboard context="plant" />);
 
     const expectedTitles = [
@@ -74,10 +106,9 @@ describe('QcfaKpiDashboard', () => {
       'Rejected by Line (count)',
       'Acceptance Rate by Customer (accepted/sample × 100)',
       'Acceptance Rate by Line (accepted/sample × 100)',
-      'Weekly Rework (seconds)',
-      'Fabric Defects',
-      'Containers by Status',
       'Defects by Style × Type',
+      'Defect Trend Top 3',
+      'Defect Composition',
     ];
 
     expectedTitles.forEach((title) => {
@@ -85,20 +116,127 @@ describe('QcfaKpiDashboard', () => {
     });
   });
 
-  it('renders masonry layout with correct CSS classes', () => {
-    const { container } = render(<QcfaKpiDashboard context="plant" />);
-    const masonryContainer = container.querySelector('.dashboard-masonry');
-    expect(masonryContainer).toBeInTheDocument();
-    const masonryColumn = container.querySelector('.dashboard-masonry-column');
-    expect(masonryColumn).toBeInTheDocument();
+  // ── Removed cross-sheet cards ────────────────────────────────
+
+  it('does NOT render Weekly Rework (seconds) card', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+    expect(screen.queryByText('Weekly Rework (seconds)')).not.toBeInTheDocument();
   });
+
+  it('does NOT render Fabric Defects card', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+    expect(screen.queryByText('Fabric Defects')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render Containers by Status card', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+    expect(screen.queryByText('Containers by Status')).not.toBeInTheDocument();
+  });
+
+  // ── Section membership: Original Excel Reports (12 cards) ────
+
+  it('groups all 12 Original Excel Reports cards under the first section', () => {
+    const { container } = render(<QcfaKpiDashboard context="plant" />);
+
+    // Find the section headers in the DOM
+    const excelHeader = screen.getByText('Original Excel Reports');
+    const riftHeader = screen.getByText('Rift Analytics Insights');
+
+    // Excel section header is before rift header in DOM order
+    expect(
+      excelHeader.compareDocumentPosition(riftHeader) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const excelTitles = [
+      'Defect Rate (AQL %)',
+      'Pass / Reject Distribution',
+      'Weekly AQL (%)',
+      'AQL by Style',
+      'Top Defects',
+      'Weekly Audited Pieces',
+      'Weekly Rejected Pieces',
+      'Accepted by Line (count)',
+      'Rejected by Line (count)',
+      'Acceptance Rate by Customer (accepted/sample × 100)',
+      'Acceptance Rate by Line (accepted/sample × 100)',
+      'Defects by Style × Type',
+    ];
+
+    excelTitles.forEach((title) => {
+      const card = screen.getByText(title);
+      expect(card).toBeInTheDocument();
+    });
+
+    // Each excel card must appear after the excel header
+    excelTitles.forEach((title) => {
+      const card = screen.getByText(title);
+      expect(
+        excelHeader.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
+
+  // ── Section membership: Rift Analytics Insights (2 cards) ────
+
+  it('groups both Rift Analytics Insights cards under the second section', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+
+    const riftHeader = screen.getByText('Rift Analytics Insights');
+    const trendCard = screen.getByText('Defect Trend Top 3');
+    const compCard = screen.getByText('Defect Composition');
+
+    expect(trendCard).toBeInTheDocument();
+    expect(compCard).toBeInTheDocument();
+
+    // Both cards must appear after the Rift section header
+    expect(
+      riftHeader.compareDocumentPosition(trendCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      riftHeader.compareDocumentPosition(compCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('orders Rift cards as Defect Trend Top 3 then Defect Composition', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+
+    const trendCard = screen.getByText('Defect Trend Top 3');
+    const compCard = screen.getByText('Defect Composition');
+
+    // Trend must appear before Composition in DOM order
+    expect(
+      trendCard.compareDocumentPosition(compCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // ── New insight chart cards are wired ────────────────────────
+
+  it('renders Defect Trend Top 3 card', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+    expect(screen.getByText('Defect Trend Top 3')).toBeInTheDocument();
+  });
+
+  it('renders Defect Composition card', () => {
+    render(<QcfaKpiDashboard context="plant" />);
+    expect(screen.getByText('Defect Composition')).toBeInTheDocument();
+  });
+
+  // ── Layout structure ─────────────────────────────────────────
+
+  it('renders a masonry container per section', () => {
+    const { container } = render(<QcfaKpiDashboard context="plant" />);
+    const masonryContainers = container.querySelectorAll('.dashboard-masonry');
+    // Two sections → two masonry containers
+    expect(masonryContainers.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // ── Context forwarding (unchanged behavior) ─────────────────
 
   it('passes context=plant to fetchAllKpis on initial load', () => {
     render(<QcfaKpiDashboard context="plant" />);
     expect(fetchAllKpis).toHaveBeenCalled();
     const [filters, context] = fetchAllKpis.mock.calls[0];
     expect(context).toBe('plant');
-    // filters is the default state object (not empty)
     expect(filters).toBeDefined();
   });
 
@@ -108,6 +246,8 @@ describe('QcfaKpiDashboard', () => {
     const [, context] = fetchAllKpis.mock.calls[0];
     expect(context).toBe('customer');
   });
+
+  // ── UI chrome ────────────────────────────────────────────────
 
   it('shows refresh button', async () => {
     render(<QcfaKpiDashboard context="plant" />);
@@ -124,7 +264,6 @@ describe('QcfaKpiDashboard', () => {
 
   it('shows volatile helper banner when volatileData is provided', () => {
     render(<QcfaKpiDashboard context="plant" volatileData={[{ id: 1, value: 'test' }]} />);
-    // volatileData triggers the "Fast mode" banner
     const banner = screen.getByRole('status');
     expect(banner).toBeInTheDocument();
     expect(banner.textContent).toMatch(/fast mode/i);
@@ -148,10 +287,5 @@ describe('QcfaKpiDashboard', () => {
   it('renders Defects by Style × Type heatmap card', () => {
     render(<QcfaKpiDashboard context="plant" />);
     expect(screen.getByText('Defects by Style × Type')).toBeInTheDocument();
-  });
-
-  it('renders Fabric Defects card', () => {
-    render(<QcfaKpiDashboard context="plant" />);
-    expect(screen.getByText('Fabric Defects')).toBeInTheDocument();
   });
 });

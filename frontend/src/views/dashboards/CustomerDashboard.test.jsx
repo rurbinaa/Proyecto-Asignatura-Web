@@ -53,24 +53,41 @@ vi.mock('../../Components/ReportGenerator', () => ({
   default: () => <div>ReportGenerator</div>,
 }));
 
-describe('CustomerDashboard', () => {
+describe('CustomerDashboard — thin wrapper', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchAllKpis.mockResolvedValue({});
   });
 
-  it('renders the QC FA Customer dashboard with context=customer', () => {
+  it('passes context=customer to QcfaKpiDashboard', () => {
     render(<CustomerDashboard />);
     expect(fetchAllKpis).toHaveBeenCalled();
     const [, context] = fetchAllKpis.mock.calls[0];
     expect(context).toBe('customer');
   });
 
-  it('renders all 15 KPI card titles for customer context', () => {
+  it('renders 14 KPI card titles for customer context (exclusive layout)', () => {
+    render(<CustomerDashboard />);
+    const kpiCards = document.querySelectorAll('.kpi-card h2');
+    expect(kpiCards).toHaveLength(14);
+  });
+
+  it('includes Defect Rate (AQL %) and Weekly AQL (%) from Excel section', () => {
     render(<CustomerDashboard />);
     expect(screen.getByText('Defect Rate (AQL %)')).toBeInTheDocument();
     expect(screen.getByText('Weekly AQL (%)')).toBeInTheDocument();
-    expect(screen.getByText('Containers by Status')).toBeInTheDocument();
+  });
+
+  it('includes Defect Composition from Rift section', () => {
+    render(<CustomerDashboard />);
+    expect(screen.getByText('Defect Composition')).toBeInTheDocument();
+  });
+
+  it('does NOT render removed cross-sheet cards', () => {
+    render(<CustomerDashboard />);
+    expect(screen.queryByText('Containers by Status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fabric Defects')).not.toBeInTheDocument();
+    expect(screen.queryByText('Weekly Rework (seconds)')).not.toBeInTheDocument();
   });
 
   it('forwards volatileData prop to QcfaKpiDashboard', () => {

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { within } from '@testing-library/dom';
 import PlantDashboard from './PlantDashboard';
 import { fetchAllKpis } from '../../api/kpi';
 
@@ -53,30 +54,46 @@ vi.mock('../../Components/ReportGenerator', () => ({
   default: () => <div>ReportGenerator</div>,
 }));
 
-describe('PlantDashboard', () => {
+describe('PlantDashboard — thin wrapper', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchAllKpis.mockResolvedValue({});
   });
 
-  it('renders the QC FA Plant dashboard with context=plant', () => {
+  it('passes context=plant to QcfaKpiDashboard', () => {
     render(<PlantDashboard />);
     expect(fetchAllKpis).toHaveBeenCalled();
     const [, context] = fetchAllKpis.mock.calls[0];
     expect(context).toBe('plant');
   });
 
-  it('renders all 15 KPI card titles for plant context', () => {
+  it('renders 14 KPI card titles for plant context (exclusive layout)', () => {
+    render(<PlantDashboard />);
+    const kpiCards = document.querySelectorAll('.kpi-card h2');
+    expect(kpiCards).toHaveLength(14);
+  });
+
+  it('includes Defect Rate (AQL %) and Weekly AQL (%) from Excel section', () => {
     render(<PlantDashboard />);
     expect(screen.getByText('Defect Rate (AQL %)')).toBeInTheDocument();
     expect(screen.getByText('Weekly AQL (%)')).toBeInTheDocument();
-    expect(screen.getByText('Containers by Status')).toBeInTheDocument();
+  });
+
+  it('includes Defect Composition from Rift section', () => {
+    render(<PlantDashboard />);
+    expect(screen.getByText('Defect Composition')).toBeInTheDocument();
+  });
+
+  it('does NOT render removed cross-sheet cards', () => {
+    render(<PlantDashboard />);
+    expect(screen.queryByText('Containers by Status')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fabric Defects')).not.toBeInTheDocument();
+    expect(screen.queryByText('Weekly Rework (seconds)')).not.toBeInTheDocument();
   });
 
   it('forwards volatileData prop to QcfaKpiDashboard', () => {
     const testData = [{ id: 1, value: 'test' }];
     render(<PlantDashboard volatileData={testData} />);
-    // volatileData triggers the "Fast mode" banner
     const banner = screen.getByRole('status');
     expect(banner).toBeInTheDocument();
     expect(banner.textContent).toMatch(/fast mode/i);
