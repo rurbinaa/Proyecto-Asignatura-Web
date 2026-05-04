@@ -12,7 +12,12 @@ from quality_data.models import (
     SecondsGeneralDefectType,
     SecondsGeneralDefect,
 )
-from excel_importer.date_utils import normalize_container_date, parse_date
+from excel_importer.date_utils import (
+    normalize_container_date,
+    parse_date,
+    canonicalize_qc_fa_date,
+    build_qc_fa_key,
+)
 
 
 def _normalize_defects_fields(defeacts_fields):
@@ -141,8 +146,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     # For defects_only mode, query existing parents instead of creating new ones
     if defects_only:
-        _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=color_map)
-        return
+        return _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=color_map)
 
     quality_instances = []
 
@@ -200,15 +204,28 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     Create only InspectionDefect records, querying existing QualityQcFa parents.
 
     Used when QualityQcFa records were already created by apply_timewindow.
-    Parents are loaded in a single batch query by date range and table_type,
-    indexed in memory by natural key, eliminating N+1 per-row DB queries.
+    Parents are loaded in a single batch query by table_type, indexed in memory
+    by the shared QC FA natural key via :func:`build_qc_fa_key`, eliminating
+    N+1 per-row DB queries.
+
+    Returns a stats dict with:
+        created_defects, matched_parents, unmatched_defect_rows,
+        invalid_date_rows, missing_color_rows.
 
     Args:
         color_map: Optional dict mapping color name → Color instance. When provided,
             avoids N+1 Color.objects.filter() queries per row.
     """
+    stats = {
+        "created_defects": 0,
+        "matched_parents": 0,
+        "unmatched_defect_rows": 0,
+        "invalid_date_rows": 0,
+        "missing_color_rows": 0,
+    }
+
     if df.empty:
-        return
+        return stats
 
     # ── Resolve DefectType records, auto-creating any that are missing ──
     # Without this, the sync silently skips defects when DefectType records
@@ -225,62 +242,64 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
         defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
 
-    # ── Batch-load ALL matching QualityQcFa parents in 1 query ──
-    # Extract unique dates from the DataFrame to scope the batch load.
-    unique_dates = set()
-    for _, row in df.iterrows():
-        d = parse_date(row.get('date_1', ''))
-        if d:
-            unique_dates.add(d)
-
-    if not unique_dates:
-        return
-
-    # Load all parents for this table_type and date range in a single query.
-    # select_related('color') avoids N+1 when building the in-memory index.
+    # ── Batch-load ALL QualityQcFa parents for this table_type ──
+    # Loading all parents (scoped by table_type) ensures we match legacy rows
+    # with non-ISO dates that would be missed by an exact date_1__in filter.
     parents = QualityQcFa.objects.filter(
         table_type=table_type,
-        date_1__in=unique_dates,
     ).select_related('color')
 
-    # Build in-memory index by natural key: (date, po, style, team, color_name)
+    # Build in-memory index using the shared QC FA natural-key builder.
+    # This ensures the same canonical-date logic is used for both parent
+    # creation (sync_service) and defect matching (handler_service).
     parent_index = {}
     for parent in parents:
-        color_name = parent.color.name if parent.color_id else ""
-        key = (
-            parse_date(parent.date_1),
-            parent.po,
-            parent.style.strip() if parent.style else "",
-            parent.team,
-            color_name,
-        )
+        parent_row = {
+            'date_1': parent.date_1,
+            'po': parent.po,
+            'style': parent.style or "",
+            'team': parent.team,
+            'color': parent.color.name if parent.color_id else "",
+            'table_type': parent.table_type,
+        }
+        key = build_qc_fa_key(parent_row, table_type=table_type)
         parent_index[key] = parent
 
     inspection_defects = []
+    matched_parent_ids = set()
 
     for _, row in df.iterrows():
-        # Resolve color — use batch map if available, otherwise skip
+        # ── Skip rows without any positive defect amount ──
+        has_defects = any(
+            (int(row.get(f, 0) or 0)) > 0 for f in defeacts_fields
+        )
+        if not has_defects:
+            continue
+
+        # ── Resolve color ──
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
             color_obj = color_map.get(color_name)
         else:
             color_obj = Color.objects.filter(name=color_name).first()
         if color_obj is None:
+            stats["missing_color_rows"] += 1
             continue
 
-        # Build natural key tuple for in-memory lookup
-        date_val = parse_date(row.get('date_1', ''))
-        po_val = int(row.get('po', 0)) if row.get('po') else 0
-        style_val = str(row.get('style', '')).strip()
-        team_val = int(row.get('team', 0)) if row.get('team') else 0
-
-        if not date_val or not style_val:
+        # ── Validate canonical date ──
+        canonical_date = canonicalize_qc_fa_date(row.get('date_1', ''))
+        if canonical_date is None:
+            stats["invalid_date_rows"] += 1
             continue
 
-        key = (date_val, po_val, style_val, team_val, color_obj.name)
+        # ── Match parent via shared QC FA natural key ──
+        key = build_qc_fa_key(row, table_type=table_type)
         quality_instance = parent_index.get(key)
         if quality_instance is None:
+            stats["unmatched_defect_rows"] += 1
             continue
+
+        matched_parent_ids.add(quality_instance.id)
 
         for defect_field in defeacts_fields:
             amount = int(row.get(defect_field, 0) or 0)
@@ -301,6 +320,11 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
 
     if inspection_defects:
         InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000, ignore_conflicts=True)
+
+    stats["created_defects"] = len(inspection_defects)
+    stats["matched_parents"] = len(matched_parent_ids)
+
+    return stats
 
 
 def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):

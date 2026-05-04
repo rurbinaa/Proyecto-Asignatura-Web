@@ -17,7 +17,15 @@ from quality_data.models import (
     Color,
     ExcelSyncSession,
 )
-from excel_importer.date_utils import normalize_container_date, parse_date
+from excel_importer.date_utils import (
+    normalize_container_date,
+    parse_date,
+    canonicalize_qc_fa_date,
+)
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────
@@ -364,13 +372,23 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
     if not excel_dates:
         return
 
-    # Delete existing records for these dates
+    # ── Delete existing records by canonical-date matching ──
+    # Instead of exact `date_1__in` (which misses legacy non-ISO strings),
+    # we load existing rows, canonicalize their dates in memory, and compare
+    # against the already-ISO Excel date set. Matching rows are deleted by PK.
     date_column = "date_1" if hasattr(model_class, "date_1") else "date"
-    delete_filter = {f"{date_column}__in": list(excel_dates)}
+    qs = model_class.objects.all()
     if table_type:
-        delete_filter["table_type"] = table_type
-
-    model_class.objects.filter(**delete_filter).delete()
+        qs = qs.filter(table_type=table_type)
+    existing = qs.only("id", date_column)
+    canonical_excel_set = set(excel_dates)
+    ids_to_delete = []
+    for obj in existing:
+        canonical = canonicalize_qc_fa_date(getattr(obj, date_column))
+        if canonical in canonical_excel_set:
+            ids_to_delete.append(obj.id)
+    if ids_to_delete:
+        model_class.objects.filter(id__in=ids_to_delete).delete()
 
     # Insert new records
     instances = []
@@ -387,9 +405,23 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
 
     # Handle defects if applicable
     if defect_fields and table_type:
-        _sync_defects_timewindow(excel_rows, model_class, table_type,
-                                  defect_fields, excel_dates,
-                                  color_map=color_map)
+        stats = _sync_defects_timewindow(excel_rows, model_class, table_type,
+                                          defect_fields, excel_dates,
+                                          color_map=color_map)
+        if stats and stats.get('unmatched_defect_rows', 0) > 0:
+            logger.warning(
+                "Defect sync for table_type=%s: %d unmatched rows, "
+                "created=%d, matched_parents=%d, invalid_date=%d, missing_color=%d",
+                table_type,
+                stats.get('unmatched_defect_rows', 0),
+                stats.get('created_defects', 0),
+                stats.get('matched_parents', 0),
+                stats.get('invalid_date_rows', 0),
+                stats.get('missing_color_rows', 0),
+            )
+        return stats
+
+    return None
 
 
 def apply_session(session):
@@ -742,7 +774,14 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
         data[field] = row.get(field, 0)
     for field in (not_numeric_columns or []):
         if field not in fk_fields:
-            data[field] = row.get(field, "UNKNOWN")
+            value = row.get(field, "UNKNOWN")
+            # Canonicalize QC FA date_1 at write time so parent rows always
+            # carry an ISO date — this keeps defect matching deterministic.
+            if model_class == QualityQcFa and field == "date_1":
+                canonical = canonicalize_qc_fa_date(value)
+                if canonical is not None:
+                    value = canonical
+            data[field] = value
     if table_type:
         data["table_type"] = table_type
 
@@ -834,9 +873,9 @@ def _sync_defects(excel_rows, model_class, defect_fields, color_map=None):
     Delegates to handler_service for defect creation logic.
     """
     if not excel_rows or not defect_fields:
-        return
+        return None
     
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
+    return _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
 
 
 def _sync_defects_timewindow(excel_rows, model_class, table_type,
@@ -845,16 +884,20 @@ def _sync_defects_timewindow(excel_rows, model_class, table_type,
     Sync defects for time-window strategy (already deleted, just create).
     
     Delegates to handler_service for defect creation logic.
+
+    Returns:
+        dict: defect sync stats from _bulk_insert_defects_only,
+              or None if no rows/defect_fields.
     """
     if not excel_rows or not defect_fields:
-        return
+        return None
     
     # For time-window, the parent records were already deleted (CASCADE deletes defects)
     # So we just need to create new defect records for the new parent records.
     # Forward table_type so the downstream handler queries the correct parent subset
     # (QFA vs QFC) and picks the right defect field list for each sheet.
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields,
-                              table_type=table_type, color_map=color_map)
+    return _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                                     table_type=table_type, color_map=color_map)
 
 
 def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
@@ -868,6 +911,10 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
 
     For QualityQcFa (time-window strategy): parent records are ALREADY created
     by apply_timewindow, so we use defects_only=True to only create defects.
+
+    Returns:
+        dict: defect sync stats from _bulk_insert_defects_only,
+              or None if no rows/defect_fields.
 
     Args:
         table_type: 'QFA' for QC FA Plant, 'QFC' for QC FA Customer.
@@ -883,7 +930,7 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
     from quality_data.models import QualityQcFa, Container
 
     if not excel_rows or not defect_fields:
-        return
+        return None
 
     # Convert list of dicts to DataFrame (handler_service expects DataFrame)
     df = pd.DataFrame(excel_rows)
@@ -913,7 +960,7 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
 
         # For QC FA time-window: parent records are already created by apply_timewindow.
         # Use defects_only=True to only create InspectionDefect records.
-        handler_bulk_insert_qcfa(
+        return handler_bulk_insert_qcfa(
             df,
             numeric_cols,
             not_numeric_cols,
@@ -930,6 +977,7 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
             not_numeric_cols,
             container_defect_fields or defect_fields
         )
+    return None
 
 
 def _get_numeric_columns_for_model(model_class):

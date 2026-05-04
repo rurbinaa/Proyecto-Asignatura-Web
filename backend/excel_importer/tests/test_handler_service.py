@@ -3,6 +3,7 @@ Tests for handler_service bulk insert functions, specifically the defects-only p
 """
 import io
 import datetime
+import pandas as pd
 from django.test import TestCase
 from quality_data.models import (
     Color,
@@ -1194,6 +1195,400 @@ class NormalizeDefectsFieldsTest(TestCase):
         """Returns list unchanged when given a list."""
         result = _normalize_defects_fields(['sew_def', 'fab_def'])
         self.assertEqual(result, ['sew_def', 'fab_def'])
+
+
+class BulkInsertDefectsOnlyStatsTest(TestCase):
+    """
+    Tests for _bulk_insert_defects_only returning defect sync stats (Task 2.4).
+
+    RED phase: these tests reference behavior NOT yet implemented.
+    Currently _bulk_insert_defects_only returns None.
+    After implementation, it returns a dict with keys:
+    created_defects, matched_parents, unmatched_defect_rows,
+    invalid_date_rows, missing_color_rows.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="navy", is_active=True)
+        self.color2 = Color.objects.create(name="white", is_active=True)
+        self.defect_type = DefectType.objects.create(name="broken_stitch")
+
+    def test_returns_stats_dict(self):
+        """
+        _bulk_insert_defects_only returns a dict with the expected keys.
+        """
+        quality = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-01",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3001,
+            style="VALKYRIE",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-01",
+                "po": 3001,
+                "style": "VALKYRIE",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 8,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertIsInstance(result, dict)
+        for key in ("created_defects", "matched_parents",
+                     "unmatched_defect_rows", "invalid_date_rows",
+                     "missing_color_rows"):
+            self.assertIn(key, result, f"Stats must include key '{key}'")
+
+    def test_stats_counts_created_defects(self):
+        """created_defects reflects the number of InspectionDefect rows created."""
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-02",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3002,
+            style="VALKYRIE",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-02",
+                "po": 3002,
+                "style": "VALKYRIE",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 3,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 1)
+
+    def test_stats_counts_matched_parents(self):
+        """matched_parents counts unique parent rows that received defects."""
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-03",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3003,
+            style="VALKYRIE",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-03",
+                "po": 3003,
+                "style": "VALKYRIE",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 5,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["matched_parents"], 1)
+
+    def test_stats_tracks_unmatched_defect_rows(self):
+        """
+        Rows with positive defect amounts but NO matching parent
+        increment unmatched_defect_rows.
+        """
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-04",
+                "po": 9999,
+                "style": "GHOST",
+                "team": 99,
+                "color": "navy",
+                "broken_stitch": 10,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["unmatched_defect_rows"], 1)
+        self.assertEqual(result["created_defects"], 0)
+
+    def test_stats_tracks_invalid_date_rows(self):
+        """
+        Rows where date_1 cannot be canonicalized AND have positive defect
+        amounts increment invalid_date_rows.
+        """
+        df = pd.DataFrame([
+            {
+                "date_1": "NOT_A_REAL_DATE",
+                "po": 4001,
+                "style": "STYLE-X",
+                "team": 1,
+                "color": "navy",
+                "broken_stitch": 7,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["invalid_date_rows"], 1)
+        self.assertEqual(result["created_defects"], 0)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+
+    def test_stats_tracks_missing_color_rows(self):
+        """
+        Rows where the color does not exist in the DB increment missing_color_rows.
+        """
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-05",
+                "po": 5001,
+                "style": "STYLE-Y",
+                "team": 2,
+                "color": "invisible_pink",
+                "broken_stitch": 4,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["missing_color_rows"], 1)
+        self.assertEqual(result["created_defects"], 0)
+
+    def test_empty_df_returns_zeroed_stats(self):
+        """Empty DataFrame returns dict with all counters at 0."""
+        df = pd.DataFrame([])
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["created_defects"], 0)
+        self.assertEqual(result["matched_parents"], 0)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+        self.assertEqual(result["invalid_date_rows"], 0)
+        self.assertEqual(result["missing_color_rows"], 0)
+
+
+class BulkInsertDefectsOnlySharedKeyTest(TestCase):
+    """
+    Tests proving _bulk_insert_defects_only uses build_qc_fa_key for
+    deterministic parent-child matching across equivalent date/color
+    representations (Task 2.3).
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="dark_navy", is_active=True)
+        self.defect_type = DefectType.objects.create(name="broken_stitch")
+
+    def test_equivalent_dates_match_via_shared_key(self):
+        """
+        A parent with ISO date '2025-07-01' is matched by a row with
+        equivalent US date '07/01/2025'.
+        """
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-07-01",
+            week=26,
+            customer="A4",
+            team=2,
+            coord="TEST",
+            po=6001,
+            style="SPECTRE",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "07/01/2025",  # US format — equivalent to 2025-07-01
+                "po": 6001,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark navy",  # mixed case with space
+                "broken_stitch": 6,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+
+    def test_parent_index_includes_table_type(self):
+        """
+        When both QFA and QFC parents exist for the same natural key
+        (except table_type), the defect row matches only the correct
+        table_type parent.
+        """
+        color2 = Color.objects.create(name="red", is_active=True)
+        qfa_parent = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-07-02",
+            week=26,
+            customer="A4",
+            team=2,
+            coord="TEST",
+            po=6002,
+            style="SPECTRE",
+            batch=1,
+            color=color2,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        qfc_parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-07-02",
+            week=26,
+            customer="CUSTOMER_X",
+            team=2,
+            coord="TEST",
+            po=6002,
+            style="SPECTRE",
+            batch=1,
+            color=color2,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-07-02",
+                "po": 6002,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "red",
+                "broken_stitch": 2,
+            }
+        ])
+
+        # When called with table_type='QFA', should match QFA parent only
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, qfa_parent)
+        self.assertNotEqual(defect.inspection, qfc_parent)
+
+    def test_mixed_date_formats_all_match_same_parent(self):
+        """
+        Multiple rows with different date representations of the same
+        calendar day all match the same parent.
+        """
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-07-03",
+            week=26,
+            customer="A4",
+            team=2,
+            coord="TEST",
+            po=6003,
+            style="SPECTRE",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # Different representations of 2025-07-03
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-07-03",   # ISO
+                "po": 6003,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark_navy",
+                "broken_stitch": 1,
+            },
+            {
+                "date_1": "07/03/2025",   # US
+                "po": 6003,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark_navy",
+                "broken_stitch": 2,
+            },
+            {
+                "date_1": datetime.date(2025, 7, 3),  # Python date
+                "po": 6003,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark_navy",
+                "broken_stitch": 3,
+            },
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 3)
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
 
 
 class TruncateCharFieldsTest(TestCase):

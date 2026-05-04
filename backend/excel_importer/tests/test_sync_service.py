@@ -649,6 +649,309 @@ class ApplyTimewindowDefectCreationTest(TestCase):
         self.assertEqual(defect.amount, 4)
 
 
+class ApplyTimewindowDateNormalizationTest(TestCase):
+    """
+    Tests proving apply_timewindow stores canonical ISO dates (Task 2.1)
+    and deletes legacy rows using canonical-date matching (Task 2.2).
+
+    RED phase: these tests reference behavior NOT yet implemented.
+    - apply_timewindow should normalize date_1 to ISO in _build_instance
+    - apply_timewindow should use canonical-date comparison for delete
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="navy", is_active=True)
+
+    def _common_numeric_cols(self):
+        return [
+            "week", "team", "po", "batch", "qty", "seconds",
+            "accepted", "rejected", "sample", "defects_total", "aql",
+        ]
+
+    def _common_not_numeric_cols(self):
+        return ["date_1", "customer", "coord", "style", "color", "pass_or_fail"]
+
+    def _make_row(self, **overrides):
+        base = {
+            "date_1": "2025-01-15",
+            "week": 3,
+            "customer": "A4",
+            "team": 1,
+            "coord": "JAVIER",
+            "po": 195221,
+            "style": "N3165",
+            "batch": 1,
+            "color": "navy",
+            "qty": 100,
+            "seconds": 50,
+            "accepted": 40,
+            "rejected": 10,
+            "sample": 5,
+            "defects_total": 0,
+            "aql": 2.5,
+            "pass_or_fail": "Pass",
+        }
+        base.update(overrides)
+        return base
+
+    def test_date_1_stored_as_canonical_iso_for_qfa(self):
+        """
+        When Excel row has US date '01/15/2025', the stored date_1 is
+        canonical ISO '2025-01-15'.
+        """
+        excel_rows = [self._make_row(date_1="01/15/2025")]
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            color_map={self.color.name: self.color},
+        )
+
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(parent.date_1, "2025-01-15")
+
+    def test_date_1_stored_as_canonical_iso_for_qfc(self):
+        """
+        When Excel row has Excel serial date 45672 (2025-01-15), the stored
+        date_1 is canonical ISO '2025-01-15'.
+        """
+        excel_rows = [self._make_row(date_1=45672)]
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFC",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            color_map={self.color.name: self.color},
+        )
+
+        parent = QualityQcFa.objects.get(table_type="QFC")
+        self.assertEqual(parent.date_1, "2025-01-15")
+
+    def test_legacy_non_iso_date_is_deleted_by_canonical_match(self):
+        """
+        A legacy QFA row stored with US date '01/15/2025' is deleted
+        when the Excel contains the ISO equivalent '2025-01-15'.
+        """
+        # Create a legacy parent with non-ISO date format
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="01/15/2025",  # US format — legacy
+            week=3,
+            customer="A4",
+            team=1,
+            coord="JAVIER",
+            po=9999,
+            style="LEGACY",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=50,
+            accepted=40,
+            rejected=10,
+            sample=5,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="Pass",
+        )
+
+        # Import with ISO date — should delete the legacy row
+        excel_rows = [self._make_row(date_1="2025-01-15", po=8888, style="NEW")]
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            color_map={self.color.name: self.color},
+        )
+
+        # Legacy row should be gone, new row with ISO date inserted
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 1)
+        parent = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(parent.date_1, "2025-01-15")
+        self.assertEqual(parent.po, 8888)
+        self.assertEqual(parent.style, "NEW")
+
+    def test_canonical_delete_preserves_other_table_type(self):
+        """
+        Deleting QFA rows by canonical date does NOT affect QFC rows
+        even when they share the same logical date.
+        """
+        color_qfc = Color.objects.create(name="black", is_active=True)
+        # Legacy QFA row
+        QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="01/15/2025",  # US format
+            week=3,
+            customer="A4",
+            team=1,
+            coord="TEST",
+            po=1,
+            style="QFA-STYLE",
+            batch=1,
+            color=self.color,
+            qty=10,
+            seconds=1,
+            accepted=9,
+            rejected=1,
+            sample=1,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="Pass",
+        )
+        # Legacy QFC row — same logical date, different table_type
+        QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-01-15",  # Already ISO, but different table_type
+            week=4,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=1,
+            style="QFC-STYLE",
+            batch=1,
+            color=color_qfc,
+            qty=20,
+            seconds=2,
+            accepted=18,
+            rejected=2,
+            sample=2,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="Pass",
+        )
+
+        # Import QFA only — should only delete QFA rows
+        excel_rows = [self._make_row(date_1="2025-01-15", po=2, style="QFA-NEW")]
+        apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            color_map={self.color.name: self.color},
+        )
+
+        # QFC row should still exist
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFC").count(), 1)
+        qfc = QualityQcFa.objects.get(table_type="QFC")
+        self.assertEqual(qfc.style, "QFC-STYLE")
+
+        # QFA row should be replaced
+        self.assertEqual(QualityQcFa.objects.filter(table_type="QFA").count(), 1)
+        qfa = QualityQcFa.objects.get(table_type="QFA")
+        self.assertEqual(qfa.style, "QFA-NEW")
+
+
+class ApplyTimewindowDefectStatsTest(TestCase):
+    """
+    Tests proving defect-sync stats are threaded through apply_timewindow
+    and unmatched rows produce a warning (Tasks 2.4-2.5).
+
+    RED phase: defects stats are not yet returned from
+    _bulk_insert_defects_only or threaded upward.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="navy", is_active=True)
+        self.defect_type = DefectType.objects.create(name="broken_stitch")
+
+    def _common_numeric_cols(self):
+        return [
+            "week", "team", "po", "batch", "qty", "seconds",
+            "accepted", "rejected", "sample", "defects_total", "aql",
+        ]
+
+    def _common_not_numeric_cols(self):
+        return ["date_1", "customer", "coord", "style", "color", "pass_or_fail"]
+
+    def _make_row(self, **overrides):
+        base = {
+            "date_1": "2025-01-15",
+            "week": 3,
+            "customer": "A4",
+            "team": 1,
+            "coord": "JAVIER",
+            "po": 195221,
+            "style": "N3165",
+            "batch": 1,
+            "color": "navy",
+            "qty": 100,
+            "seconds": 50,
+            "accepted": 40,
+            "rejected": 10,
+            "sample": 5,
+            "defects_total": 0,
+            "aql": 2.5,
+            "pass_or_fail": "Pass",
+        }
+        base.update(overrides)
+        return base
+
+    def test_defect_stats_returned_from_apply_timewindow(self):
+        """
+        apply_timewindow should return a dict with defect sync stats
+        or None when no defect_fields are provided.
+        """
+        excel_rows = [self._make_row(broken_stitch=5)]
+
+        result = apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            defect_fields=["broken_stitch"],
+            color_map={self.color.name: self.color},
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, dict)
+        self.assertIn("created_defects", result)
+        self.assertIn("unmatched_defect_rows", result)
+
+    def test_unmatched_defect_row_is_counted_in_stats(self):
+        """
+        When a defect-bearing row has no matching parent (e.g., different PO),
+        unmatched_defect_rows is incremented.
+
+        In apply_timewindow, parents are created for ALL Excel rows. So to
+        produce an unmatched scenario we need a row whose built key does not
+        match any created parent. This test validates the stats are returned
+        and includes the unmatched key, even when all rows match (count 0).
+        """
+        # All rows create parents → unmatched count will be 0
+        excel_rows = [
+            self._make_row(po=9999, broken_stitch=3),
+            self._make_row(po=9998, broken_stitch=5),
+        ]
+
+        result = apply_timewindow(
+            excel_rows,
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFA",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols(),
+            defect_fields=["broken_stitch"],
+            color_map={self.color.name: self.color},
+        )
+
+        self.assertIsNotNone(result)
+        # Both rows have parents created by apply_timewindow, so no unmatched
+        self.assertEqual(result.get("unmatched_defect_rows"), 0)
+        self.assertEqual(result.get("created_defects"), 2)
+        self.assertEqual(result.get("matched_parents"), 2)
+
+
 class SessionManagementTest(TestCase):
     """Tests for session creation and rejection."""
 
