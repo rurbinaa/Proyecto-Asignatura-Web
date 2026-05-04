@@ -4,6 +4,7 @@ import * as calc from '../../utils/kpiCalculations';
 import {
   transformPassReject,
   transformAqlByStyle,
+  transformAqlByTeam,
   transformAqlWeekly,
   transformAuditedPieces,
   transformRejectedEvolution,
@@ -14,6 +15,7 @@ import {
   transformDefectsByStyleType,
   transformDefectComposition,
   transformDefectTrendTop3,
+  unavailableState,
   formatPercent,
   formatPieces,
   formatCount,
@@ -31,7 +33,6 @@ import KpiNumberCard from '../../Components/kpi/KpiNumberCard';
 import FilterBar from '../../Components/kpi/FilterBar';
 import ReportGenerator from '../../Components/ReportGenerator';
 import { normalizeScalarMetric } from '../dashboardMetricUtils';
-import Masonry from 'react-masonry-css';
 import '../DashboardView.css';
 import { withRoleProtection } from '../../hooks/withRoleProtection';
 
@@ -45,6 +46,7 @@ function calculateAllKpis(rows) {
   if (!rows || rows.length === 0) {
     return {
       aqlByStyle: null,
+      aqlByTeam: null,
       aqlWeekly: null,
       auditedPieces: null,
       acReRateByLine: null,
@@ -55,13 +57,23 @@ function calculateAllKpis(rows) {
       passRejectDistribution: null,
       rejectedEvolution: null,
       defectRate: null,
-      defectComposition: null,
-      defectTrendTop3: null,
+      defectComposition: unavailableState(
+        'local_fast_unsupported',
+        'Defect Composition requires InspectionDefect data — not available in fast mode',
+      ),
+      defectTrendTop3: unavailableState(
+        'local_fast_unsupported',
+        'Defect Trend Top 3 requires InspectionDefect data — not available in fast mode',
+      ),
     };
   }
 
   return {
     aqlByStyle: calc.calculateAqlByStyle(rows),
+    aqlByTeam: unavailableState(
+      'local_fast_unsupported',
+      'AQL by Team/Line requires live database — not available in fast mode',
+    ),
     aqlWeekly: calc.calculateAqlWeekly(rows),
     auditedPieces: calc.calculateAuditedPieces(rows),
     acReRateByLine: calc.calculateAcReRateByLine(rows),
@@ -72,8 +84,14 @@ function calculateAllKpis(rows) {
     passRejectDistribution: calc.calculatePassRejectDistribution(rows),
     rejectedEvolution: calc.calculateRejectedEvolution(rows),
     defectRate: calc.calculateDefectRate(rows),
-    defectComposition: null,
-    defectTrendTop3: null,
+    defectComposition: unavailableState(
+      'local_fast_unsupported',
+      'Defect Composition requires InspectionDefect data — not available in fast mode',
+    ),
+    defectTrendTop3: unavailableState(
+      'local_fast_unsupported',
+      'Defect Trend Top 3 requires InspectionDefect data — not available in fast mode',
+    ),
   };
 }
 
@@ -83,17 +101,17 @@ function calculateAllKpis(rows) {
  */
 
 /**
- * Original Excel Reports — 12 cards, ordered per spec.
+ * Original Excel Reports — 8 cards, ordered per spec.
  * @param {object} opts
  * @returns {CardDescriptor[]}
  */
 function buildExcelSection(opts) {
   const {
     defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
-    topDefectsData, auditedPiecesSeries, rejectedEvolutionSeries,
+    aqlByTeamData, topDefectsData, rejectedEvolutionSeries,
     acReRateByLineData, acceptedByLineData, rejectedByLineData,
-    perfByCustomerData, perfByLineData, defectsByStyleTypeData,
     loading, error, nullMessage, isNullOrError,
+    shouldShowMessage, getChartMessage, getStateClass, resolveChartData,
   } = opts;
 
   return [
@@ -101,6 +119,7 @@ function buildExcelSection(opts) {
       title: 'Defect Rate (AQL %)',
       chart: 'number',
       data: defectRate,
+      layoutRole: 'metric',
       render: () => (
         <KpiCard title="Defect Rate (AQL %)" loading={loading} error={error}>
           <KpiNumberCard
@@ -116,6 +135,7 @@ function buildExcelSection(opts) {
       title: 'Pass / Reject Distribution',
       chart: 'donut',
       data: passRejectData,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Pass / Reject Distribution" loading={loading} error={error}>
           {isNullOrError(passRejectData) ? (
@@ -134,6 +154,7 @@ function buildExcelSection(opts) {
       title: 'Weekly AQL (%)',
       chart: 'line',
       data: aqlWeeklySeries,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Weekly AQL (%)" loading={loading} error={error}>
           {isNullOrError(aqlWeeklySeries) ? (
@@ -156,6 +177,7 @@ function buildExcelSection(opts) {
       title: 'AQL by Style',
       chart: 'bar',
       data: aqlByStyleData,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="AQL by Style" loading={loading} error={error}>
           {isNullOrError(aqlByStyleData) ? (
@@ -176,35 +198,45 @@ function buildExcelSection(opts) {
       ),
     },
     {
-      title: 'Top Defects',
+      title: 'AQL by Team/Line',
       chart: 'bar',
-      data: topDefectsData,
+      data: aqlByTeamData,
+      layoutRole: 'standard',
       render: () => (
-        <KpiCard title="Top Defects" loading={loading} error={error}>
-          {isNullOrError(topDefectsData) ? (
+        <KpiCard title="AQL by Team/Line" loading={loading} error={error}>
+          {isNullOrError(aqlByTeamData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
-            <BarChartKpi data={topDefectsData} horizontal color="#ef4444" />
+            <BarChartKpi
+              data={aqlByTeamData}
+              horizontal
+              color="#3b82f6"
+              xAxisLabel="AQL (%)"
+              yAxisLabel="Team / Line"
+              xTickFormatter={(value) => `${value}%`}
+              valueFormatter={formatPercent}
+              tooltipLabelFormatter={(label) => `Team / Line: ${label}`}
+            />
           )}
         </KpiCard>
       ),
     },
     {
-      title: 'Weekly Audited Pieces',
-      chart: 'line',
-      data: auditedPiecesSeries,
+      title: 'Top Defects',
+      chart: 'bar',
+      data: topDefectsData,
+      layoutRole: 'standard',
       render: () => (
-        <KpiCard title="Weekly Audited Pieces" loading={loading} error={error}>
-          {isNullOrError(auditedPiecesSeries) ? (
-            <div className="null-message">{nullMessage}</div>
+        <KpiCard title="Top Defects" loading={loading} error={error}>
+          {shouldShowMessage(topDefectsData) ? (
+            <div className={`state-message ${getStateClass(topDefectsData)}`}>
+              {getChartMessage(topDefectsData)}
+            </div>
           ) : (
-            <LineChartKpi
-              series={auditedPiecesSeries}
-              xAxisLabel="Week"
-              yAxisLabel="Pieces"
-              xTickFormatter={formatWeekLabel}
-              valueFormatter={formatPieces}
-              tooltipLabelFormatter={formatWeekLabel}
+            <BarChartKpi
+              data={resolveChartData(topDefectsData)}
+              horizontal
+              color="#ef4444"
             />
           )}
         </KpiCard>
@@ -214,6 +246,7 @@ function buildExcelSection(opts) {
       title: 'Weekly Rejected Pieces',
       chart: 'line',
       data: rejectedEvolutionSeries,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Weekly Rejected Pieces" loading={loading} error={error}>
           {isNullOrError(rejectedEvolutionSeries) ? (
@@ -232,48 +265,83 @@ function buildExcelSection(opts) {
       ),
     },
     {
-      title: 'Accepted by Line (count)',
+      title: 'Accepted / Rejected Absolute Volume',
       chart: 'bar',
-      data: acceptedByLineData,
+      data: { accepted: acceptedByLineData, rejected: rejectedByLineData },
+      layoutRole: 'composed',
       render: () => (
-        <KpiCard title="Accepted by Line (count)" loading={loading} error={error}>
+        <KpiCard title="Accepted / Rejected Absolute Volume" loading={loading} error={error}>
           {isNullOrError(acReRateByLineData) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
-            <BarChartKpi
-              data={acceptedByLineData}
-              color="#10b981"
-              horizontal
-              xAxisLabel="Count (pieces)"
-              yAxisLabel="Line"
-              xTickFormatter={formatPieces}
-              yTickFormatter={trimCategoryLabel}
-              valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Line (accepted): ${label}`}
-            />
+            <div className="volume-card-body">
+              <div className="volume-subcard">
+                <strong>Accepted</strong>
+                <BarChartKpi
+                  data={acceptedByLineData}
+                  color="#10b981"
+                  horizontal
+                  xAxisLabel="Count (pieces)"
+                  yAxisLabel="Line"
+                  xTickFormatter={formatPieces}
+                  yTickFormatter={trimCategoryLabel}
+                  valueFormatter={formatCount}
+                  tooltipLabelFormatter={(label) => `Line (accepted): ${label}`}
+                />
+              </div>
+              <div className="volume-subcard">
+                <strong>Rejected</strong>
+                <BarChartKpi
+                  data={rejectedByLineData}
+                  color="#ef4444"
+                  horizontal
+                  xAxisLabel="Count (pieces)"
+                  yAxisLabel="Line"
+                  xTickFormatter={formatPieces}
+                  yTickFormatter={trimCategoryLabel}
+                  valueFormatter={formatCount}
+                  tooltipLabelFormatter={(label) => `Line (rejected): ${label}`}
+                />
+              </div>
+            </div>
           )}
         </KpiCard>
       ),
     },
+  ];
+}
+
+/**
+ * Rift Analytics Insights — 6 cards, ordered per spec.
+ * @param {object} opts
+ * @returns {CardDescriptor[]}
+ */
+function buildRiftSection(opts) {
+  const {
+    auditedPiecesSeries, perfByCustomerData, perfByLineData,
+    defectsByStyleTypeData, defectTrendTop3Data, defectCompositionData,
+    loading, error, nullMessage, isNullOrError,
+    shouldShowMessage, getChartMessage, getStateClass, resolveChartData,
+  } = opts;
+
+  return [
     {
-      title: 'Rejected by Line (count)',
-      chart: 'bar',
-      data: rejectedByLineData,
+      title: 'Weekly Audited Pieces',
+      chart: 'line',
+      data: auditedPiecesSeries,
+      layoutRole: 'standard',
       render: () => (
-        <KpiCard title="Rejected by Line (count)" loading={loading} error={error}>
-          {isNullOrError(acReRateByLineData) ? (
+        <KpiCard title="Weekly Audited Pieces" loading={loading} error={error}>
+          {isNullOrError(auditedPiecesSeries) ? (
             <div className="null-message">{nullMessage}</div>
           ) : (
-            <BarChartKpi
-              data={rejectedByLineData}
-              color="#ef4444"
-              horizontal
-              xAxisLabel="Count (pieces)"
-              yAxisLabel="Line"
-              xTickFormatter={formatPieces}
-              yTickFormatter={trimCategoryLabel}
-              valueFormatter={formatCount}
-              tooltipLabelFormatter={(label) => `Line (rejected): ${label}`}
+            <LineChartKpi
+              series={auditedPiecesSeries}
+              xAxisLabel="Week"
+              yAxisLabel="Pieces"
+              xTickFormatter={formatWeekLabel}
+              valueFormatter={formatPieces}
+              tooltipLabelFormatter={formatWeekLabel}
             />
           )}
         </KpiCard>
@@ -283,6 +351,7 @@ function buildExcelSection(opts) {
       title: 'Acceptance Rate by Customer (accepted/sample × 100)',
       chart: 'bar',
       data: perfByCustomerData,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Acceptance Rate by Customer (accepted/sample × 100)" loading={loading} error={error}>
           {isNullOrError(perfByCustomerData) ? (
@@ -306,6 +375,7 @@ function buildExcelSection(opts) {
       title: 'Acceptance Rate by Line (accepted/sample × 100)',
       chart: 'bar',
       data: perfByLineData,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Acceptance Rate by Line (accepted/sample × 100)" loading={loading} error={error}>
           {isNullOrError(perfByLineData) ? (
@@ -329,42 +399,33 @@ function buildExcelSection(opts) {
       title: 'Defects by Style × Type',
       chart: 'heatmap',
       data: defectsByStyleTypeData,
+      layoutRole: 'wide',
       render: () => (
         <KpiCard title="Defects by Style × Type" loading={loading} error={error}>
-          {isNullOrError(defectsByStyleTypeData) ? (
-            <div className="null-message">{nullMessage}</div>
+          {shouldShowMessage(defectsByStyleTypeData) ? (
+            <div className={`state-message ${getStateClass(defectsByStyleTypeData)}`}>
+              {getChartMessage(defectsByStyleTypeData)}
+            </div>
           ) : (
-            <HeatmapKpi data={defectsByStyleTypeData} />
+            <HeatmapKpi data={resolveChartData(defectsByStyleTypeData)} />
           )}
         </KpiCard>
       ),
     },
-  ];
-}
-
-/**
- * Rift Analytics Insights — 2 cards, ordered per spec.
- * @param {object} opts
- * @returns {CardDescriptor[]}
- */
-function buildRiftSection(opts) {
-  const {
-    defectTrendTop3Data, defectCompositionData, loading, error,
-    nullMessage, isNullOrError,
-  } = opts;
-
-  return [
     {
       title: 'Defect Trend Top 3',
       chart: 'line',
       data: defectTrendTop3Data,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Defect Trend Top 3" loading={loading} error={error}>
-          {isNullOrError(defectTrendTop3Data) ? (
-            <div className="null-message">{nullMessage}</div>
+          {shouldShowMessage(defectTrendTop3Data) ? (
+            <div className={`state-message ${getStateClass(defectTrendTop3Data)}`}>
+              {getChartMessage(defectTrendTop3Data)}
+            </div>
           ) : (
             <LineChartKpi
-              series={defectTrendTop3Data}
+              series={resolveChartData(defectTrendTop3Data)}
               xAxisLabel="Week"
               yAxisLabel="Defects"
               xTickFormatter={formatWeekLabel}
@@ -379,13 +440,16 @@ function buildRiftSection(opts) {
       title: 'Defect Composition',
       chart: 'donut',
       data: defectCompositionData,
+      layoutRole: 'standard',
       render: () => (
         <KpiCard title="Defect Composition" loading={loading} error={error}>
-          {isNullOrError(defectCompositionData) ? (
-            <div className="null-message">{nullMessage}</div>
+          {shouldShowMessage(defectCompositionData) ? (
+            <div className={`state-message ${getStateClass(defectCompositionData)}`}>
+              {getChartMessage(defectCompositionData)}
+            </div>
           ) : (
             <DonutChartKpi
-              data={defectCompositionData}
+              data={resolveChartData(defectCompositionData)}
               valueFormatter={formatCount}
               tooltipLabelFormatter={(label) => `Defect: ${label}`}
             />
@@ -394,6 +458,30 @@ function buildRiftSection(opts) {
       ),
     },
   ];
+}
+
+/**
+ * Render a semantic grid section shell.
+ * @param {string} sectionTitle
+ * @param {CardDescriptor[]} cards
+ */
+function renderSection(sectionTitle, cards) {
+  return (
+    <div className="dashboard-section dashboard-section--qfa-qfc">
+      <h2 className="dashboard-section__title">{sectionTitle}</h2>
+      <div className="dashboard-section__grid">
+        {cards.map((card) => (
+          <div
+            className="dashboard-section__item"
+            data-layout-role={card.layoutRole || 'standard'}
+            key={card.title}
+          >
+            {card.render()}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
@@ -464,7 +552,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchVolatileKpis(volatileFile);
+        const result = await fetchVolatileKpis(volatileFile, context);
         setKpiData(result);
         if (result.filterOptions) {
           setFilterOptions(result.filterOptions);
@@ -512,6 +600,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
   const passRejectData = transformPassReject(kpiData?.passRejectDistribution);
   const aqlWeeklySeries = transformAqlWeekly(kpiData?.aqlWeekly);
   const aqlByStyleData = transformAqlByStyle(kpiData?.aqlByStyle);
+  const aqlByTeamData = transformAqlByTeam(kpiData?.aqlByTeam);
   const topDefectsData = transformTopDefects(kpiData?.topDefects);
   const auditedPiecesSeries = transformAuditedPieces(kpiData?.auditedPieces);
   const rejectedEvolutionSeries = transformRejectedEvolution(kpiData?.rejectedEvolution);
@@ -524,21 +613,65 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
   const defectCompositionData = transformDefectComposition(kpiData?.defectComposition);
   const defectTrendTop3Data = transformDefectTrendTop3(kpiData?.defectTrendTop3);
 
-  const isNullOrError = (data) => data === null || (data && (data.error || data.status === 'unavailable'));
+  const isNullOrError = (data) => data == null || (data && (data.error || data.status === 'unavailable'));
+
+  /**
+   * Resolve chart-ready data from either chart-state object (new contract) or legacy raw data.
+   * - chart-state { status: 'ready', data: [...] } → returns data array
+   * - legacy raw array → returns as-is
+   * - null/unavailable/empty → returns null
+   */
+  const resolveChartData = (data) => {
+    if (data && data.status === 'ready') return data.data;
+    if (data && (data.status === 'empty' || data.status === 'unavailable')) return null;
+    return data; // legacy (raw array, null, etc.)
+  };
+
+  /**
+   * Get the display message for a chart state, falling back to legacy nullMessage.
+   */
+  const getChartMessage = (data) => {
+    if (data && data.message) return data.message;
+    if (data && data.error) return data.error;
+    return nullMessage;
+  };
+
+  /**
+   * Determine if a chart should show a state message instead of rendering.
+   */
+  const shouldShowMessage = (data) => {
+    if (!data) return true; // null/undefined → show message
+    if (data.error) return true;
+    if (data.status === 'empty' || data.status === 'unavailable') return true;
+    return false;
+  };
+
+  /**
+   * Get CSS class modifier for the state message.
+   */
+  const getStateClass = (data) => {
+    if (!data) return 'state-null';
+    if (data.status === 'empty') return 'state-empty';
+    if (data.status === 'unavailable') return 'state-unavailable';
+    if (data.error) return 'state-error';
+    return 'state-null';
+  };
 
   const nullMessage = "No disponible en modo rápido";
 
   const excelSectionOpts = {
     defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
-    topDefectsData, auditedPiecesSeries, rejectedEvolutionSeries,
+    aqlByTeamData, topDefectsData, rejectedEvolutionSeries,
     acReRateByLineData, acceptedByLineData, rejectedByLineData,
-    perfByCustomerData, perfByLineData, defectsByStyleTypeData,
     loading, error, nullMessage, isNullOrError,
+    shouldShowMessage, getChartMessage, getStateClass, resolveChartData,
   };
 
   const riftSectionOpts = {
-    defectTrendTop3Data, defectCompositionData,
+    auditedPiecesSeries, perfByCustomerData, perfByLineData,
+    defectsByStyleTypeData, defectTrendTop3Data, defectCompositionData,
     loading, error, nullMessage, isNullOrError,
+    shouldShowMessage, getChartMessage, getStateClass, resolveChartData,
   };
 
   const excelCards = buildExcelSection(excelSectionOpts);
@@ -573,28 +706,10 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
       )}
 
       {/* ── Section 1: Original Excel Reports ── */}
-      <h2 className="dashboard-section__title">Original Excel Reports</h2>
-      <Masonry
-        breakpointCols={{ default: 3, 1100: 2, 768: 1 }}
-        className="dashboard-masonry"
-        columnClassName="dashboard-masonry-column"
-      >
-        {excelCards.map((card) => (
-          <div key={card.title}>{card.render()}</div>
-        ))}
-      </Masonry>
+      {renderSection('Original Excel Reports', excelCards)}
 
       {/* ── Section 2: Rift Analytics Insights ── */}
-      <h2 className="dashboard-section__title">Rift Analytics Insights</h2>
-      <Masonry
-        breakpointCols={{ default: 3, 1100: 2, 768: 1 }}
-        className="dashboard-masonry"
-        columnClassName="dashboard-masonry-column"
-      >
-        {riftCards.map((card) => (
-          <div key={card.title}>{card.render()}</div>
-        ))}
-      </Masonry>
+      {renderSection('Rift Analytics Insights', riftCards)}
     </div>
   );
 }
