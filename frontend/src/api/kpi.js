@@ -216,6 +216,17 @@ export async function getContainersByState(filters, context) {
   return fetchKpi('containers-by-state/', filters, context);
 }
 
+/** Container-specific filter options. */
+export async function getContainerFilterOptions() {
+  const url = '/quality/kpis/container/filter-options/';
+  try {
+    const res = await axiosClient.get(url);
+    return res.data;
+  } catch (error) {
+    throw new Error(error.response?.data?.error || `Container filter options fetch failed: ${error.response?.status}`);
+  }
+}
+
 /** Overall defect rate (defects per 100 units inspected). */
 export async function getDefectRate(filters, context) {
   return fetchKpi('defect-rate/', filters, context);
@@ -327,6 +338,106 @@ export async function fetchAllKpis(filters = {}, context) {
     defectRate: getDefectRate,
     defectComposition: getDefectComposition,
     defectTrendTop3: getDefectTrendTop3,
+  };
+
+  const entries = Object.entries(kpiMap).map(([key, fn]) => [
+    key,
+    fn(filters, context).catch((err) => unavailableKpi(err.message)),
+  ]);
+
+  const results = await Promise.allSettled(entries.map(([, p]) => p));
+
+  /** @type {object} */
+  const kpis = {};
+  entries.forEach(([key], i) => {
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      kpis[key] = result.value;
+    } else {
+      kpis[key] = unavailableKpi(result.reason?.message ?? 'Unknown error');
+    }
+  });
+
+  return kpis;
+}
+
+// ─── Container-specific KPI helpers ──────────────────────────────────────────
+
+/** Container executive summary (total containers, pass rate, inspected, rejected). */
+export async function getContainerExecutiveSummary(filters, context) {
+  return fetchKpi('container/executive-summary/', filters, context);
+}
+
+/** Container pass rate trend over time. */
+export async function getContainerPassRateTrend(filters, context) {
+  return fetchKpi('container/pass-rate-trend/', filters, context);
+}
+
+/** Container inspected palettes trend. */
+export async function getContainerInspectedTrend(filters, context) {
+  return fetchKpi('container/inspected-trend/', filters, context);
+}
+
+/** Container rejected palettes trend. */
+export async function getContainerRejectedTrend(filters, context) {
+  return fetchKpi('container/rejected-trend/', filters, context);
+}
+
+/** Container top defect types. */
+export async function getContainerTopDefects(filters, context) {
+  return fetchKpi('container/top-defects/', filters, context);
+}
+
+/** Container defect composition donut data. */
+export async function getContainerDefectComposition(filters, context) {
+  return fetchKpi('container/defect-composition/', filters, context);
+}
+
+/** Container worst containers (lowest pass rate first, bounded ranking). */
+export async function getContainerWorstContainers(filters, context) {
+  return fetchKpi('container/worst-containers/', { ...filters, top: 5 }, context);
+}
+
+/**
+ * Fetch all Container KPIs in parallel, with live/volatile orchestration.
+ *
+ * In live mode (no volatileFile), fetches all 7 container-specific KPIs
+ * plus the shared containers-by-state endpoint in parallel.
+ *
+ * In volatile mode, only containersByState is available from the volatile
+ * data; all Container-specific KPIs return explicit unavailable states.
+ *
+ * @param {object} filters - Container filters (customer, date_range, from_date, to_date)
+ * @param {File|null} volatileFile - Excel file for volatile mode, or null for live
+ * @param {string} [context] - Context (e.g. 'plant', 'customer')
+ * @returns {Promise<object>} Container KPI results
+ */
+export async function fetchAllContainerKpis(filters = {}, volatileFile = null, context) {
+  if (volatileFile) {
+    // Volatile mode: only containersByState is available
+    const volatileData = await fetchVolatileKpis(volatileFile, context);
+    return {
+      executiveSummary: unavailableKpi('Container Executive Summary requires live database — not available in fast mode'),
+      containersByState: volatileData.containersByState || unavailableKpi('Containers by State not available'),
+      passRateTrend: unavailableKpi('Pass Rate Trend requires live database — not available in fast mode'),
+      inspectedTrend: unavailableKpi('Inspected Trend requires live database — not available in fast mode'),
+      rejectedTrend: unavailableKpi('Rejected Trend requires live database — not available in fast mode'),
+      topDefects: unavailableKpi('Top Defects requires live database — not available in fast mode'),
+      defectComposition: unavailableKpi('Defect Composition requires live database — not available in fast mode'),
+      worstContainers: unavailableKpi('Worst Containers requires live database — not available in fast mode'),
+    };
+  }
+
+  // Live mode: fetch all container KPIs in parallel
+  const kpiMap = {
+    executiveSummary: getContainerExecutiveSummary,
+    containersByState: getContainersByState,
+    passRateTrend: getContainerPassRateTrend,
+    inspectedTrend: getContainerInspectedTrend,
+    rejectedTrend: getContainerRejectedTrend,
+    topDefects: getContainerTopDefects,
+    defectComposition: getContainerDefectComposition,
+    worstContainers: getContainerWorstContainers,
   };
 
   const entries = Object.entries(kpiMap).map(([key, fn]) => [

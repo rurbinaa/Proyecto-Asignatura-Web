@@ -35,6 +35,9 @@ import {
   // 2 Helpers
   parseLineStateLabel,
   buildLineCountDataByState,
+  // Container transforms
+  transformContainerExecutiveSummary,
+  transformContainerWorstContainers,
 } from './chartTransforms.js';
 
 // ─── Shared test fixtures ─────────────────────────────────────────────────────
@@ -371,18 +374,20 @@ describe('transformPerformanceByLine', () => {
 });
 
 describe('transformTopDefects', () => {
-  it('returns ready state with label and value from result array', () => {
+  it('returns ready state with label, value, and percentage from result array', () => {
     const result = transformTopDefects(SAMPLE_TOP_DEFECTS);
     expect(result.status).toBe('ready');
     expect(result.data).toHaveLength(3);
-    expect(result.data[0]).toEqual({ label: 'Loose Thread', value: 234 });
+    expect(result.data[0]).toEqual({ label: 'Loose Thread', value: 234, percentage: 48.9 });
+    expect(result.data[1]).toEqual({ label: 'Broken Stitch', value: 156, percentage: 32.6 });
+    expect(result.data[2]).toEqual({ label: 'Color Fading', value: 89, percentage: 18.6 });
   });
 
-  it('handles direct array input', () => {
+  it('handles direct array input with percentage', () => {
     const input = [{ label: 'Defect A', value: 50 }];
     const result = transformTopDefects(input);
     expect(result.status).toBe('ready');
-    expect(result.data).toEqual([{ label: 'Defect A', value: 50 }]);
+    expect(result.data).toEqual([{ label: 'Defect A', value: 50, percentage: 100 }]);
   });
 
   it('returns empty state for null input', () => {
@@ -827,6 +832,8 @@ describe('Transform functions are pure (do not mutate input)', () => {
     { name: 'transformDefectComposition', fn: transformDefectComposition, input: SAMPLE_DEFECT_COMPOSITION },
     { name: 'transformDefectTrendTop3', fn: transformDefectTrendTop3, input: SAMPLE_DEFECT_TREND_TOP3 },
     { name: 'transformAqlByTeam', fn: transformAqlByTeam, input: SAMPLE_AQL_TEAM },
+    { name: 'transformContainerExecutiveSummary', fn: transformContainerExecutiveSummary, input: [{ label: 'Total Containers', value: 150 }] },
+    { name: 'transformContainerWorstContainers', fn: transformContainerWorstContainers, input: [{ containerNumber: 'C1', customer: 'A', passRate: 80, rejectedPalettes: 2, inspectionDate: '2025-01-01' }] },
   ];
 
   mutations.forEach(({ name, fn, input }) => {
@@ -862,6 +869,8 @@ describe('Transform functions are deterministic', () => {
     { name: 'transformDefectComposition', fn: transformDefectComposition, input: SAMPLE_DEFECT_COMPOSITION },
     { name: 'transformDefectTrendTop3', fn: transformDefectTrendTop3, input: SAMPLE_DEFECT_TREND_TOP3 },
     { name: 'transformAqlByTeam', fn: transformAqlByTeam, input: SAMPLE_AQL_TEAM },
+    { name: 'transformContainerExecutiveSummary', fn: transformContainerExecutiveSummary, input: [{ label: 'Total Containers', value: 150 }] },
+    { name: 'transformContainerWorstContainers', fn: transformContainerWorstContainers, input: [{ containerNumber: 'C1', customer: 'A', passRate: 80, rejectedPalettes: 2, inspectionDate: '2025-01-01' }] },
   ];
 
   determinismTests.forEach(({ name, fn, input }) => {
@@ -1077,11 +1086,11 @@ describe('transformDefectComposition — top-6 + Other grouping', () => {
 // ─── Chart-State Contract for Top Defects ──────────────────────────────────────
 
 describe('transformTopDefects — chart-state contract', () => {
-  it('RED - returns ready state for valid non-empty data', () => {
+  it('RED - returns ready state for valid non-empty data with percentages', () => {
     const result = transformTopDefects(SAMPLE_TOP_DEFECTS);
     expect(result.status).toBe('ready');
     expect(result.data).toHaveLength(3);
-    expect(result.data[0]).toEqual({ label: 'Loose Thread', value: 234 });
+    expect(result.data[0]).toEqual({ label: 'Loose Thread', value: 234, percentage: 48.9 });
   });
 
   it('RED - returns empty state for empty result array', () => {
@@ -1222,5 +1231,150 @@ describe('transformDefectTrendTop3 — chart-state contract', () => {
   it('RED - returns empty for null input', () => {
     const result = transformDefectTrendTop3(null);
     expect(result.status).toBe('empty');
+  });
+});
+
+// ─── Container Dashboard Transforms ────────────────────────────────────────────
+
+describe('transformContainerExecutiveSummary', () => {
+  it('RED - converts result array with canonical labels to keyed summary array', () => {
+    const input = [
+      { label: 'Total Containers', value: 150 },
+      { label: 'Average Pass Rate', value: 87.5 },
+      { label: 'Total Palettes Inspected', value: 1200 },
+      { label: 'Total Rejected Palettes', value: 45 },
+    ];
+    const result = transformContainerExecutiveSummary(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toEqual({
+      totalContainers: 150,
+      averagePassRate: 87.5,
+      totalInspected: 1200,
+      totalRejected: 45,
+    });
+  });
+
+  it('RED - ignores old non-canonical label aliases (only canonical labels map)', () => {
+    const input = [
+      { label: 'Total Containers', value: 150 },
+      { label: 'Average Pass Rate', value: 87.5 },
+      { label: 'Total Inspected', value: 1200 },
+      { label: 'Total Rejected', value: 45 },
+    ];
+    const result = transformContainerExecutiveSummary(input);
+    expect(result.status).toBe('ready');
+    expect(result.data[0].totalContainers).toBe(150);
+    expect(result.data[0].averagePassRate).toBe(87.5);
+    // Old aliases should NOT map — only canonical backend labels work
+    expect(result.data[0].totalInspected).toBeUndefined();
+    expect(result.data[0].totalRejected).toBeUndefined();
+  });
+
+  it('RED - passes through explicit unavailable objects', () => {
+    const unavailable = { status: 'unavailable', reason: 'volatile', message: 'Not available' };
+    const result = transformContainerExecutiveSummary(unavailable);
+    expect(result).toEqual(unavailable);
+  });
+
+  it('RED - returns empty state for null input', () => {
+    const result = transformContainerExecutiveSummary(null);
+    expect(result.status).toBe('empty');
+  });
+
+  it('RED - returns unavailable state for error objects', () => {
+    const result = transformContainerExecutiveSummary({ error: 'API error' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
+  });
+
+  it('RED - returns empty state for empty array', () => {
+    const result = transformContainerExecutiveSummary([]);
+    expect(result.status).toBe('empty');
+  });
+
+  it('TRIANGULATE - handles partial canonical input (some labels unknown)', () => {
+    const input = [
+      { label: 'Total Containers', value: 100 },
+      { label: 'NonExistent Label', value: 999 },
+      { label: 'Total Rejected Palettes', value: 10 },
+    ];
+    const result = transformContainerExecutiveSummary(input);
+    expect(result.status).toBe('ready');
+    expect(result.data[0].totalContainers).toBe(100);
+    expect(result.data[0].totalRejected).toBe(10);
+    expect(result.data[0].totalInspected).toBeUndefined();
+    expect(result.data[0].averagePassRate).toBeUndefined();
+  });
+
+  it('TRIANGULATE - renders zero values from canonical labels correctly', () => {
+    const input = [
+      { label: 'Total Containers', value: 0 },
+      { label: 'Average Pass Rate', value: 0 },
+      { label: 'Total Palettes Inspected', value: 0 },
+      { label: 'Total Rejected Palettes', value: 0 },
+    ];
+    const result = transformContainerExecutiveSummary(input);
+    expect(result.status).toBe('ready');
+    expect(result.data[0]).toEqual({
+      totalContainers: 0,
+      averagePassRate: 0,
+      totalInspected: 0,
+      totalRejected: 0,
+    });
+  });
+});
+
+describe('transformContainerWorstContainers', () => {
+  it('RED - normalizes worst-container rows and returns ready state', () => {
+    const input = [
+      { containerNumber: 'CONT-001', customer: 'Customer A', passRate: 72.5, rejectedPalettes: 5, inspectionDate: '2025-01-10' },
+      { containerNumber: 'CONT-002', customer: 'Customer B', passRate: 85.0, rejectedPalettes: 2, inspectionDate: '2025-01-11' },
+    ];
+    const result = transformContainerWorstContainers(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toEqual({
+      containerNumber: 'CONT-001',
+      customer: 'Customer A',
+      passRate: 72.5,
+      rejectedPalettes: 5,
+      inspectionDate: '2025-01-10',
+      key: 'CONT-001',
+    });
+    expect(result.data[1].key).toBe('CONT-002');
+  });
+
+  it('RED - passes through unavailable objects unchanged', () => {
+    const unavailable = { status: 'unavailable', reason: 'volatile', message: 'Not available' };
+    const result = transformContainerWorstContainers(unavailable);
+    expect(result).toEqual(unavailable);
+  });
+
+  it('RED - returns empty state for null input', () => {
+    const result = transformContainerWorstContainers(null);
+    expect(result.status).toBe('empty');
+  });
+
+  it('RED - returns empty state for empty array', () => {
+    const result = transformContainerWorstContainers([]);
+    expect(result.status).toBe('empty');
+  });
+
+  it('RED - returns unavailable state for error objects', () => {
+    const result = transformContainerWorstContainers({ error: 'fetch failed' });
+    expect(result.status).toBe('unavailable');
+    expect(result.reason).toBe('api_error');
+  });
+
+  it('RED - handles single-element array', () => {
+    const input = [
+      { containerNumber: 'CONT-001', customer: 'Customer A', passRate: 50.0, rejectedPalettes: 10, inspectionDate: '2025-01-05' },
+    ];
+    const result = transformContainerWorstContainers(input);
+    expect(result.status).toBe('ready');
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].passRate).toBe(50.0);
+    expect(result.data[0].key).toBe('CONT-001');
   });
 });

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, fetchAllContainerKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -862,5 +862,157 @@ describe('kpi.js - fetchVolatileKpis_context_forwarding', () => {
     // Verify context was sent
     const [, formData] = axiosClient.post.mock.calls[0];
     expect(formData.get('context')).toBe('customer');
+  });
+});
+
+// ─── Container-Specific KPI Helpers ───────────────────────────────────────────
+
+describe('kpi.js - container helpers - endpoint wiring', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('RED - getContainerExecutiveSummary fetches from container/executive-summary/', async () => {
+    const mockDto = [
+      { label: 'Total Containers', value: 150 },
+    ];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getContainerExecutiveSummary();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/container/executive-summary/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('RED - getContainerWorstContainers fetches from container/worst-containers/', async () => {
+    const mockDto = [
+      { containerNumber: 'C1', customer: 'A', passRate: 72.5, rejectedPalettes: 5, inspectionDate: '2025-01-10' },
+    ];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getContainerWorstContainers();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/container/worst-containers/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('RED - getContainerPassRateTrend fetches from container/pass-rate-trend/', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+    await getContainerPassRateTrend();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/container/pass-rate-trend/');
+  });
+
+  it('RED - getContainerTopDefects fetches from container/top-defects/', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+    await getContainerTopDefects();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/container/top-defects/');
+  });
+
+  it('RED - context parameter is forwarded in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+    await getContainerExecutiveSummary({ customer: 'Test' }, 'plant');
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=plant');
+    expect(url).toContain('customer=Test');
+  });
+});
+
+describe('kpi.js - fetchAllContainerKpis - live mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('RED - returns all container KPI keys in live mode', async () => {
+    // Mock all 7 container KPI calls + containersByState (shared)
+    for (let i = 0; i < 8; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: [] });
+    }
+
+    const result = await fetchAllContainerKpis({}, null);
+
+    expect(result).toHaveProperty('executiveSummary');
+    expect(result).toHaveProperty('containersByState');
+    expect(result).toHaveProperty('passRateTrend');
+    expect(result).toHaveProperty('inspectedTrend');
+    expect(result).toHaveProperty('rejectedTrend');
+    expect(result).toHaveProperty('topDefects');
+    expect(result).toHaveProperty('defectComposition');
+    expect(result).toHaveProperty('worstContainers');
+    // 8 calls: 7 container + 1 containers-by-state
+    expect(axiosClient.get).toHaveBeenCalledTimes(8);
+  });
+
+  it('RED - context parameter is forwarded to all sub-calls', async () => {
+    for (let i = 0; i < 8; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: [] });
+    }
+
+    await fetchAllContainerKpis({}, null, 'plant');
+
+    const urls = axiosClient.get.mock.calls.map(([url]) => url);
+    urls.forEach((url) => {
+      expect(url).toContain('context=plant');
+    });
+  });
+
+  it('RED - individual KPI failures become unavailable states', async () => {
+    // Mock for 8 calls: positions 0-3 resolve, positions 4-7 reject
+    for (let i = 0; i < 4; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: [] });
+    }
+    for (let i = 0; i < 4; i++) {
+      axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'DB error' }, status: 503 } });
+    }
+
+    const result = await fetchAllContainerKpis({}, null);
+
+    // Positions 0-3 resolve successfully (execSummary, containersByState, passRateTrend, inspectedTrend)
+    expect(result.executiveSummary).toEqual([]);
+    expect(result.containersByState).toEqual([]);
+    expect(result.passRateTrend).toEqual([]);
+    expect(result.inspectedTrend).toEqual([]);
+    // Positions 4-7 reject (rejectedTrend, topDefects, defectComposition, worstContainers)
+    expect(result.rejectedTrend).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.topDefects).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.defectComposition).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.worstContainers).toEqual(expect.objectContaining({ status: 'unavailable' }));
+  });
+});
+
+describe('kpi.js - fetchAllContainerKpis - volatile mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('RED - returns containersByState from volatile data and unavailable for others', async () => {
+    const mockVolatileResponse = {
+      aql_by_style: [],
+      containers_by_state: [{ name: '< 80%', value: 3 }, { name: '80-90%', value: 5 }],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockVolatileResponse });
+
+    const result = await fetchAllContainerKpis({}, new File(['test'], 'test.xlsx'));
+
+    expect(result.containersByState).toEqual([
+      { name: '< 80%', value: 3 },
+      { name: '80-90%', value: 5 },
+    ]);
+    // Container-specific KPIs are unavailable in volatile mode
+    const containerKeys = ['executiveSummary', 'passRateTrend', 'inspectedTrend', 'rejectedTrend', 'topDefects', 'defectComposition', 'worstContainers'];
+    containerKeys.forEach((key) => {
+      expect(result[key]).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    });
+  });
+
+  it('RED - does NOT fetch live KPIs when volatileFile is provided', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: { aql_by_style: [] } });
+
+    await fetchAllContainerKpis({}, new File(['test'], 'test.xlsx'));
+
+    // Only the volatile POST should have been made; no GET calls
+    expect(axiosClient.post).toHaveBeenCalledTimes(1);
+    expect(axiosClient.get).not.toHaveBeenCalled();
   });
 });
