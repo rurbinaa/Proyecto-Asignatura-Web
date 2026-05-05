@@ -162,11 +162,11 @@ QC_FA_CUSTOMER_REMAP = {
 }
 
 QC_FA_CUSTOMER_NUMERIC_COLUMNS = [
-    "week", "team", "po", "batch", "seconds", "accepted", "rejected", "sample", "aql", "qty", "defects_total"
+    "week", "po", "batch", "seconds", "accepted", "rejected", "sample", "aql", "qty", "defects_total"
 ]
 
 QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS = [
-    'date_1', 'customer', 'coord', 'date_2', 'style', 'color', 'pass_or_fail'
+    'date_1', 'customer', 'coord', 'date_2', 'style', 'color', 'pass_or_fail', 'team', 'line_code'
 ]
 
 QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS = [

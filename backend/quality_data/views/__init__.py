@@ -7,7 +7,7 @@ from rest_framework.viewsets import ViewSet
 from rest_framework import exceptions as rest_framework_exceptions
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
-from django.db.models import Sum, Count, Case, When, F
+from django.db.models import Sum, Count, Case, When, F, FloatField
 import pandas as pd
 import numpy as np
 import datetime
@@ -148,23 +148,53 @@ def _calculate_acceptance_rate(total_accepted, total_rejected):
 
 def _apply_team_sanitization_queryset(queryset):
     """
-    Filter a QualityQcFa queryset to only include records where team is
-    within the valid range 1..36.
+    Canonicalize team 60→6 via a `canonical_team` annotation, then keep
+    only rows where canonical_team is within 1..36.
 
-    Returns the filtered queryset.
+    After calling this, use `canonical_team` (not `team`) in values(),
+    F() expressions, and group-bys. The raw `team` field preserves the
+    original value; `canonical_team` holds the sanitized value.
+
+    Returns the annotated and filtered queryset.
     """
-    return queryset.filter(team__gte=1, team__lte=36)
+    from django.db.models import Case, When, Value, IntegerField
+    return queryset.annotate(
+        canonical_team=Case(
+            When(team=60, then=Value(6)),
+            default=F('team'),
+            output_field=IntegerField(),
+        )
+    ).filter(canonical_team__gte=1, canonical_team__lte=36)
+
+
+def _qfc_conditional_denominator():
+    """
+    Return a Case/When expression for the defect rate denominator.
+
+    For QFC (customer) records, the denominator is `accepted + rejected`.
+    For all other records (e.g. QFA plant), it remains `sample`.
+
+    Use this in aggregate() and annotate() calls where the denominator
+    of the defect rate formula depends on table_type.
+    """
+    return Case(
+        When(table_type='QFC', then=F('accepted') + F('rejected')),
+        default=F('sample'),
+        output_field=FloatField(),
+    )
 
 
 def _sanitize_team_dataframe(df):
     """
-    Filter a pandas DataFrame to only include rows where the 'team' column
-    value is within the valid range 1..36.
+    Sanitize a pandas DataFrame by canonicalizing team 60→6 and then
+    keeping only rows where the 'team' column value is within 1..36.
 
-    Returns a filtered DataFrame (may be empty).
+    Returns a filtered DataFrame (may be empty). Does NOT mutate the input.
     """
     if df is None or df.empty:
         return df
+    df = df.copy()
+    df['team'] = df['team'].replace(60, 6)
     return df[df['team'].isin(_valid_team_range)]
 
 
@@ -405,6 +435,7 @@ class KpiFilterMixin:
         'date_range': ('date_1', False),
         'week': ('week', True),
         'team': ('team', True),
+        'line_code': ('line_code', False),
         'style': ('style', False),
         'color': ('color__name', False),
         'customer': ('customer', False),
@@ -565,6 +596,11 @@ class KpiFilterMixin:
                     'team': 'Invalid value. It must be an integer.'
                 })
 
+        # line_code: exact string match (dual-line filter)
+        line_code = request.query_params.get('line_code')
+        if line_code:
+            filters[f'{prefix}line_code__exact'] = str(line_code).strip()
+
         # style: exact match (optimized for B-Tree index)
         style = request.query_params.get('style')
         if style:
@@ -593,7 +629,52 @@ class KpiFilterMixin:
         if filters:
             queryset = queryset.filter(**filters)
 
+        # Global dual-line filter: only for QualityQcFa and InspectionDefect models.
+        # When include_dual_lines is not 'true' and no explicit line_code is given,
+        # exclude dual-line rows (line_code IS NULL). Explicit line_code takes
+        # precedence — no extra exclusion is added.
+        model_name = queryset.model._meta.model_name
+        if model_name in ('qualityqcfa', 'inspectiondefect'):
+            include_raw = request.query_params.get('include_dual_lines', '').strip().lower()
+            include_dual_lines = include_raw == 'true'
+            explicit_line_code = bool(request.query_params.get('line_code', '').strip())
+            if not include_dual_lines and not explicit_line_code:
+                queryset = queryset.filter(**{f'{prefix}line_code__isnull': True})
+
         return queryset
+
+    def _apply_line_grouped_display(self, queryset, team_field='canonical_team'):
+        """
+        For line-grouped KPI views: annotate display_line, sort_team, and
+        sort_is_dual for presentation ordering.
+
+        Row inclusion/exclusion is now handled globally by get_filtered_queryset()
+        via the include_dual_lines toggle. This method is presentation-only.
+
+        - Annotates display_line = COALESCE(line_code, CAST(team_field AS text)).
+        - Annotates sort_team and sort_is_dual for stable ordering.
+
+        Returns (queryset, include_dual_lines_bool).
+        """
+        from django.db.models import Case, When, Value, CharField
+        from django.db.models.functions import Cast
+
+        include_raw = self.request.query_params.get('include_dual_lines', '').strip().lower()
+        include_dual_lines = include_raw == 'true'
+
+        queryset = queryset.annotate(
+            sort_team=F(team_field),
+            sort_is_dual=Case(
+                When(line_code__isnull=False, then=1),
+                default=0,
+            ),
+            display_line=Case(
+                When(line_code__isnull=False, then=F('line_code')),
+                default=Cast(F(team_field), output_field=CharField()),
+                output_field=CharField(),
+            )
+        )
+        return queryset, include_dual_lines
 
 
 # ─────────────────────────────────────────────────────────
@@ -1000,6 +1081,8 @@ class DefectRateView(KpiFilterMixin, APIView):
 
     Source: QualityQcFa
     Global average: SUM(defects_total) / SUM(sample) * 100
+    For QFC (customer) records, denominator is SUM(accepted + rejected)
+    instead of SUM(sample).
 
     Response: {"label": "Defect Rate", "value": 2.34}
     If total sample = 0 → value = 0
@@ -1008,17 +1091,18 @@ class DefectRateView(KpiFilterMixin, APIView):
     def get(self, request):
         queryset = self.get_filtered_queryset(QualityQcFa.objects.all())
 
+        # Conditional denominator: QFC uses accepted+rejected, QFA uses sample
         aggregated = queryset.aggregate(
             total_defects=Sum('defects_total'),
-            total_sample=Sum('sample'),
+            total_denominator=Sum(_qfc_conditional_denominator()),
         )
 
         total_defects = aggregated['total_defects'] or 0
-        total_sample = aggregated['total_sample'] or 0
+        total_denominator = aggregated['total_denominator'] or 0
 
         value = 0
-        if total_sample > 0:
-            value = round((total_defects / total_sample) * 100, 2)
+        if total_denominator > 0:
+            value = round((total_defects / total_denominator) * 100, 2)
 
         result = _serialize_payload(
             ScalarMetricSerializer,
@@ -1076,21 +1160,34 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         GET /api/kpis/ac-re-rate-by-line/
 
         Source: QualityQcFa
-        GROUP BY team × pass_or_fail: COUNT of records.
+        GROUP BY display_line × pass_or_fail: COUNT of records.
+        Teams are canonicalized (60→6) and filtered to 1..36.
+        Dual lines show exact labels when include_dual_lines=true.
 
         Response: [{"label": "Line 1 - PASS", "value": 45}, {"label": "Line 1 - REJECT", "value": 5}, ...]
         """
         queryset = self.get_quality_queryset()
 
+        # Sanitize: canonicalize 60→6, exclude teams outside 1..36
+        queryset = _apply_team_sanitization_queryset(queryset)
+
+        # Apply dual-line display: filter/annotate for line-grouped output
+        queryset, _ = self._apply_line_grouped_display(queryset)
+
         aggregated = (
             queryset
-            .values(team_name=F('team'), pof=F('pass_or_fail'))
+            .values(
+                line_label=F('display_line'),
+                pof=F('pass_or_fail'),
+                sort_team=F('sort_team'),
+                sort_is_dual=F('sort_is_dual'),
+            )
             .annotate(count=Count('id'))
-            .order_by('team_name', 'pof')
+            .order_by('sort_team', 'sort_is_dual', 'line_label', 'pof')
         )
 
         result = [
-            {"label": f"{item['team_name']} - {item['pof']}", "value": item['count']}
+            {"label": f"{item['line_label']} - {item['pof']}", "value": item['count']}
             for item in aggregated
         ]
 
@@ -1178,29 +1275,37 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         GET /api/kpis/performance-by-line/
 
         Source: QualityQcFa
-        GROUP BY team: accepted / (accepted + rejected) * 100.
-        Teams outside 1..36 are excluded (metric-scoped sanitization).
+        GROUP BY display_line: accepted / (accepted + rejected) * 100.
+        Teams are canonicalized (60→6) and filtered to 1..36.
+        Dual lines show exact labels when include_dual_lines=true.
 
         Response: [{"label": "Line 1", "value": 95.2}, ...]
         """
         queryset = self.get_quality_queryset()
 
-        # Sanitize: exclude teams outside valid range 1..36 (metric-scoped)
+        # Sanitize: canonicalize 60→6, exclude teams outside 1..36
         queryset = _apply_team_sanitization_queryset(queryset)
+
+        # Apply dual-line display: filter/annotate for line-grouped output
+        queryset, _ = self._apply_line_grouped_display(queryset)
 
         aggregated = (
             queryset
-            .values(team_name=F('team'))
+            .values(
+                line_label=F('display_line'),
+                sort_team=F('sort_team'),
+                sort_is_dual=F('sort_is_dual'),
+            )
             .annotate(
                 total_accepted=Sum('accepted'),
                 total_rejected=Sum('rejected'),
             )
-            .order_by('team_name')
+            .order_by('sort_team', 'sort_is_dual', 'line_label')
         )
 
         result = [
             {
-                "label": f"{item['team_name']}",
+                "label": item['line_label'],
                 "value": _calculate_acceptance_rate(
                     item['total_accepted'], item['total_rejected']
                 ),
@@ -1239,33 +1344,45 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         GET /api/kpis/aql/aql-by-team/
 
         Returns AQL percentage grouped by team (line).
-        Formula: SUM(defects_total) / SUM(sample) * 100
+        Formula: SUM(defects_total) / SUM(conditional_denominator) * 100
+        For QFC records, denominator is SUM(accepted + rejected); for QFA, SUM(sample).
+        Dual lines show exact labels when include_dual_lines=true.
         """
         queryset = self.get_filtered_queryset(self.get_queryset())
+
+        # Apply dual-line display: filter/annotate for line-grouped output
+        # Use raw 'team' as fallback since AQL does not canonicalize
+        queryset, _ = self._apply_line_grouped_display(queryset, team_field='team')
 
         if not queryset.exists():
             return Response(_serialize_envelope(KpiBarEnvelopeSerializer, []))
 
-        # GROUP BY team: SUM(defects_total) / SUM(sample) * 100
+        # GROUP BY display_line: SUM(defects_total) / SUM(denominator) * 100
+        # Denominator is conditional: QFC uses accepted+rejected, QFA uses sample
         annotated = (
             queryset
-            .values('team')
+            .values(
+                'display_line',
+                sort_team=F('sort_team'),
+                sort_is_dual=F('sort_is_dual'),
+            )
             .annotate(
                 total_defects=Sum('defects_total'),
-                total_sample=Sum('sample'),
+                total_denominator=Sum(_qfc_conditional_denominator()),
             )
+            .order_by('sort_team', 'sort_is_dual', 'display_line')
         )
 
         result = []
         for row in annotated:
-            sample = row['total_sample'] or 0
+            denominator = row['total_denominator'] or 0
             defects = row['total_defects'] or 0
-            if sample > 0:
-                aql = (defects / sample) * 100
+            if denominator > 0:
+                aql = (defects / denominator) * 100
             else:
                 aql = 0.0
             result.append({
-                "label": str(row['team']),
+                "label": str(row['display_line']),
                 "value": round(aql, 2),
             })
 
@@ -1278,29 +1395,31 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         GET /api/kpis/aql-by-style/
 
         Returns AQL percentage grouped by style.
-        Formula: SUM(defects_total) / SUM(sample) * 100
+        Formula: SUM(defects_total) / SUM(conditional_denominator) * 100
+        For QFC records, denominator is SUM(accepted + rejected); for QFA, SUM(sample).
         """
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
             return Response(_serialize_envelope(KpiBarEnvelopeSerializer, []))
 
-        # GROUP BY style: SUM(defects_total) / SUM(sample) * 100
+        # GROUP BY style: SUM(defects_total) / SUM(denominator) * 100
+        # Denominator is conditional: QFC uses accepted+rejected, QFA uses sample
         annotated = (
             queryset
             .values('style')
             .annotate(
                 total_defects=Sum('defects_total'),
-                total_sample=Sum('sample'),
+                total_denominator=Sum(_qfc_conditional_denominator()),
             )
         )
 
         result = []
         for row in annotated:
-            sample = row['total_sample'] or 0
+            denominator = row['total_denominator'] or 0
             defects = row['total_defects'] or 0
-            if sample > 0:
-                aql = (defects / sample) * 100
+            if denominator > 0:
+                aql = (defects / denominator) * 100
             else:
                 aql = 0.0
             result.append({
@@ -1320,20 +1439,22 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         GET /api/kpis/aql-weekly/
 
         Returns weekly AQL trend with trend line.
-        Formula: SUM(defects_total) / SUM(sample) * 100
+        Formula: SUM(defects_total) / SUM(conditional_denominator) * 100
+        For QFC records, denominator is SUM(accepted + rejected); for QFA, SUM(sample).
         """
         queryset = self.get_filtered_queryset(self.get_queryset())
 
         if not queryset.exists():
             return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
-        # GROUP BY week: SUM(defects_total) / SUM(sample) * 100
+        # GROUP BY week: SUM(defects_total) / SUM(denominator) * 100
+        # Denominator is conditional: QFC uses accepted+rejected, QFA uses sample
         annotated = (
             queryset
             .values('week')
             .annotate(
                 total_defects=Sum('defects_total'),
-                total_sample=Sum('sample'),
+                total_denominator=Sum(_qfc_conditional_denominator()),
             )
             .order_by('week')
         )
@@ -1343,8 +1464,8 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         for row in annotated:
             week = row['week']
             total_defects = row['total_defects'] or 0
-            total_sample = row['total_sample'] or 0
-            aql = (total_defects / total_sample * 100) if total_sample > 0 else 0.0
+            total_denominator = row['total_denominator'] or 0
+            aql = (total_defects / total_denominator * 100) if total_denominator > 0 else 0.0
             aql_data.append({"x": week, "y": round(aql, 2)})
 
         if not aql_data:
@@ -1456,6 +1577,8 @@ class FilterOptionsView(APIView):
             .distinct()
             .order_by('team')
         )
+        # Only expose valid 1..36 teams in filter options
+        teams = [t for t in teams if t is not None and 1 <= t <= 36]
         styles = list(
             base_qs.values_list('style', flat=True)
             .distinct()
@@ -1478,13 +1601,24 @@ class FilterOptionsView(APIView):
             .order_by('batch')
         )
 
+        # Dual-line filter options: distinct non-null line_code values
+        line_codes = list(
+            base_qs.filter(line_code__isnull=False)
+            .values_list('line_code', flat=True)
+            .distinct()
+            .order_by('line_code')
+        )
+        include_dual_lines_default = len(line_codes) > 0
+
         payload = {
             'week': [w for w in weeks if w is not None],
             'team': [t for t in teams if t is not None],
+            'line_code': [lc for lc in line_codes if lc is not None],
             'style': [s for s in styles if s is not None],
             'color': [c for c in colors if c is not None],
             'customer': [c for c in customers if c is not None],
             'batch': [b for b in batches if b is not None],
+            'include_dual_lines_default': include_dual_lines_default,
         }
 
         dto_data = _serialize_payload(FilterOptionsSerializer, payload, many=False)
@@ -1637,14 +1771,18 @@ class VolatileKpiView(APIView):
         return [{"name": "Pieces", "data": pieces_data}]
 
     def _calc_ac_re_rate(self, rows):
-        """GROUP BY team × pass_or_fail: COUNT de registros."""
+        """GROUP BY team × pass_or_fail: COUNT de registros.
+        Teams are canonicalized (60→6) and filtered to 1..36."""
         df = pd.DataFrame(rows)
         if df.empty:
             return []
 
-        # Filtrar filas válidas con team y pass_or_fail
-        df = df.dropna(subset=['team', 'pass_or_fail'])
-        df = df[df['team'] != 0]
+        # Sanitize: canonicalize 60→6, exclude teams outside 1..36
+        df = _sanitize_team_dataframe(df)
+        if df.empty:
+            return []
+
+        df = df.dropna(subset=['pass_or_fail'])
 
         grouped = df.groupby(['team', 'pass_or_fail']).size().reset_index(name='count')
 
@@ -1773,7 +1911,10 @@ class VolatileKpiView(APIView):
                     import numpy as np
                     numeric_distinct = pd.to_numeric(pd.Series(distinct), errors='coerce')
                     integer_values = numeric_distinct[numeric_distinct.notna() & np.isfinite(numeric_distinct)]
-                    options[field] = sorted({int(value) for value in integer_values.tolist() if float(value).is_integer()})
+                    values = sorted({int(value) for value in integer_values.tolist() if float(value).is_integer()})
+                    if field == 'team':
+                        values = [v for v in values if 1 <= v <= 36]
+                    options[field] = values
                 else:
                     options[field] = sorted([str(x) for x in distinct])
             else:
@@ -1872,4 +2013,3 @@ class VolatileKpiView(APIView):
             result.append({"name": name, "data": data})
 
         return result
-

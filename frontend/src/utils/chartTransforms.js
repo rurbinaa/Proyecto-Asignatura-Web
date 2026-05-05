@@ -79,10 +79,13 @@ export function resolveChartState(input, transformFn) {
  */
 export function transformPassReject(data) {
   if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    name: item.name,
-    value: item.value,
-  }));
+  const arr = data.result || data;
+  if (!Array.isArray(arr)) return null;
+
+  const passItem = arr.find((item) => item.name === 'PASS') || { name: 'PASS', value: 0 };
+  const rejectItem = arr.find((item) => item.name === 'REJECT') || { name: 'REJECT', value: 0 };
+
+  return [passItem, rejectItem];
 }
 
 /**
@@ -185,16 +188,58 @@ export function transformPerformanceByCustomer(data) {
   }));
 }
 
+function getLineSortParts(label) {
+  const text = String(label ?? '').trim();
+  const dualMatch = text.match(/^(\d+)-(\d+)$/);
+  if (dualMatch) {
+    return {
+      start: Number(dualMatch[1]),
+      end: Number(dualMatch[2]),
+      isDual: 1,
+      raw: text,
+    };
+  }
+
+  const simpleMatch = text.match(/^(\d+)$/);
+  if (simpleMatch) {
+    return {
+      start: Number(simpleMatch[1]),
+      end: Number(simpleMatch[1]),
+      isDual: 0,
+      raw: text,
+    };
+  }
+
+  return {
+    start: Number.MAX_SAFE_INTEGER,
+    end: Number.MAX_SAFE_INTEGER,
+    isDual: 1,
+    raw: text,
+  };
+}
+
+function compareLineLabels(a, b) {
+  const left = getLineSortParts(a);
+  const right = getLineSortParts(b);
+
+  if (left.start !== right.start) return left.start - right.start;
+  if (left.isDual !== right.isDual) return left.isDual - right.isDual;
+  if (left.end !== right.end) return left.end - right.end;
+  return left.raw.localeCompare(right.raw, undefined, { numeric: true });
+}
+
 /**
  * Transform performance by line for horizontal BarChart.
  * API returns: [{label: "Line 1", value: 95.2}, ...]
  */
 export function transformPerformanceByLine(data) {
   if (!data || data.error) return null;
-  return (data.result || data).map(item => ({
-    label: item.label,
-    value: item.value,
-  }));
+  return (data.result || data)
+    .map(item => ({
+      label: item.label,
+      value: item.value,
+    }))
+    .sort((a, b) => compareLineLabels(a.label, b.label));
 }
 
 /**

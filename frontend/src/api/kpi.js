@@ -123,11 +123,22 @@ export function mapLiveKpiDto(endpoint, data) {
 
 /**
  * Fetch filter options for dashboard filters.
- * Returns distinct values for week, team, style, color, customer, batch.
+ * Returns distinct values for week, team, style, color, customer, batch,
+ * plus line_code and include_dual_lines_default metadata.
+ * @param {string} [context] - Context value (e.g. 'plant', 'customer')
+ * @param {boolean} [includeDualLines] - Whether to request dual-line metadata
  * @returns {Promise<object>} Filter options object
  */
-export async function getFilterOptions() {
-  const url = `/quality/kpis/filter-options/`;
+export async function getFilterOptions(context, includeDualLines) {
+  const params = {};
+  if (context !== undefined && context !== null && context !== '') {
+    params.context = context;
+  }
+  if (includeDualLines !== undefined && includeDualLines !== null) {
+    params.include_dual_lines = includeDualLines;
+  }
+  const queryString = buildQueryString(params);
+  const url = `/quality/kpis/filter-options/${queryString}`;
   try {
     const res = await axiosClient.get(url);
     return res.data;

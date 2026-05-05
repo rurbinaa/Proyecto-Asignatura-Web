@@ -1563,3 +1563,408 @@ class SessionManagementTest(TestCase):
 
         self.assertEqual(session.container_preview["dates"], ["2025-02-01"])
         self.assertTrue(any("container" in warning.lower() for warning in session.warnings))
+
+
+# ─────────────────────────────────────────────────────────
+# Dual-Line Support Tests (Slice 1: schema + import + natural-key)
+# ─────────────────────────────────────────────────────────
+
+class DualLineModelSchemaTest(TestCase):
+    """
+    Verify QualityQcFa model gains line_code field (Task 1.1).
+
+    Structural test — single case is sufficient per strict-tdd rules
+    (the field either exists or it doesn't; no branching logic to triangulate).
+    Triangulation skipped: structural field definition.
+    """
+
+    def test_line_code_field_exists_on_qualityqcfa(self):
+        """QualityQcFa model has nullable indexed CharField 'line_code'."""
+        from quality_data.models import QualityQcFa as QModel
+
+        field = QModel._meta.get_field("line_code")
+        self.assertIsNotNone(field)
+        from django.db.models import CharField
+        self.assertIsInstance(field, CharField)
+        self.assertEqual(field.max_length, 20)
+        self.assertTrue(field.null)
+        self.assertTrue(field.blank)
+        self.assertTrue(field.db_index)
+
+    def test_natural_lookup_index_includes_line_code(self):
+        """The idx_qcfa_natural_lookup composite index now includes line_code."""
+        from quality_data.models import QualityQcFa as QModel
+        from django.db.models import Index
+
+        index = None
+        for idx in QModel._meta.indexes:
+            if idx.name == "idx_qcfa_natural_lookup":
+                index = idx
+                break
+
+        self.assertIsNotNone(index, "idx_qcfa_natural_lookup index must exist")
+        self.assertIn("line_code", index.fields,
+                      "idx_qcfa_natural_lookup must include line_code")
+
+
+class ParseQfcLineTest(TestCase):
+    """
+    Unit tests for parse_qfc_line function (Task 1.2).
+
+    RED phase: these tests reference behavior not yet implemented.
+    parse_qfc_line does NOT exist yet.
+    """
+
+    def test_simple_numeric_line_returns_team_and_none_line_code(self):
+        """'35' → (35, None)."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("35")
+        self.assertEqual(team, 35)
+        self.assertIsNone(line_code)
+
+    def test_dual_line_returns_team_first_segment_and_full_label(self):
+        """'35-36' → (35, '35-36')."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("35-36")
+        self.assertEqual(team, 35)
+        self.assertEqual(line_code, "35-36")
+
+    def test_invalid_non_numeric_yields_rejection_tuple(self):
+        """'ABC' → (None, None) with is_valid=False."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("ABC")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+    def test_triple_segment_is_invalid(self):
+        """'1-2-3' → rejected (None, None)."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("1-2-3")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+    def test_dual_line_with_non_numeric_segments_is_invalid(self):
+        """'X-36' → rejected (None, None)."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("X-36")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+    def test_numeric_line_as_int(self):
+        """Integer 12 → (12, None)."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line(12)
+        self.assertEqual(team, 12)
+        self.assertIsNone(line_code)
+
+    def test_dual_line_with_extra_whitespace(self):
+        """' 35 - 36 ' → (35, '35-36')."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line(" 35 - 36 ")
+        self.assertEqual(team, 35)
+        self.assertEqual(line_code, "35-36")
+
+    def test_single_segment_with_trailing_dash_is_invalid(self):
+        """'35-' → rejected."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("35-")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+    def test_two_lines_with_equal_values_are_invalid(self):
+        """'35-35' → rejected (both segments equal)."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("35-35")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+    def test_line_60_is_still_valid_simple(self):
+        """'60' → (60, None) — 60→6 sanitization remains separate."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("60")
+        self.assertEqual(team, 60)
+        self.assertIsNone(line_code)
+
+    def test_dual_line_60_36_is_rejected(self):
+        """'60-36' → rejected (60 is not in dual-line valid range 1..36)."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("60-36")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+    def test_zero_line_is_invalid(self):
+        """'0' → rejected."""
+        from excel_importer.handler_service import parse_qfc_line
+        team, line_code = parse_qfc_line("0")
+        self.assertIsNone(team)
+        self.assertIsNone(line_code)
+
+
+class DualLineNaturalKeyMatchingTest(TestCase):
+    """
+    Tests for natural-key builders with line_code (Task 2.1).
+
+    RED phase: build_qc_fa_key does NOT yet include line_code.
+    """
+
+    def test_build_qc_fa_key_includes_line_code(self):
+        """build_qc_fa_key now includes line_code in the key tuple."""
+        from excel_importer.date_utils import build_qc_fa_key
+        row_simple = {
+            "date_1": "2025-01-15", "po": 100, "style": "S1",
+            "team": 35, "color": "red", "table_type": "QFC",
+            "line_code": None,
+        }
+        key_simple = build_qc_fa_key(row_simple, table_type="QFC")
+        # Key format: (date, po, style, team, color, table_type, line_code)
+        self.assertEqual(len(key_simple), 7)
+        self.assertIsNone(key_simple[6])
+
+    def test_qfc_keys_differ_when_line_code_differs(self):
+        """Simple line 35 and dual line 35-36 produce different keys."""
+        from excel_importer.date_utils import build_qc_fa_key
+        row_simple = {
+            "date_1": "2025-01-15", "po": 100, "style": "S1",
+            "team": 35, "color": "red", "table_type": "QFC",
+            "line_code": None,
+        }
+        row_dual = {
+            "date_1": "2025-01-15", "po": 100, "style": "S1",
+            "team": 35, "color": "red", "table_type": "QFC",
+            "line_code": "35-36",
+        }
+        key_simple = build_qc_fa_key(row_simple, table_type="QFC")
+        key_dual = build_qc_fa_key(row_dual, table_type="QFC")
+        self.assertNotEqual(key_simple, key_dual,
+                            "Simple and dual keys must differ when line_code differs")
+
+    def test_build_qc_fa_customer_key_includes_team_and_line_code(self):
+        """build_qc_fa_customer_key now includes team and line_code."""
+        from excel_importer.sync_service import build_qc_fa_customer_key
+        row = {
+            "date_1": "2025-01-15", "po": 100, "style": "S1",
+            "team": 35, "color": "red", "line_code": None,
+        }
+        key = build_qc_fa_customer_key(row)
+        self.assertIn(35, key)
+        self.assertIn(None, key)
+
+
+class DualLinePersistenceTest(TestCase):
+    """
+    End-to-end tests proving dual lines persist correctly (Tasks 2.2, 2.3).
+
+    RED phase: line_code field does NOT exist yet, parse_qfc_line is NOT implemented.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="navy", is_active=True)
+
+    def _make_qfc_row(self, **overrides):
+        base = {
+            "date_1": "2025-06-01",
+            "week": 23,
+            "customer": "CUST",
+            "team": 35,
+            "coord": "TEST",
+            "po": 7001,
+            "style": "STYLE-A",
+            "batch": 1,
+            "color": "navy",
+            "qty": 100,
+            "seconds": 10,
+            "accepted": 90,
+            "rejected": 10,
+            "sample": 10,
+            "defects_total": 0,
+            "aql": 2.5,
+            "pass_or_fail": "PASS",
+        }
+        base.update(overrides)
+        return base
+
+    def _common_numeric_cols(self):
+        return [
+            "week", "team", "po", "batch", "qty", "seconds",
+            "accepted", "rejected", "sample", "defects_total", "aql",
+        ]
+
+    def _common_not_numeric_cols(self):
+        return ["date_1", "customer", "coord", "style", "color", "pass_or_fail"]
+
+    def test_simple_line_persists_with_null_line_code(self):
+        """Simple line 35 row is stored with team=35 and line_code=NULL."""
+        from excel_importer.handler_service import parse_qfc_line
+
+        # Simulate what the parser produces
+        team, lc = parse_qfc_line("35")
+        self.assertEqual(team, 35)
+        self.assertIsNone(lc)
+
+        row = self._make_qfc_row(team=team)
+        row["line_code"] = lc
+
+        from excel_importer.sync_service import apply_timewindow
+        apply_timewindow(
+            [row], QualityQcFa, date_field="date_1",
+            table_type="QFC",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols() + ["line_code"],
+            color_map={self.color.name: self.color},
+        )
+
+        persisted = QualityQcFa.objects.get(table_type="QFC")
+        self.assertEqual(persisted.team, 35)
+        self.assertIsNone(persisted.line_code)
+
+    def test_dual_line_persists_with_team_and_line_code(self):
+        """Dual line 35-36 is stored with team=35 and line_code='35-36'."""
+        from excel_importer.handler_service import parse_qfc_line
+
+        team, lc = parse_qfc_line("35-36")
+        self.assertEqual(team, 35)
+        self.assertEqual(lc, "35-36")
+
+        row = self._make_qfc_row(team=team)
+        row["line_code"] = lc
+
+        from excel_importer.sync_service import apply_timewindow
+        apply_timewindow(
+            [row], QualityQcFa, date_field="date_1",
+            table_type="QFC",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols() + ["line_code"],
+            color_map={self.color.name: self.color},
+        )
+
+        persisted = QualityQcFa.objects.get(table_type="QFC")
+        self.assertEqual(persisted.team, 35)
+        self.assertEqual(persisted.line_code, "35-36")
+
+    def test_simple_and_dual_coexist_in_same_batch(self):
+        """Simple 35 and dual 35-36 both persist as separate rows."""
+        from excel_importer.handler_service import parse_qfc_line
+
+        team_simple, lc_simple = parse_qfc_line("35")
+        team_dual, lc_dual = parse_qfc_line("35-36")
+
+        row_simple = self._make_qfc_row(po=7001, team=team_simple)
+        row_simple["line_code"] = lc_simple
+
+        row_dual = self._make_qfc_row(po=7002, team=team_dual)
+        row_dual["line_code"] = lc_dual
+
+        from excel_importer.sync_service import apply_timewindow
+        apply_timewindow(
+            [row_simple, row_dual],
+            QualityQcFa,
+            date_field="date_1",
+            table_type="QFC",
+            numeric_columns=self._common_numeric_cols(),
+            not_numeric_columns=self._common_not_numeric_cols() + ["line_code"],
+            color_map={self.color.name: self.color},
+        )
+
+        persisted = QualityQcFa.objects.filter(table_type="QFC").order_by("po")
+        self.assertEqual(persisted.count(), 2)
+
+        teams = {(p.team, p.line_code) for p in persisted}
+        self.assertIn((35, None), teams)
+        self.assertIn((35, "35-36"), teams)
+
+    def test_defect_matching_distinguishes_simple_from_dual(self):
+        """
+        Defect parent matching via build_qc_fa_key distinguishes
+        35 from 35-36 even when all other key fields are identical.
+        """
+        DefectType.objects.create(name="broken_stitch", is_active=True)
+
+        # Create a simple-line parent
+        simple_parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-06-01",
+            week=23,
+            customer="CUST",
+            team=35,
+            line_code=None,
+            coord="TEST",
+            po=7001,
+            style="STYLE-A",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        # Create a dual-line parent with same team but line_code set
+        dual_parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-06-01",
+            week=23,
+            customer="CUST",
+            team=35,
+            line_code="35-36",
+            coord="TEST",
+            po=7002,
+            style="STYLE-A",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # Now try to match defects to each parent separately
+        import pandas as pd
+        from excel_importer.handler_service import _bulk_insert_defects_only
+
+        # Simple line defect match
+        df_simple = pd.DataFrame([{
+            "date_1": "2025-06-01",
+            "po": 7001,
+            "style": "STYLE-A",
+            "team": 35,
+            "line_code": None,
+            "color": "navy",
+            "broken_stitch": 3,
+        }])
+        result_simple = _bulk_insert_defects_only(df_simple, ["broken_stitch"], "QFC",
+                                                   color_map={self.color.name: self.color})
+        self.assertEqual(result_simple["matched_parents"], 1)
+        self.assertEqual(result_simple["created_defects"], 1)
+
+        # Dual line defect match
+        df_dual = pd.DataFrame([{
+            "date_1": "2025-06-01",
+            "po": 7002,
+            "style": "STYLE-A",
+            "team": 35,
+            "line_code": "35-36",
+            "color": "navy",
+            "broken_stitch": 5,
+        }])
+        result_dual = _bulk_insert_defects_only(df_dual, ["broken_stitch"], "QFC",
+                                                 color_map={self.color.name: self.color})
+        self.assertEqual(result_dual["matched_parents"], 1)
+        self.assertEqual(result_dual["created_defects"], 1)
+
+        # Total: 2 defects, each linked to the correct parent
+        self.assertEqual(InspectionDefect.objects.count(), 2)
+        defects = InspectionDefect.objects.select_related("inspection").all()
+        for d in defects:
+            if d.inspection.po == 7001:
+                self.assertIsNone(d.inspection.line_code)
+                self.assertEqual(d.amount, 3)
+            elif d.inspection.po == 7002:
+                self.assertEqual(d.inspection.line_code, "35-36")
+                self.assertEqual(d.amount, 5)

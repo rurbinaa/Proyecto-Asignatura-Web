@@ -754,25 +754,25 @@ class ContextWithLineSanitizationTest(TestCase):
                 defects_total=2, aql=2.5, pass_or_fail="PASS",
             )
 
-    def test_context_plant_line_sanitization_excludes_dirty_teams(self):
-        """?context=plant on performance-by-line: only valid QFA teams appear."""
+    def test_context_plant_line_sanitization_canonicalizes_60(self):
+        """?context=plant on performance-by-line: 60→6, 0 excluded."""
         url = reverse("quality_data:kpi-rendimiento-performance-by-line")
         response = self.client.get(f"{url}?context=plant")
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
 
         teams = {item["label"] for item in response.data}
-        # Valid QFA teams: 1, 5 (not 0, 60)
-        self.assertEqual(teams, {"1", "5"})
+        # Valid QFA teams: 1, 5; 60→6 canonicalized
+        self.assertEqual(teams, {"1", "5", "6"})
 
-    def test_context_customer_line_sanitization_excludes_dirty_teams(self):
-        """?context=customer on performance-by-line: only valid QFC teams appear."""
+    def test_context_customer_line_sanitization_canonicalizes_60(self):
+        """?context=customer on performance-by-line: 60→6, 0 excluded."""
         url = reverse("quality_data:kpi-rendimiento-performance-by-line")
         response = self.client.get(f"{url}?context=customer")
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
 
         teams = {item["label"] for item in response.data}
-        # Valid QFC teams: 20, 25 (not 0, 60)
-        self.assertEqual(teams, {"20", "25"})
+        # Valid QFC teams: 20, 25; 60→6 canonicalized
+        self.assertEqual(teams, {"6", "20", "25"})
 
     def test_context_plant_not_leaked_to_customer_line_output(self):
         """QFA teams should NOT appear in ?context=customer line output."""
@@ -803,3 +803,83 @@ class ContextWithLineSanitizationTest(TestCase):
         # Should find "PlantCust" regardless of team values
         customers = {item["label"] for item in response.data}
         self.assertIn("PlantCust", customers)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 3.3 + 4.4: Filter-option team sanitization
+# ─────────────────────────────────────────────────────────
+
+class FilterOptionsTeamSanitizationTest(TestCase):
+    """Tests that FilterOptionsView only returns valid 1..36 teams."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.color = Color.objects.create(name="filter_sanitize", is_active=True)
+
+    def _create_record(self, team, table_type="QFA"):
+        QualityQcFa.objects.create(
+            table_type=table_type,
+            date_1="2025-04-01", week=20, customer="FilterTestCust",
+            team=team, coord="C", po=100, style=f"Style-{team}",
+            batch=1, color=self.color, qty=50, seconds=20,
+            accepted=40, rejected=10, sample=50,
+            defects_total=2, aql=2.5, pass_or_fail="PASS",
+        )
+
+    def test_filter_options_excludes_0_and_60(self):
+        """Teams 0, 60 must NOT appear in filter options; valid 1..36 included."""
+        for team in [1, 0, 36, 60]:
+            self._create_record(team)
+
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = response.data["team"]
+        self.assertIn(1, teams)
+        self.assertIn(36, teams)
+        self.assertNotIn(0, teams)
+        self.assertNotIn(60, teams)
+
+    def test_filter_options_only_valid_teams_with_mixed_data(self):
+        """Only teams in 1..36 appear; all invalid values stripped."""
+        for team in [0, 37, -1, 999, 60]:
+            self._create_record(team)
+
+        # Also create one valid team
+        self._create_record(5)
+
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = response.data["team"]
+        self.assertEqual(teams, [5])
+
+    def test_filter_options_qfc_context_excludes_invalid_teams(self):
+        """?context=customer also excludes invalid teams from filter options."""
+        for team in [20, 0, 60]:
+            self._create_record(team, table_type="QFC")
+
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = response.data["team"]
+        self.assertIn(20, teams)
+        self.assertNotIn(0, teams)
+        self.assertNotIn(60, teams)
+
+    def test_filter_options_qfc_context_keeps_valid_qfc_teams(self):
+        """?context=customer with valid QFC teams: 20, 25 appear."""
+        for team in [20, 25]:
+            self._create_record(team, table_type="QFC")
+        # Also create an invalid QFC team
+        self._create_record(0, table_type="QFC")
+
+        url = reverse("quality_data:kpi-filter-options")
+        response = self.client.get(f"{url}?context=customer")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+        teams = response.data["team"]
+        self.assertEqual(teams, [20, 25])

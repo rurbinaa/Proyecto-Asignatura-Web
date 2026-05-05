@@ -82,10 +82,12 @@ class FilterOptionsSerializer(serializers.Serializer):
 
     week = serializers.ListField(child=serializers.IntegerField())
     team = serializers.ListField(child=serializers.IntegerField())
+    line_code = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     style = serializers.ListField(child=serializers.CharField())
     color = serializers.ListField(child=serializers.CharField())
     customer = serializers.ListField(child=serializers.CharField())
     batch = serializers.ListField(child=serializers.IntegerField())
+    include_dual_lines_default = serializers.BooleanField(required=False, default=False)
 
 
 class WorstContainerSerializer(serializers.Serializer):

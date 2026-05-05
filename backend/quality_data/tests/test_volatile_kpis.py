@@ -753,21 +753,21 @@ class AcceptanceRateHelperTest(TestCase):
 
 
 # ─────────────────────────────────────────────────────────
-# Strict TDD — Task 1.2: Team sanitization helpers
+# Strict TDD — Task 1.2 + 3.1: Team sanitization helpers
 # ─────────────────────────────────────────────────────────
 
 class TeamSanitizationHelperTest(TestCase):
-    """Unit tests for team sanitization helpers."""
+    """Unit tests for team sanitization helpers (canonicalize 60→6, keep 1..36)."""
 
-    def test_queryset_sanitization_filters_out_of_range(self):
-        """Queryset sanitization removes teams <= 0 and > 36."""
+    def test_queryset_sanitization_canonicalizes_60_to_6(self):
+        """Queryset sanitization maps team=60 to canonical_team=6 and keeps 1..36."""
         from quality_data.views import _apply_team_sanitization_queryset
         from quality_data.models import QualityQcFa, Color
 
-        color = Color.objects.create(name="test_sanitize", is_active=True)
+        color = Color.objects.create(name="test_sanitize_60", is_active=True)
 
-        # Valid teams
-        for team in [1, 5, 36]:
+        # Create records: valid teams + 60
+        for team in [1, 5, 60, 36]:
             QualityQcFa.objects.create(
                 table_type="QFA",
                 date_1="2025-03-01", week=10, customer="Test", team=team,
@@ -776,8 +776,8 @@ class TeamSanitizationHelperTest(TestCase):
                 defects_total=2, aql=2.5, pass_or_fail="PASS",
             )
 
-        # Invalid teams (should be filtered out)
-        for team in [0, -1, 37, 60, 999]:
+        # Invalid teams (should still be filtered out)
+        for team in [0, -1, 37, 999]:
             QualityQcFa.objects.create(
                 table_type="QFA",
                 date_1="2025-03-01", week=10, customer="Test", team=team,
@@ -789,8 +789,11 @@ class TeamSanitizationHelperTest(TestCase):
         qs = QualityQcFa.objects.all()
         sanitized = _apply_team_sanitization_queryset(qs)
 
-        teams = sorted(set(sanitized.values_list('team', flat=True)))
-        self.assertEqual(teams, [1, 5, 36])
+        # canonical_team should be 6 for team=60, and valid teams preserved
+        canonical_teams = sorted(set(
+            item['canonical_team'] for item in sanitized.values('canonical_team')
+        ))
+        self.assertEqual(canonical_teams, [1, 5, 6, 36])
 
     def test_queryset_sanitization_all_valid_teams_preserved(self):
         """When all teams are in range, none are removed."""
@@ -812,8 +815,8 @@ class TeamSanitizationHelperTest(TestCase):
         sanitized = _apply_team_sanitization_queryset(qs)
         self.assertEqual(sanitized.count(), 4)
 
-    def test_dataframe_sanitization_filters_out_of_range(self):
-        """DataFrame sanitization removes rows with team <= 0 or > 36."""
+    def test_dataframe_sanitization_canonicalizes_60_to_6(self):
+        """DataFrame sanitization maps team=60 to 6, keeps 1..36, removes 0/out-of-range."""
         import pandas as pd
         from quality_data.views import _sanitize_team_dataframe
 
@@ -828,7 +831,7 @@ class TeamSanitizationHelperTest(TestCase):
 
         sanitized = _sanitize_team_dataframe(df)
         teams = sorted(sanitized['team'].unique().tolist())
-        self.assertEqual(teams, [1, 5, 36])
+        self.assertEqual(teams, [1, 5, 6, 36])
 
     def test_dataframe_sanitization_preserves_all_valid(self):
         """DataFrame with only valid teams keeps all rows."""
@@ -843,8 +846,33 @@ class TeamSanitizationHelperTest(TestCase):
         sanitized = _sanitize_team_dataframe(df)
         self.assertEqual(len(sanitized), 2)
 
-    def test_dataframe_sanitization_all_invalid_returns_empty(self):
-        """DataFrame with all invalid teams returns empty DataFrame."""
+    def test_dataframe_sanitization_60_only_becomes_6(self):
+        """Team=60 canonicalizes to 6 and is kept, not removed."""
+        import pandas as pd
+        from quality_data.views import _sanitize_team_dataframe
+
+        df = pd.DataFrame([
+            {'team': 60, 'accepted': 20, 'rejected': 5},
+        ])
+
+        sanitized = _sanitize_team_dataframe(df)
+        self.assertEqual(len(sanitized), 1)
+        self.assertEqual(sanitized.iloc[0]['team'], 6)
+
+    def test_dataframe_sanitization_0_only_still_empty(self):
+        """DataFrame with only team=0 still returns empty (0 is never valid)."""
+        import pandas as pd
+        from quality_data.views import _sanitize_team_dataframe
+
+        df = pd.DataFrame([
+            {'team': 0, 'accepted': 10, 'rejected': 2},
+        ])
+
+        sanitized = _sanitize_team_dataframe(df)
+        self.assertEqual(len(sanitized), 0)
+
+    def test_dataframe_sanitization_60_and_0_60_wins(self):
+        """Team=60 canonicalizes to 6 and survives; team=0 is filtered out."""
         import pandas as pd
         from quality_data.views import _sanitize_team_dataframe
 
@@ -854,7 +882,8 @@ class TeamSanitizationHelperTest(TestCase):
         ])
 
         sanitized = _sanitize_team_dataframe(df)
-        self.assertEqual(len(sanitized), 0)
+        self.assertEqual(len(sanitized), 1)
+        self.assertEqual(sanitized.iloc[0]['team'], 6)
 
 
 # ─────────────────────────────────────────────────────────
@@ -933,8 +962,8 @@ class VolatileLineSanitizationTest(TestCase):
     def setUp(self):
         self.view = VolatileKpiView()
 
-    def test_calc_perf_by_line_excludes_invalid_teams(self):
-        """Volatile line helper excludes teams <=0 and >36."""
+    def test_calc_perf_by_line_canonicalizes_60_and_excludes_0(self):
+        """60 maps to 6, 0 is excluded, valid teams preserved."""
         rows = [
             {'team': 1, 'accepted': 40, 'rejected': 10, 'sample': 50,
              'customer': 'C', 'style': 'S', 'week': 1, 'batch': 1,
@@ -951,7 +980,19 @@ class VolatileLineSanitizationTest(TestCase):
         ]
         result = self.view._calc_perf_by_line(rows)
         teams = {item['label'] for item in result}
-        self.assertEqual(teams, {'1', '36'})
+        self.assertEqual(teams, {'1', '6', '36'})
+
+    def test_calc_perf_by_line_canonicalized_60_acceptance_rate(self):
+        """Team=60's accepted/rejected values are attributed to line 6 with correct rate."""
+        rows = [
+            {'team': 60, 'accepted': 30, 'rejected': 10, 'sample': 40,
+             'customer': 'C', 'style': 'S', 'week': 1, 'batch': 3,
+             'color': 'green', 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], '6')
+        self.assertEqual(result[0]['value'], 75.0)  # 30/(30+10)*100
 
     def test_calc_perf_by_line_all_valid_teams_preserved(self):
         """Volatile line helper keeps all rows when teams are valid."""
@@ -966,18 +1007,28 @@ class VolatileLineSanitizationTest(TestCase):
         result = self.view._calc_perf_by_line(rows)
         self.assertEqual(len(result), 2)
 
-    def test_calc_perf_by_line_all_invalid_returns_empty(self):
-        """When all teams are invalid, returns empty list."""
+    def test_calc_perf_by_line_only_zero_returns_empty(self):
+        """When only team=0 exists, returns empty list (0 is always invalid)."""
         rows = [
             {'team': 0, 'accepted': 10, 'rejected': 2, 'sample': 12,
              'customer': 'C', 'style': 'S', 'week': 1, 'batch': 1,
              'color': 'red', 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_perf_by_line(rows)
+        self.assertEqual(result, [])
+
+    def test_calc_perf_by_line_only_60_becomes_valid_line_6(self):
+        """When only team=60 exists, it canonicalizes to line 6 (not empty)."""
+        rows = [
             {'team': 60, 'accepted': 20, 'rejected': 5, 'sample': 25,
              'customer': 'C', 'style': 'S', 'week': 1, 'batch': 2,
              'color': 'blue', 'pass_or_fail': 'PASS'},
         ]
         result = self.view._calc_perf_by_line(rows)
-        self.assertEqual(result, [])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], '6')
+        # 20/(20+5)*100 = 80
+        self.assertEqual(result[0]['value'], 80.0)
 
     def test_calc_perf_by_customer_not_affected_by_team_sanitization(self):
         """Volatile customer helper should NOT filter by team range."""
@@ -990,3 +1041,120 @@ class VolatileLineSanitizationTest(TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['label'], 'CUST_X')
         self.assertEqual(result[0]['value'], 80.0)
+
+
+# ─────────────────────────────────────────────────────────
+# Strict TDD — Task 3.3 + 4.3: Volatile AC/RE rate sanitization
+# ─────────────────────────────────────────────────────────
+
+class VolatileAcReRateSanitizationTest(TestCase):
+    """Tests for _calc_ac_re_rate with dirty historical teams."""
+
+    def setUp(self):
+        self.view = VolatileKpiView()
+
+    def test_ac_re_rate_excludes_invalid_teams(self):
+        """AC/RE rate excludes team=0 and out-of-range teams."""
+        rows = [
+            {'team': 1, 'pass_or_fail': 'PASS'},
+            {'team': 0, 'pass_or_fail': 'PASS'},
+            {'team': 60, 'pass_or_fail': 'REJECT'},
+            {'team': 36, 'pass_or_fail': 'PASS'},
+            {'team': 37, 'pass_or_fail': 'REJECT'},
+        ]
+        result = self.view._calc_ac_re_rate(rows)
+        teams = {int(item['label'].split(' - ')[0]) for item in result}
+        self.assertEqual(teams, {1, 6, 36})
+
+    def test_ac_re_rate_60_maps_to_6_with_count(self):
+        """Team=60 counts under label '6 - REJECT' after canonicalization."""
+        rows = [
+            {'team': 60, 'pass_or_fail': 'REJECT'},
+            {'team': 60, 'pass_or_fail': 'REJECT'},
+            {'team': 60, 'pass_or_fail': 'PASS'},
+        ]
+        result = self.view._calc_ac_re_rate(rows)
+        labels = {item['label']: item['value'] for item in result}
+        self.assertIn('6 - REJECT', labels)
+        self.assertEqual(labels['6 - REJECT'], 2)
+        self.assertIn('6 - PASS', labels)
+        self.assertEqual(labels['6 - PASS'], 1)
+
+    def test_ac_re_rate_all_zero_and_60_produces_line_6(self):
+        """Only zero and sixty: zero excluded, 60→6, only line 6 appears."""
+        rows = [
+            {'team': 0, 'pass_or_fail': 'PASS'},
+            {'team': 60, 'pass_or_fail': 'REJECT'},
+        ]
+        result = self.view._calc_ac_re_rate(rows)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['label'], '6 - REJECT')
+
+    def test_ac_re_rate_aggregates_60_and_existing_6(self):
+        """Team 60 and team 6 records both contribute to line 6."""
+        rows = [
+            {'team': 6, 'pass_or_fail': 'PASS'},
+            {'team': 60, 'pass_or_fail': 'PASS'},
+            {'team': 6, 'pass_or_fail': 'REJECT'},
+        ]
+        result = self.view._calc_ac_re_rate(rows)
+        labels = {item['label']: item['value'] for item in result}
+        # Both team-6 and team-60 PASS records → 2 total for '6 - PASS'
+        self.assertEqual(labels['6 - PASS'], 2)
+        # team-6 REJECT record → 1 total for '6 - REJECT'
+        self.assertEqual(labels['6 - REJECT'], 1)
+
+
+class VolatileFilterOptionsSanitizationTest(TestCase):
+    """Tests for _compute_filter_options team sanitization."""
+
+    def setUp(self):
+        self.view = VolatileKpiView()
+
+    def test_filter_options_excludes_invalid_teams(self):
+        """Team filter options exclude 0 and >36 after canonicalization."""
+        rows = [
+            {'week': 1, 'team': 1, 'style': 'A', 'color': 'red',
+             'customer': 'C', 'batch': 1},
+            {'week': 1, 'team': 0, 'style': 'B', 'color': 'blue',
+             'customer': 'C', 'batch': 2},
+            {'week': 1, 'team': 60, 'style': 'C', 'color': 'green',
+             'customer': 'C', 'batch': 3},
+            {'week': 1, 'team': 36, 'style': 'D', 'color': 'yellow',
+             'customer': 'C', 'batch': 4},
+        ]
+        result = self.view._compute_filter_options(rows)
+        self.assertEqual(result['team'], [1, 36])
+
+    def test_filter_options_60_not_in_team_options(self):
+        """Team=60 should not appear as a selectable option."""
+        rows = [
+            {'week': 1, 'team': 60, 'style': 'A', 'color': 'red',
+             'customer': 'C', 'batch': 1},
+        ]
+        result = self.view._compute_filter_options(rows)
+        self.assertEqual(result['team'], [])
+
+    def test_filter_options_0_is_excluded(self):
+        """Team=0 should not appear as a selectable option."""
+        rows = [
+            {'week': 1, 'team': 0, 'style': 'A', 'color': 'red',
+             'customer': 'C', 'batch': 1},
+        ]
+        result = self.view._compute_filter_options(rows)
+        self.assertEqual(result['team'], [])
+
+    def test_filter_options_mixed_valid_and_invalid(self):
+        """Only valid 1..36 teams appear in filter options."""
+        rows = [
+            {'week': 1, 'team': 5, 'style': 'A', 'color': 'red',
+             'customer': 'C', 'batch': 1},
+            {'week': 1, 'team': 10, 'style': 'B', 'color': 'blue',
+             'customer': 'C', 'batch': 2},
+            {'week': 1, 'team': 60, 'style': 'C', 'color': 'green',
+             'customer': 'C', 'batch': 3},
+            {'week': 1, 'team': 0, 'style': 'D', 'color': 'yellow',
+             'customer': 'C', 'batch': 4},
+        ]
+        result = self.view._compute_filter_options(rows)
+        self.assertEqual(result['team'], [5, 10])

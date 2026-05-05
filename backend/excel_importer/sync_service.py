@@ -121,13 +121,17 @@ def build_qc_fa_customer_key(row):
     """
     Build composite key for QC FA Customer (not a true PK, used for diff matching).
 
-    Uses: date_1 + po + style + color
+    Uses: date_1 + po + style + color + team + line_code
+    This helps identify "likely same inspection" for preview purposes.
+    Dual-line rows with the same team but different line_code are distinct.
     """
     date = parse_date(row.get("date_1", ""))
     po = row.get("po", 0)
     style = str(row.get("style", "")).strip()
     color = str(row.get("color", "")).strip().lower().replace(" ", "_")
-    return (date, int(po) if po else 0, style, color)
+    team = int(row.get("team", 0)) if row.get("team") else 0
+    line_code = row.get("line_code", None) or None
+    return (date, int(po) if po else 0, style, color, team, line_code)
 
 
 def build_seconds_general_key(row):
@@ -562,6 +566,15 @@ def create_session_from_dataframes(dataframes):
         "container": container_rows,
     }
 
+    # ── Sanitize QC FA Customer team values at the import boundary ──
+    # This normalizes 60→6 and rejects 0/invalid rows BEFORE preview
+    # diffing and BEFORE persistence, ensuring preview/apply parity.
+    from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+    qfc_raw_rows = sheet_data_map.get("qc_fa_customer", [])
+    qfc_normalized, qfc_import_warnings = normalize_qc_fa_customer_rows(qfc_raw_rows)
+    sheet_data_map["qc_fa_customer"] = qfc_normalized
+
     # Store parsed data — prefer Redis for auto-TTL cleanup, fall back to JSONField
     session.redis_stored = False
     if is_redis_available():
@@ -642,6 +655,9 @@ def create_session_from_dataframes(dataframes):
         preview = getattr(session, preview_field)
         all_warnings.extend(preview.get("warnings", []))
     all_warnings.extend(container_warnings)
+    # Append QFC import sanitization warnings
+    if qfc_import_warnings["message"]:
+        all_warnings.append(qfc_import_warnings["message"])
     session.warnings = all_warnings
 
     session.save()

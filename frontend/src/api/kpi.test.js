@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, fetchAllContainerKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, getAcReRateByLine, getPerformanceByLine, fetchAllContainerKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -515,6 +515,150 @@ describe('kpi.js - getDefectTrendTop3', () => {
   it('throws on HTTP error', async () => {
     axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
     await expect(getDefectTrendTop3()).rejects.toThrow('Not found');
+  });
+});
+
+// ─── Task 4.1 / Slice 3: Dual-line filter-options and KPI params ───────────
+describe('kpi.js - getFilterOptions dual-line', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('RED - passes context=plant and include_dual_lines=true in query string', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { team: [1] } });
+
+    await getFilterOptions('plant', true);
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/filter-options/');
+    expect(url).toContain('context=plant');
+    expect(url).toContain('include_dual_lines=true');
+  });
+
+  it('RED - passes context=customer and include_dual_lines=false in query string', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { team: [1] } });
+
+    await getFilterOptions('customer', false);
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=customer');
+    expect(url).toContain('include_dual_lines=false');
+  });
+
+  it('RED - backward compat: no params when called without arguments', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { team: [1] } });
+
+    await getFilterOptions();
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).not.toContain('context=');
+    expect(url).not.toContain('include_dual_lines');
+  });
+
+  it('RED - backward compat: only context passed, no include_dual_lines', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { team: [1] } });
+
+    await getFilterOptions('plant');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('context=plant');
+    expect(url).not.toContain('include_dual_lines');
+  });
+});
+
+describe('kpi.js - line-grouped KPI dual-line params', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('RED - getAqlByTeam passes include_dual_lines=true in URL via filters', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await getAqlByTeam({ include_dual_lines: true }, 'customer');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('include_dual_lines=true');
+    expect(url).toContain('context=customer');
+  });
+
+  it('RED - getAcReRateByLine passes include_dual_lines=false and line_code via filters', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await getAcReRateByLine({ include_dual_lines: false, line_code: '35-36' }, 'plant');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('include_dual_lines=false');
+    expect(url).toContain('line_code=35-36');
+  });
+
+  it('RED - getPerformanceByLine passes include_dual_lines=true via filters', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await getPerformanceByLine({ include_dual_lines: true }, 'plant');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('include_dual_lines=true');
+  });
+
+  it('RED - backward compat: no dual params when filters do not contain them', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+
+    await getPerformanceByLine({ week: '5' }, 'plant');
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('week=5');
+    expect(url).not.toContain('include_dual_lines');
+    expect(url).not.toContain('line_code');
+  });
+});
+
+describe('kpi.js - fetchAllKpis dual-line params', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('RED - fetchAllKpis passes include_dual_lines=false to all sub-calls (default hidden)', async () => {
+    for (let i = 0; i < 17; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis({ include_dual_lines: false }, 'customer');
+
+    const calls = axiosClient.get.mock.calls;
+    expect(calls).toHaveLength(17);
+    calls.forEach(([url]) => {
+      expect(url).toContain('include_dual_lines=false');
+    });
+  });
+
+  it('RED - fetchAllKpis passes include_dual_lines=true and line_code to all sub-calls', async () => {
+    for (let i = 0; i < 17; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis({ include_dual_lines: true, line_code: '35-36' }, 'customer');
+
+    const calls = axiosClient.get.mock.calls;
+    expect(calls).toHaveLength(17);
+    calls.forEach(([url]) => {
+      expect(url).toContain('include_dual_lines=true');
+      expect(url).toContain('line_code=35-36');
+    });
+  });
+
+  it('RED - backward compat: fetchAllKpis without dual params does not inject them', async () => {
+    for (let i = 0; i < 17; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: { data: [] } });
+    }
+
+    await fetchAllKpis({ week: '5' }, 'plant');
+
+    const calls = axiosClient.get.mock.calls;
+    expect(calls).toHaveLength(17);
+    calls.forEach(([url]) => {
+      expect(url).not.toContain('include_dual_lines');
+      expect(url).not.toContain('line_code');
+    });
   });
 });
 

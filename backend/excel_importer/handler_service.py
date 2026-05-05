@@ -127,6 +127,186 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
     
     return df
 
+QC_FA_CUSTOMER_VALID_TEAM_RANGE = range(1, 37)
+
+
+def parse_qfc_line(raw_value):
+    """
+    Parse a QFC Line value into a ``(team, line_code)`` tuple.
+
+    Business rules (mandatory by design):
+    - Simple numeric-only line (for example ``"35"``) → ``(35, None)``
+    - Valid dual label (for example ``"35-36"``) → ``(35, "35-36")``
+    - **Unspported composite**: any value that is not a simple line or
+      a well-formed dual label → ``(None, None)``
+
+    Composite requirements for dual labels:
+    - Exactly two segments separated by a single dash
+    - Both segments must be integers in 1..36
+    - Segments MUST be different
+
+    Edge cases handled:
+    - Integer input → treated as simple line
+    - Leading/trailing whitespace → stripped
+    - Trailing dash (``"35-"``) → invalid
+    - More than one dash (``"1-2-3"``) → invalid
+    - Non-numeric segments (``"X-36"``) → invalid
+    - Zero (``"0"``) → invalid
+    - 60 is valid as a simple line; downstream 60→6 sanitization
+      runs separately after this parser
+
+    Returns:
+        tuple: ``(team_int, line_code_str_or_None)``.
+        Returns ``(None, None)`` when the value cannot be parsed as a
+        valid line identity.
+    """
+    # ── Handle integer (or float-as-int) input directly ──
+    if isinstance(raw_value, (int, float)):
+        try:
+            team_val = int(raw_value)
+        except (ValueError, TypeError):
+            return None, None
+        if team_val in QC_FA_CUSTOMER_VALID_TEAM_RANGE or team_val == 60:
+            return team_val, None
+        return None, None
+
+    # ── Handle string input ──
+    if not isinstance(raw_value, str):
+        return None, None
+
+    stripped = raw_value.strip()
+
+    # Empty string → invalid
+    if not stripped:
+        return None, None
+
+    # Count dashes to detect composite
+    dash_count = stripped.count("-")
+
+    if dash_count == 0:
+        # Simple numeric line
+        try:
+            team_val = int(stripped)
+        except ValueError:
+            return None, None
+        if team_val in QC_FA_CUSTOMER_VALID_TEAM_RANGE or team_val == 60:
+            return team_val, None
+        return None, None
+
+    if dash_count == 1:
+        # Dual-label candidate
+        parts = stripped.split("-", 1)
+
+        # Reject trailing/leading dash: empty segment
+        left = parts[0].strip()
+        right = parts[1].strip()
+        if not left or not right:
+            return None, None
+
+        try:
+            left_val = int(left)
+            right_val = int(right)
+        except ValueError:
+            return None, None
+
+        # Both segments must be in valid range (1..36) — NOT 60
+        if left_val not in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            return None, None
+        if right_val not in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            return None, None
+
+        # Segments must differ (reject "35-35")
+        if left_val == right_val:
+            return None, None
+
+        # ✅ Valid dual label — normalize to canonical form (no extra spaces)
+        canonical_label = f"{left_val}-{right_val}"
+        return left_val, canonical_label
+
+    # More than one dash → invalid
+    return None, None
+
+
+def normalize_qc_fa_customer_rows(rows):
+    """
+    Normalize QC FA Customer ``Line → team + line_code`` at the import boundary.
+
+    Uses :func:`parse_qfc_line` to split the raw ``Line`` value into
+    ``(team, line_code)``. After parsing, the classic 60→6 sanitization
+    is applied to the ``team`` portion.
+
+    Business rules:
+    - Simple numeric line (``"35"``) → ``team=35, line_code=None``
+    - Dual label (``"35-36"``) → ``team=35, line_code="35-36"``
+    - Valid ranges: ``1..36`` (and ``60`` which gets corrected to ``6``)
+    - Invalid (non-numeric, 0, composite with non-numeric segment, etc.) → rejected
+
+    The function does NOT mutate the input rows — it creates copies.
+
+    Returns:
+        tuple: (normalized_rows, warnings_dict)
+            warnings_dict has keys:
+                corrected (int): number of rows with 60→6 fix
+                rejected (int): number of rows removed as invalid
+                message (str): human-readable summary (empty if no events)
+    """
+    if not rows:
+        return [], {"corrected": 0, "rejected": 0, "message": ""}
+
+    normalized_rows = []
+    corrected_count = 0
+    rejected_count = 0
+
+    for row in rows:
+        normalized_row = dict(row)
+        raw_team = normalized_row.get("team", None)
+
+        # Parse the raw line value using the new dual-line-aware parser
+        parsed_team, parsed_line_code = parse_qfc_line(raw_team)
+
+        # Reject rows where parsing failed
+        if parsed_team is None:
+            rejected_count += 1
+            continue
+
+        # Classic 60→6 sanitization (applied AFTER parsing)
+        if parsed_team == 60:
+            normalized_row["team"] = 6
+            corrected_count += 1
+        elif parsed_team in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            normalized_row["team"] = parsed_team
+        else:
+            # Out of range after parsing (shouldn't happen with the parser validations)
+            rejected_count += 1
+            continue
+
+        # Set line_code from parsed value (None for simple lines, label for dual)
+        normalized_row["line_code"] = parsed_line_code
+
+        normalized_rows.append(normalized_row)
+
+    # Build human-readable message
+    parts = []
+    if corrected_count:
+        s = "s" if corrected_count != 1 else ""
+        parts.append(f"corrected {corrected_count} line value{s} (60→6)")
+    if rejected_count:
+        s = "s" if rejected_count != 1 else ""
+        parts.append(f"rejected {rejected_count} invalid row{s} (0/out of range/invalid composite)")
+
+    message = ""
+    if parts:
+        message = f"QC FA Customer: {' and '.join(parts)}."
+
+    warnings = {
+        "corrected": corrected_count,
+        "rejected": rejected_count,
+        "message": message,
+    }
+
+    return normalized_rows, warnings
+
+
 def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type,
                 defects_only=False, color_map=None):
     """
@@ -220,6 +400,7 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
         "created_defects": 0,
         "matched_parents": 0,
         "unmatched_defect_rows": 0,
+        "unmatched_row_details": [],  # list of {"key": tuple}
         "invalid_date_rows": 0,
         "missing_color_rows": 0,
     }
@@ -261,6 +442,7 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
             'team': parent.team,
             'color': parent.color.name if parent.color_id else "",
             'table_type': parent.table_type,
+            'line_code': parent.line_code,
         }
         key = build_qc_fa_key(parent_row, table_type=table_type)
         parent_index[key] = parent
@@ -297,6 +479,7 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
         quality_instance = parent_index.get(key)
         if quality_instance is None:
             stats["unmatched_defect_rows"] += 1
+            stats["unmatched_row_details"].append({"key": key})
             continue
 
         matched_parent_ids.add(quality_instance.id)

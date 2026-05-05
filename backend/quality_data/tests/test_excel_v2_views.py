@@ -280,3 +280,113 @@ class FullWorkflowTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["preview"]["container"]["dates"], ["2025-05-01"])
         self.assertTrue(any("invalid date" in warning.lower() for warning in response.data["warnings"]))
+
+    # ── QFC Line Import Sanitization Tests ──
+
+    @patch('quality_data.views.load_and_clean')
+    def test_preview_reports_qfc_corrections(self, mock_load_and_clean):
+        """QFC rows with team=60 produce warning about 60→6 correction."""
+        mock_load_and_clean.side_effect = [
+            _make_mock_dataframe([]),  # qc_fa_plant
+            _make_mock_dataframe([     # qc_fa_customer
+                {"date_1": "2025-06-01", "po": 100, "style": "STYLE-A", "team": 60},
+                {"date_1": "2025-06-01", "po": 101, "style": "STYLE-B", "team": 60},
+            ]),
+            _make_mock_dataframe([]),  # seconds_a4
+            _make_mock_dataframe([]),  # seconds_general
+            _make_mock_dataframe([]),  # container
+        ]
+
+        preview_url = reverse('quality_data:excel-preview', kwargs={'filename': 'test.xlsx'})
+        with open('/dev/null', 'rb') as f:
+            response = self.client.post(preview_url, {'file': f}, format='multipart')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            any("corrected 2 line" in w for w in response.data["warnings"]),
+            f"Expected correction warning in {response.data['warnings']}"
+        )
+
+    @patch('quality_data.views.load_and_clean')
+    def test_preview_reports_qfc_rejections(self, mock_load_and_clean):
+        """QFC rows with team=0 produce warning about rejection."""
+        mock_load_and_clean.side_effect = [
+            _make_mock_dataframe([]),  # qc_fa_plant
+            _make_mock_dataframe([     # qc_fa_customer
+                {"date_1": "2025-06-01", "po": 200, "style": "STYLE-C", "team": 0},
+            ]),
+            _make_mock_dataframe([]),  # seconds_a4
+            _make_mock_dataframe([]),  # seconds_general
+            _make_mock_dataframe([]),  # container
+        ]
+
+        preview_url = reverse('quality_data:excel-preview', kwargs={'filename': 'test.xlsx'})
+        with open('/dev/null', 'rb') as f:
+            response = self.client.post(preview_url, {'file': f}, format='multipart')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            any("rejected 1 invalid" in w for w in response.data["warnings"]),
+            f"Expected rejection warning in {response.data['warnings']}"
+        )
+
+    @patch('quality_data.views.load_and_clean')
+    def test_preview_qfc_warnings_and_apply_parity(self, mock_load_and_clean):
+        """
+        Preview shows correct warnings AND apply persists corrected values.
+        60→6 rows are saved with team=6, 0 rows are excluded.
+        """
+        mock_load_and_clean.side_effect = [
+            _make_mock_dataframe([]),  # qc_fa_plant
+            _make_mock_dataframe([     # qc_fa_customer (3 rows: 60, 0, 12)
+                {"date_1": "2025-06-15", "po": 301, "style": "STYLE-D", "team": 60, "week": 24, "batch": 1,
+                 "customer": "CUST", "color": "red", "qty": 100, "seconds": 50, "accepted": 40, "rejected": 10,
+                 "sample": 5, "aql": 2.5, "defects_total": 0, "pass_or_fail": "PASS",
+                 "coord": "COORD"},
+                {"date_1": "2025-06-15", "po": 302, "style": "STYLE-E", "team": 0, "week": 24, "batch": 1,
+                 "customer": "CUST", "color": "red", "qty": 100, "seconds": 50, "accepted": 40, "rejected": 10,
+                 "sample": 5, "aql": 2.5, "defects_total": 0, "pass_or_fail": "PASS",
+                 "coord": "COORD"},
+                {"date_1": "2025-06-15", "po": 303, "style": "STYLE-F", "team": 12, "week": 24, "batch": 1,
+                 "customer": "CUST", "color": "red", "qty": 100, "seconds": 50, "accepted": 40, "rejected": 10,
+                 "sample": 5, "aql": 2.5, "defects_total": 0, "pass_or_fail": "PASS",
+                 "coord": "COORD"},
+            ]),
+            _make_mock_dataframe([]),  # seconds_a4
+            _make_mock_dataframe([]),  # seconds_general
+            _make_mock_dataframe([]),  # container
+        ]
+
+        # Step 1: Preview
+        preview_url = reverse('quality_data:excel-preview', kwargs={'filename': 'test.xlsx'})
+        with open('/dev/null', 'rb') as f:
+            preview_response = self.client.post(preview_url, {'file': f}, format='multipart')
+
+        self.assertEqual(preview_response.status_code, status.HTTP_200_OK)
+        session_id = preview_response.data['session_id']
+        warnings = preview_response.data['warnings']
+
+        # Verify warning about corrections and rejections
+        self.assertTrue(
+            any("corrected 1" in w for w in warnings),
+            f"Expected correction warning in {warnings}"
+        )
+        self.assertTrue(
+            any("rejected 1" in w for w in warnings),
+            f"Expected rejection warning in {warnings}"
+        )
+
+        # Step 2: Confirm/Apply
+        Color.objects.create(name="red", is_active=True)
+        confirm_url = reverse('quality_data:excel-confirm', kwargs={'session_id': session_id})
+        confirm_response = self.client.post(confirm_url)
+
+        self.assertEqual(confirm_response.status_code, status.HTTP_200_OK)
+
+        # Step 3: Verify persisted records
+        persisted = QualityQcFa.objects.filter(table_type="QFC", date_1="2025-06-15")
+        self.assertEqual(persisted.count(), 2)  # 60→6 row + valid row, 0-row excluded
+
+        team_values = sorted(persisted.values_list('team', flat=True))
+        self.assertEqual(team_values, [6, 12])  # 60→6 persisted as 6, 12 unchanged
+        self.assertNotIn(0, team_values)  # 0 must NOT survive as a team value

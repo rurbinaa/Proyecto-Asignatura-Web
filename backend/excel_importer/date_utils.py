@@ -230,19 +230,19 @@ def build_qc_fa_key(row, table_type=None):
     """
     Build a shared QC FA natural key from a row dict.
 
-    The key tuple is ``(canonical_date, po, style, team, color_name, table_type)``
+    The key tuple is ``(canonical_date, po, style, team, color_name, table_type, line_code)``
     and is used for parent-child matching between QualityQcFa rows and
     InspectionDefect rows in both the handler and sync layers.
 
     Args:
         row: A dict with keys ``date_1``, ``po``, ``style``, ``team``, ``color``,
-             and optionally ``table_type``.
+             ``line_code`` (optional), and optionally ``table_type``.
         table_type: 'QFA' or 'QFC'. When None (default), falls back to
                     ``row['table_type']``, and then to ``'QFA'`` as the final
                     fallback.
 
     Returns:
-        tuple: ``(canonical_date, po_int, style_str, team_int, color_name, table_type)``
+        tuple: ``(canonical_date, po_int, style_str, team_int, color_name, table_type, line_code)``
     """
     canonical_date = canonicalize_qc_fa_date(row.get("date_1", ""))
     po = int(row.get("po", 0)) if row.get("po") else 0
@@ -252,7 +252,18 @@ def build_qc_fa_key(row, table_type=None):
     if not color_name:
         color_name = "unknown"
 
+    raw = row.get("line_code", None)
+    if raw is not None:
+        if isinstance(raw, (int, float)) and pd.isna(raw):
+            line_code = None
+        elif isinstance(raw, str) and (not raw.strip() or raw.strip().lower() == "nan"):
+            line_code = None
+        else:
+            line_code = raw
+    else:
+        line_code = None
+
     if table_type is None:
         table_type = row.get("table_type", "QFA")
 
-    return (canonical_date, po, style, team, color_name, table_type)
+    return (canonical_date, po, style, team, color_name, table_type, line_code)

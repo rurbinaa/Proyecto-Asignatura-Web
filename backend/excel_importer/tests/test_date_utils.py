@@ -245,16 +245,16 @@ class BuildQcFaKeyTest(TestCase):
     # ── Basic key construction ──
 
     def test_builds_key_with_explicit_table_type(self):
-        """Key built from a QFA row dict includes (canonical_date, po, style, team, color, table_type)."""
+        """Key built from a QFA row dict includes (canonical_date, po, style, team, color, table_type, line_code)."""
         row = self._make_row()
         key = build_qc_fa_key(row, table_type="QFA")
-        self.assertEqual(key, ("2025-01-15", 12345, "STYLE-A", 1, "red", "QFA"))
+        self.assertEqual(key, ("2025-01-15", 12345, "STYLE-A", 1, "red", "QFA", None))
 
     def test_builds_key_for_qfc_with_explicit_table_type(self):
         """Key built for a QFC row includes 'QFC' as table_type."""
         row = self._make_row(table_type="QFC")
         key = build_qc_fa_key(row, table_type="QFC")
-        self.assertEqual(key[-1], "QFC")
+        self.assertEqual(key[5], "QFC")
 
     # ── Table type fallback from row ──
 
@@ -262,14 +262,14 @@ class BuildQcFaKeyTest(TestCase):
         """When table_type arg is None, derives from row['table_type']."""
         row = self._make_row(table_type="QFC")
         key = build_qc_fa_key(row)
-        self.assertEqual(key[-1], "QFC")
+        self.assertEqual(key[5], "QFC")
 
     def test_defaults_to_qfa_when_table_type_missing(self):
         """When neither arg nor row has table_type, defaults to 'QFA'."""
         row = self._make_row()
         del row["table_type"]
         key = build_qc_fa_key(row)
-        self.assertEqual(key[-1], "QFA")
+        self.assertEqual(key[5], "QFA")
 
     # ── Color normalization ──
 
@@ -365,3 +365,48 @@ class BuildQcFaKeyTest(TestCase):
         key = build_qc_fa_key(row, table_type="QFA")
         self.assertIsInstance(key[3], int)
         self.assertEqual(key[3], 1)
+
+    # ── line_code normalization (NaN → None) ──
+
+    def test_nan_line_code_normalized_to_none(self):
+        """float('nan') as line_code is converted to None in the key."""
+        row = self._make_row()
+        row["line_code"] = float("nan")
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsNone(key[6])
+
+    def test_empty_string_line_code_normalized_to_none(self):
+        """Empty string as line_code is converted to None."""
+        row = self._make_row()
+        row["line_code"] = ""
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsNone(key[6])
+
+    def test_pandas_nan_line_code_normalized_to_none(self):
+        """Pandas NaN (np.nan) as line_code is converted to None in the key."""
+        import numpy as np
+        row = self._make_row()
+        row["line_code"] = np.nan
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsNone(key[6])
+
+    def test_string_nan_line_code_normalized_to_none(self):
+        """The string 'nan' as line_code is converted to None."""
+        row = self._make_row()
+        row["line_code"] = "nan"
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsNone(key[6])
+
+    def test_valid_line_code_preserved(self):
+        """A valid dual-line code like '35-36' is preserved as-is in the key."""
+        row = self._make_row()
+        row["line_code"] = "35-36"
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertEqual(key[6], "35-36")
+
+    def test_none_line_code_remains_none(self):
+        """Explicit None as line_code remains None."""
+        row = self._make_row()
+        row["line_code"] = None
+        key = build_qc_fa_key(row, table_type="QFA")
+        self.assertIsNone(key[6])

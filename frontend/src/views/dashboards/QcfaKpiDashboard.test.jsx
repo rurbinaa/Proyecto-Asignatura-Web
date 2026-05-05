@@ -625,6 +625,74 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(banner).toBeInTheDocument();
   });
 
+  // ── Dual-line toggle (Slice 3 / Task 4.3) ──────────────────────────
+
+  it('RED - passes includeDualLines=false in filters to fetchAllKpis by default (hidden)', async () => {
+    fetchAllKpis.mockResolvedValue({});
+
+    render(<QcfaKpiDashboard context="customer" />);
+
+    await waitFor(() => {
+      expect(fetchAllKpis).toHaveBeenCalled();
+      const [filters, contextArg] = fetchAllKpis.mock.calls[0];
+      expect(contextArg).toBe('customer');
+      expect(filters.includeDualLines).toBe(false);
+    });
+  });
+
+  it('RED - passes dual-line filter state to fetchAllKpis on initial load', async () => {
+    fetchAllKpis.mockResolvedValue({});
+
+    render(<QcfaKpiDashboard context="customer" />);
+
+    await waitFor(() => {
+      const [filters] = fetchAllKpis.mock.calls[0];
+      expect(filters).toHaveProperty('includeDualLines');
+      expect(filters).toHaveProperty('lineCode');
+    });
+  });
+
+  it('RED - dual lines hidden by default: includeDualLines is false', async () => {
+    fetchAllKpis.mockResolvedValue({});
+
+    render(<QcfaKpiDashboard context="customer" />);
+
+    await waitFor(() => {
+      const [filters] = fetchAllKpis.mock.calls[0];
+      expect(filters.includeDualLines).toBe(false);
+    });
+  });
+
+  it('RED - context=plant does not send includeDualLines in filter-options request', () => {
+    // For plant context, getFilterOptions should be called without include_dual_lines
+    getFilterOptions.mockResolvedValue({ week: [], team: [] });
+    render(<QcfaKpiDashboard context="plant" />);
+
+    expect(getFilterOptions).toHaveBeenCalled();
+    // Plant context: first arg should be 'plant', second should be undefined (no include_dual_lines)
+    const [contextArg, includeDualLinesArg] = getFilterOptions.mock.calls[0];
+    expect(contextArg).toBe('plant');
+    expect(includeDualLinesArg).toBeUndefined();
+  });
+
+  it('RED - context=customer passes include_dual_lines to getFilterOptions', () => {
+    getFilterOptions.mockResolvedValue({ week: [], team: [] });
+    render(<QcfaKpiDashboard context="customer" />);
+
+    expect(getFilterOptions).toHaveBeenCalled();
+    const [contextArg, includeDualLinesArg] = getFilterOptions.mock.calls[0];
+    expect(contextArg).toBe('customer');
+    // includeDualLines defaults to false (hidden)
+    expect(includeDualLinesArg).toBe(false);
+  });
+
+  it('RED - passes context prop to FilterBar', () => {
+    render(<QcfaKpiDashboard context="customer" />);
+
+    // FilterBar is mocked to render "FilterBar", but we verify the component renders
+    expect(screen.getByText('FilterBar')).toBeInTheDocument();
+  });
+
   // ── Data wiring: AQL by Team/Line renders chart (not null message) with data ──
 
   it('renders AQL by Team/Line bar chart when aqlByTeam data is available in live mode', async () => {

@@ -106,7 +106,7 @@ function calculateAllKpis(rows) {
  */
 function buildExcelSection(opts) {
   const {
-    defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
+    context, defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
     aqlByTeamData, topDefectsData, rejectedEvolutionSeries,
     acReRateByLineData, acceptedByLineData, rejectedByLineData,
     loading, error, nullMessage, isNullOrError,
@@ -125,7 +125,7 @@ function buildExcelSection(opts) {
             title="AQL"
             value={defectRate !== null && !isNullOrError(defectRate) ? defectRate : null}
             unit="%"
-            label="defects / sample × 100"
+            label={context === 'customer' ? "defects / (pass + fail) × 100" : "defects / sample × 100"}
           />
         </KpiCard>
       ),
@@ -505,6 +505,8 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     color: '',
     customer: '',
     batch: '',
+    includeDualLines: false,
+    lineCode: '',
   });
 
   const [kpiData, setKpiData] = useState(null);
@@ -512,13 +514,22 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
   const [error, setError] = useState(null);
   const [filterOptions, setFilterOptions] = useState(null);
 
+  const mapFiltersForApi = useCallback((activeFilters) => {
+    const { includeDualLines, lineCode, ...rest } = activeFilters;
+    return {
+      ...rest,
+      include_dual_lines: includeDualLines,
+      line_code: lineCode,
+    };
+  }, []);
+
   const loadData = useCallback(async (activeFilters = filters) => {
     setLoading(true);
     setError(null);
 
     try {
       if (isLiveMode) {
-        const result = await fetchAllKpis(activeFilters, context);
+        const result = await fetchAllKpis(mapFiltersForApi(activeFilters), context);
         setKpiData(result);
       } else {
         const result = calculateAllKpis(volatileData);
@@ -529,7 +540,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     } finally {
       setLoading(false);
     }
-  }, [isLiveMode, volatileData, filters, context]);
+  }, [isLiveMode, volatileData, filters, context, mapFiltersForApi]);
 
   useEffect(() => {
     if (!isVolatileFileMode) {
@@ -543,7 +554,8 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
 
     const fetchOptions = async () => {
       try {
-        const options = await getFilterOptions();
+        const includeDualLines = context === 'customer' ? filters.includeDualLines : undefined;
+        const options = await getFilterOptions(context, includeDualLines);
         setFilterOptions(options);
       } catch (err) {
         console.warn('Failed to fetch filter options:', err.message);
@@ -551,7 +563,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     };
 
     fetchOptions();
-  }, [isLiveMode]);
+  }, [isLiveMode, context, filters.includeDualLines]);
 
   // Fetch KPIs from volatile file (server-side calculation)
   useEffect(() => {
@@ -593,6 +605,8 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
       color: '',
       customer: '',
       batch: '',
+      includeDualLines: false,
+      lineCode: '',
     };
     setFilters(resetFilters);
     if (isLiveMode) {
@@ -676,7 +690,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
   };
 
   const excelSectionOpts = {
-    defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
+    context, defectRate, passRejectData, aqlWeeklySeries, aqlByStyleData,
     aqlByTeamData, topDefectsData, rejectedEvolutionSeries,
     acReRateByLineData, acceptedByLineData, rejectedByLineData,
     loading, error, nullMessage, isNullOrError,
@@ -710,6 +724,7 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
           onApply={handleApply}
           onReset={handleReset}
           filterOptions={filterOptions}
+          context={context}
         />
       )}
 

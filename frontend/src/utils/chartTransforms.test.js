@@ -180,7 +180,10 @@ describe('transformPassReject', () => {
   it('handles direct array input', () => {
     const input = [{ name: 'PASS', value: 100 }];
     const result = transformPassReject(input);
-    expect(result).toEqual([{ name: 'PASS', value: 100 }]);
+    expect(result).toEqual([
+      { name: 'PASS', value: 100 },
+      { name: 'REJECT', value: 0 }
+    ]);
   });
 
   it('returns null for null input', () => {
