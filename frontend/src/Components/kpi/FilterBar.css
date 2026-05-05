@@ -21,6 +21,17 @@
   flex: 1;
 }
 
+.filter-group-actions {
+  flex: 0 0 auto;
+  min-width: 120px;
+  justify-content: flex-end;
+}
+
+.filter-group-actions .filter-btn-outline {
+  width: 100%;
+  padding: 10px 16px;
+}
+
 .date-range-group {
   min-width: 240px;
 }
@@ -135,6 +146,10 @@
   .filter-group {
     width: 100%;
     min-width: unset;
+  }
+
+  .filter-group-actions {
+    width: 100%;
   }
 
   .date-range-group {

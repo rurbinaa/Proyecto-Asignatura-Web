@@ -86,3 +86,24 @@ class FilterOptionsSerializer(serializers.Serializer):
     color = serializers.ListField(child=serializers.CharField())
     customer = serializers.ListField(child=serializers.CharField())
     batch = serializers.ListField(child=serializers.IntegerField())
+
+
+class WorstContainerSerializer(serializers.Serializer):
+    """
+    Serializer for a single row in the worst-containers list.
+
+    Output format:
+        {
+          "containerNumber": 101,
+          "customer": "AlphaCorp",
+          "passRate": 50.0,
+          "rejectedPalettes": 15,
+          "inspectionDate": "2025-01-11"
+        }
+    """
+
+    containerNumber = serializers.IntegerField()
+    customer = serializers.CharField()
+    passRate = serializers.FloatField()
+    rejectedPalettes = serializers.IntegerField()
+    inspectionDate = serializers.CharField(allow_null=True)

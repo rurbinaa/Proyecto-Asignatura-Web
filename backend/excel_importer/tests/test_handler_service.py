@@ -16,6 +16,7 @@ from quality_data.models import (
 )
 from excel_importer.handler_service import (
     _bulk_insert_defects_only,
+    _normalize_percentage,
     bulk_insert,
     bulk_insert_container,
     bulk_insert_seconds_a4,
@@ -25,7 +26,11 @@ from excel_importer.handler_service import (
     _normalize_defects_fields,
     _truncate_charfields,
 )
-from excel_importer.sheet_configs import CONTAINER_REMAP, CONTAINER_NOT_NUMERIC_COLUMNS
+from excel_importer.sheet_configs import (
+    CONTAINER_NUMERIC_COLUMNS,
+    CONTAINER_REMAP,
+    CONTAINER_NOT_NUMERIC_COLUMNS,
+)
 from quality_data.models import QualityQcFa as QfaModel
 
 
@@ -803,6 +808,104 @@ class BulkInsertContainerTest(TestCase):
         container = Container.objects.get(container_number=2003)
         self.assertEqual(container.date, datetime.date(2025, 4, 2))
 
+    def test_normalizes_fractional_percentage_pass(self):
+        """percentage_pass of 0.97 (Excel fraction) is stored as 97.0."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2010,
+            "customer": "CUST_NORM",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 97,
+            "total_palette_rejected": 3,
+            "percentage_pass": 0.97,
+            "percentage_reject": 3.0,
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2010)
+        self.assertEqual(container.percentage_pass, 97.0)
+
+    def test_normalizes_fractional_percentage_reject(self):
+        """percentage_reject of 0.05 (Excel fraction) is stored as 5.0."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2011,
+            "customer": "CUST_NORM2",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 95,
+            "total_palette_rejected": 5,
+            "percentage_pass": 95.0,
+            "percentage_reject": 0.05,
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2011)
+        self.assertEqual(container.percentage_reject, 5.0)
+
+    def test_normalizes_mixed_scales(self):
+        """Mixed fractional and whole percentages are both handled correctly."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2012,
+            "customer": "CUST_MIXED",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 98,
+            "total_palette_rejected": 2,
+            "percentage_pass": 0.98,    # fractional → 98.0
+            "percentage_reject": 2.0,   # already 0-100 → stay 2.0
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2012)
+        self.assertEqual(container.percentage_pass, 98.0)
+        self.assertEqual(container.percentage_reject, 2.0)
+
+    def test_whole_percentages_unchanged(self):
+        """Values already on 0-100 scale remain exactly as-is."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2013,
+            "customer": "CUST_WHOLE",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 50,
+            "total_palette_rejected": 50,
+            "percentage_pass": 50.0,
+            "percentage_reject": 50.0,
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2013)
+        self.assertEqual(container.percentage_pass, 50.0)
+        self.assertEqual(container.percentage_reject, 50.0)
+
 
 class BulkInsertCoverageTest(TestCase):
     def setUp(self):
@@ -1195,6 +1298,53 @@ class NormalizeDefectsFieldsTest(TestCase):
         """Returns list unchanged when given a list."""
         result = _normalize_defects_fields(['sew_def', 'fab_def'])
         self.assertEqual(result, ['sew_def', 'fab_def'])
+
+
+class NormalizeContainerPercentageTest(TestCase):
+    """
+    Tests for _normalize_percentage helper (Task 1.1).
+    RED phase: function does not exist yet → import will fail until implemented.
+    """
+
+    def test_converts_fractional_to_percentage_scale(self):
+        """0.97 (Excel percentage storage) should become 97.0."""
+        result = _normalize_percentage(0.97)
+        self.assertEqual(result, 97.0)
+
+    def test_leaves_whole_percentage_unchanged(self):
+        """95.0 (already on 0-100 scale) should stay 95.0."""
+        result = _normalize_percentage(95.0)
+        self.assertEqual(result, 95.0)
+
+    def test_handles_zero(self):
+        """0 should stay 0 regardless of scale."""
+        result = _normalize_percentage(0)
+        self.assertEqual(result, 0)
+
+    def test_handles_one_as_full_percentage(self):
+        """1.0 on a 0-1 scale = 100%, so it normalizes to 100.0."""
+        result = _normalize_percentage(1.0)
+        self.assertEqual(result, 100.0)
+
+    def test_handles_one_hundred_as_unchanged(self):
+        """100.0 (already on 0-100 scale) should stay 100.0."""
+        result = _normalize_percentage(100.0)
+        self.assertEqual(result, 100.0)
+
+    def test_handles_none(self):
+        """None should return None unchanged."""
+        result = _normalize_percentage(None)
+        self.assertIsNone(result)
+
+    def test_handles_small_fraction(self):
+        """0.01 (1%) should become 1.0."""
+        result = _normalize_percentage(0.01)
+        self.assertEqual(result, 1.0)
+
+    def test_handles_negative_value(self):
+        """Negative values are left unchanged (not a valid percentage either way)."""
+        result = _normalize_percentage(-5.0)
+        self.assertEqual(result, -5.0)
 
 
 class BulkInsertDefectsOnlyStatsTest(TestCase):

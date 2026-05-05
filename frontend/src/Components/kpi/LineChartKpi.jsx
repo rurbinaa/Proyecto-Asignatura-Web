@@ -19,6 +19,7 @@ export default function LineChartKpi({
   tooltipLabelFormatter,
   legendVerticalAlign = 'top',
   legendAlign = 'right',
+  lineColors,
 }) {
   // Unified chart margin for consistent spacing (same as BarChartKpi)
   const chartMargin = { top: 12, right: 20, left: 24, bottom: 36 };
@@ -67,7 +68,7 @@ export default function LineChartKpi({
               name={s.name}
               data={mergedData}
               dataKey={s.name}
-              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+              stroke={(lineColors || SERIES_COLORS)[index % (lineColors || SERIES_COLORS).length]}
               dot={showDots}
               connectNulls
             />

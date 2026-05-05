@@ -419,6 +419,10 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
         production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        # Normalize percentage values that Excel stored as fractions
+        for pct_field in ('percentage_pass', 'percentage_reject'):
+            if pct_field in production_data:
+                production_data[pct_field] = _normalize_percentage(production_data[pct_field])
         container_number = row.get('container_number')
         if pd.notna(container_number):
             container_number = int(container_number)
@@ -487,6 +491,23 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
             batch_size=2000,
             ignore_conflicts=True  # Skip duplicate (container, defect_type) pairs
         )
+
+
+def _normalize_percentage(value):
+    """
+    Convert a percentage value from fractional (0-1) to 0-100 scale if stored
+    as a decimal by Excel (e.g. 97% stored as 0.97). Values already on the
+    0-100 scale (value > 1) or unsupported types are returned unchanged.
+
+    Args:
+        value: The raw percentage value (int, float, or None).
+
+    Returns:
+        The normalized value on 0-100 scale, or None unchanged.
+    """
+    if value is not None and isinstance(value, (int, float)) and 0 < value <= 1:
+        return round(value * 100, 2)
+    return value
 
 
 def _resolve_container_date(raw_date, existing_date):

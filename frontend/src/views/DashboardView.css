@@ -210,3 +210,74 @@
     overflow-x: auto !important;
   }
 }
+
+/* ── Container Dashboard 3-Column Layout ───────────────────────── */
+
+/* Top-level grid: 3 equal columns */
+.container-dashboard-layout {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* Span helpers */
+.container-dashboard-layout > .layout-full {
+  grid-column: 1 / -1;
+}
+
+.container-dashboard-layout > .layout-wide {
+  grid-column: span 2;
+}
+
+.container-dashboard-layout > .layout-left {
+  grid-column: 1;
+}
+
+.container-dashboard-layout > .layout-right-wide {
+  grid-column: 2 / 4;
+}
+
+.container-dashboard-layout > .layout-right-start {
+  grid-column: 2 / 4;
+}
+
+.container-dashboard-layout > .layout-tall {
+  grid-row: span 2;
+  align-self: stretch;
+}
+
+/* Summary sub-grid: 4 equal number cards */
+.container-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* Vertical gap between layout rows */
+.container-dashboard-layout > * {
+  margin-bottom: 8px;
+}
+
+/* Responsive: single column on mobile */
+@media (max-width: 768px) {
+  .container-dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .container-dashboard-layout > .layout-wide {
+    grid-column: span 1;
+  }
+
+  .container-dashboard-layout > .layout-left,
+  .container-dashboard-layout > .layout-right-wide,
+  .container-dashboard-layout > .layout-right-start,
+  .container-dashboard-layout > .layout-tall {
+    grid-column: span 1;
+    grid-row: span 1;
+  }
+
+  .container-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

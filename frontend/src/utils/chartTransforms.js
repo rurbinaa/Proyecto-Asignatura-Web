@@ -203,12 +203,17 @@ export function transformPerformanceByLine(data) {
  * Returns chart-state: ready | empty | unavailable
  */
 export function transformTopDefects(data) {
-  return resolveChartState(data, (d) =>
-    (d.result || d).map((item) => ({
+  return resolveChartState(data, (d) => {
+    const items = (d.result || d).map((item) => ({
       label: item.label,
       value: item.value,
-    })),
-  );
+    }));
+    const total = items.reduce((sum, item) => sum + item.value, 0);
+    return items.map((item) => ({
+      ...item,
+      percentage: total > 0 ? Number(((item.value / total) * 100).toFixed(1)) : 0,
+    }));
+  });
 }
 
 /**
@@ -402,3 +407,55 @@ export const buildLineCountDataByState = (data, targetState) => {
     .filter((item) => item.state === targetState)
     .map((item) => ({ label: item.line, value: item.value }));
 };
+
+/**
+ * Transform Container executive summary for metric display.
+ * API returns: [{label: "Total Containers", value: 150}, ...]
+ * Converts to keyed object: {totalContainers: 150, averagePassRate: 87.5, ...}
+ * Returns chart-state: ready | empty | unavailable
+ */
+export function transformContainerExecutiveSummary(data) {
+  return resolveChartState(data, (d) => {
+    const arr = Array.isArray(d) ? d : d.result || d;
+    if (!Array.isArray(arr) || arr.length === 0) return [];
+
+    const keyMap = {
+      'Total Containers': 'totalContainers',
+      'Average Pass Rate': 'averagePassRate',
+      'Total Palettes Inspected': 'totalInspected',
+      'Total Rejected Palettes': 'totalRejected',
+    };
+
+    const result = {};
+    arr.forEach((item) => {
+      const key = keyMap[item.label];
+      if (key) {
+        result[key] = typeof item.value === 'number' ? item.value : Number(item.value) || 0;
+      }
+    });
+
+    return Object.keys(result).length > 0 ? [result] : [];
+  });
+}
+
+/**
+ * Transform worst containers for table/card display.
+ * API returns: [{containerNumber, customer, passRate, rejectedPalettes, inspectionDate}]
+ * Adds a unique `key` for React list rendering.
+ * Returns chart-state: ready | empty | unavailable
+ */
+export function transformContainerWorstContainers(data) {
+  return resolveChartState(data, (d) => {
+    const arr = Array.isArray(d) ? d : d.result || d;
+    if (!Array.isArray(arr) || arr.length === 0) return [];
+
+    return arr.map((row) => ({
+      containerNumber: row.containerNumber,
+      customer: row.customer,
+      passRate: typeof row.passRate === 'number' ? row.passRate : Number(row.passRate) || 0,
+      rejectedPalettes: typeof row.rejectedPalettes === 'number' ? row.rejectedPalettes : Number(row.rejectedPalettes) || 0,
+      inspectionDate: row.inspectionDate || '',
+      key: row.containerNumber || `row-${Math.random()}`,
+    }));
+  });
+}
