@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, getAcReRateByLine, getPerformanceByLine, fetchAllContainerKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, getAcReRateByLine, getPerformanceByLine, fetchAllContainerKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects, getSecondsA4FilterOptions, getSecondsA4ExecutiveSummary, getSecondsA4WeeklyTrend, getSecondsA4SewVsFab, getSecondsA4ByStyle, getSecondsA4ByColor, buildSecondsA4Params } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -1158,5 +1158,279 @@ describe('kpi.js - fetchAllContainerKpis - volatile mode', () => {
     // Only the volatile POST should have been made; no GET calls
     expect(axiosClient.post).toHaveBeenCalledTimes(1);
     expect(axiosClient.get).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Task 3.1: Seconds A4 API helpers ─────────────────────────────────────
+describe('kpi.js - buildSecondsA4Params', () => {
+  it('builds params object with all active filter fields', () => {
+    const result = buildSecondsA4Params({ year: '2025', line: 'L1', cut_num: '2', style: 'A', color: 'red' });
+    expect(result).toEqual({ year: '2025', line: 'L1', cut_num: '2', style: 'A', color: 'red' });
+  });
+
+  it('omits empty and null filter values', () => {
+    const result = buildSecondsA4Params({ year: '', line: 'L1', cut_num: null, style: undefined, color: '' });
+    expect(result).toEqual({ line: 'L1' });
+  });
+
+  it('returns empty object when no filters provided', () => {
+    const result = buildSecondsA4Params({});
+    expect(result).toEqual({});
+  });
+
+  it('returns empty object when called without arguments', () => {
+    const result = buildSecondsA4Params();
+    expect(result).toEqual({});
+  });
+});
+
+describe('kpi.js - getSecondsA4FilterOptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches from seconds-a4/filter-options/ endpoint', async () => {
+    const mockDto = { year: [2025, 2026], line: ['L1', 'L2'], cut_num: [1, 2, 3] };
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getSecondsA4FilterOptions();
+
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/seconds-a4/filter-options/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes year filter in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: {} });
+
+    await getSecondsA4FilterOptions({ year: 2025 });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2025');
+  });
+
+  it('passes line and cut_num filters in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: {} });
+
+    await getSecondsA4FilterOptions({ year: 2026, line: 'L1', cut_num: 2 });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2026');
+    expect(url).toContain('line=L1');
+    expect(url).toContain('cut_num=2');
+  });
+
+  it('passes style and color filters in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: {} });
+
+    await getSecondsA4FilterOptions({ style: 'N6165', color: 'blue' });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('style=N6165');
+    expect(url).toContain('color=blue');
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Server error' }, status: 500 } });
+
+    await expect(getSecondsA4FilterOptions()).rejects.toThrow('Server error');
+  });
+});
+
+describe('kpi.js - getSecondsA4ExecutiveSummary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches from seconds-a4/executive-summary/ endpoint', async () => {
+    const mockDto = { totals: { total_of_2ds: 1234, seconds_by_sew: 800, seconds_by_fab: 434 }, percentages: [] };
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getSecondsA4ExecutiveSummary();
+
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/seconds-a4/executive-summary/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes year filter in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: {} });
+
+    await getSecondsA4ExecutiveSummary({ year: 2025 });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2025');
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'DB error' }, status: 503 } });
+
+    await expect(getSecondsA4ExecutiveSummary()).rejects.toThrow('DB error');
+  });
+});
+
+describe('kpi.js - getSecondsA4WeeklyTrend', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches from seconds-a4/weekly-trend/ endpoint', async () => {
+    const mockDto = [{ name: 'Total of 2DS', data: [{ x: 1, y: 100 }, { x: 2, y: 120 }] }];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getSecondsA4WeeklyTrend();
+
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/seconds-a4/weekly-trend/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes year and line filters in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    await getSecondsA4WeeklyTrend({ year: 2025, line: 'L1' });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2025');
+    expect(url).toContain('line=L1');
+  });
+
+  it('returns empty array when no trend data', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    const result = await getSecondsA4WeeklyTrend();
+    expect(result).toEqual([]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
+
+    await expect(getSecondsA4WeeklyTrend()).rejects.toThrow('Not found');
+  });
+});
+
+describe('kpi.js - getSecondsA4SewVsFab', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches from seconds-a4/sew-vs-fab/ endpoint', async () => {
+    const mockDto = [{ label: 'Sew', value: 800 }, { label: 'Fab', value: 434 }];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getSecondsA4SewVsFab();
+
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/seconds-a4/sew-vs-fab/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes year and cut_num filters in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    await getSecondsA4SewVsFab({ year: 2025, cut_num: 2 });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2025');
+    expect(url).toContain('cut_num=2');
+  });
+
+  it('returns empty array when no data', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    const result = await getSecondsA4SewVsFab();
+    expect(result).toEqual([]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Server error' }, status: 500 } });
+
+    await expect(getSecondsA4SewVsFab()).rejects.toThrow('Server error');
+  });
+});
+
+describe('kpi.js - getSecondsA4ByStyle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches from seconds-a4/by-style/ endpoint', async () => {
+    const mockDto = [{ label: 'Style-A', value: 500 }, { label: 'Style-B', value: 300 }];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getSecondsA4ByStyle();
+
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/seconds-a4/by-style/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes filters in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    await getSecondsA4ByStyle({ year: 2025, color: 'red' });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2025');
+    expect(url).toContain('color=red');
+  });
+
+  it('returns empty array when no data', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    const result = await getSecondsA4ByStyle();
+    expect(result).toEqual([]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'DB error' }, status: 503 } });
+
+    await expect(getSecondsA4ByStyle()).rejects.toThrow('DB error');
+  });
+});
+
+describe('kpi.js - getSecondsA4ByColor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('fetches from seconds-a4/by-color/ endpoint', async () => {
+    const mockDto = [{ label: 'Red', value: 400 }, { label: 'Blue', value: 250 }];
+    axiosClient.get.mockResolvedValueOnce({ data: mockDto });
+
+    const result = await getSecondsA4ByColor();
+
+    expect(axiosClient.get).toHaveBeenCalledOnce();
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('/quality/kpis/seconds-a4/by-color/');
+    expect(result).toEqual(mockDto);
+  });
+
+  it('passes filters in URL', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    await getSecondsA4ByColor({ year: 2025, line: 'L1' });
+
+    const [url] = axiosClient.get.mock.calls[0];
+    expect(url).toContain('year=2025');
+    expect(url).toContain('line=L1');
+  });
+
+  it('returns empty array when no data', async () => {
+    axiosClient.get.mockResolvedValueOnce({ data: [] });
+
+    const result = await getSecondsA4ByColor();
+    expect(result).toEqual([]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
+
+    await expect(getSecondsA4ByColor()).rejects.toThrow('Not found');
   });
 });

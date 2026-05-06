@@ -10,6 +10,7 @@ from .views import (
     VolatileKpiView, FilterOptionsView, CorporateXlsxReportView,
 )
 from .views.seconds_gen_views import SecondsGeneralAnalyticsViewSet
+from .views.seconds_a4_views import SecondsA4AnalyticsViewSet
 from .views.container_views import ContainerKpiViewSet
 
 app_name = 'quality_data'
@@ -20,6 +21,7 @@ router = DefaultRouter()
 router.register(r'kpis/aql', AqlKpiViewSet, basename='kpi-aql')
 router.register(r'kpis/rendimiento', KpiViewSet, basename='kpi-rendimiento')
 router.register(r'kpis/seconds-general', SecondsGeneralAnalyticsViewSet, basename='seconds-general-analytics')
+router.register(r'kpis/seconds-a4', SecondsA4AnalyticsViewSet, basename='seconds-a4-analytics')
 router.register(r'kpis/container', ContainerKpiViewSet, basename='kpi-container')
 
 urlpatterns = [

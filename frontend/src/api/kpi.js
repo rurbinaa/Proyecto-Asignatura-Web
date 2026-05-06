@@ -471,3 +471,51 @@ export async function fetchAllContainerKpis(filters = {}, volatileFile = null, c
 
   return kpis;
 }
+
+// ─── Seconds A4 KPI helpers ───────────────────────────────────────────────
+
+/**
+ * Build filter params object for Seconds A4 API from dashboard filter state.
+ * Strips empty/null/undefined values so they are not sent as query params.
+ * @param {object} [filters={}] - Dashboard filter state (year, style, color, line, cut_num)
+ * @returns {object} Params object with only active filter values
+ */
+export function buildSecondsA4Params(filters = {}) {
+  const params = {};
+  if (filters.year) params.year = filters.year;
+  if (filters.style) params.style = filters.style;
+  if (filters.color) params.color = filters.color;
+  if (filters.line) params.line = filters.line;
+  if (filters.cut_num) params.cut_num = filters.cut_num;
+  return params;
+}
+
+/** Fetch filter options for Seconds A4 (year, line, cut_num lists). */
+export async function getSecondsA4FilterOptions(filters = {}) {
+  return fetchKpi('seconds-a4/filter-options/', filters);
+}
+
+/** Fetch Seconds A4 executive summary (totals + validated percentages). */
+export async function getSecondsA4ExecutiveSummary(filters = {}) {
+  return fetchKpi('seconds-a4/executive-summary/', filters);
+}
+
+/** Fetch Seconds A4 weekly trend series. */
+export async function getSecondsA4WeeklyTrend(filters = {}) {
+  return fetchKpi('seconds-a4/weekly-trend/', filters);
+}
+
+/** Fetch Seconds A4 sew vs fab split data. */
+export async function getSecondsA4SewVsFab(filters = {}) {
+  return fetchKpi('seconds-a4/sew-vs-fab/', filters);
+}
+
+/** Fetch Seconds A4 breakdown by style. */
+export async function getSecondsA4ByStyle(filters = {}) {
+  return fetchKpi('seconds-a4/by-style/', filters);
+}
+
+/** Fetch Seconds A4 breakdown by color. */
+export async function getSecondsA4ByColor(filters = {}) {
+  return fetchKpi('seconds-a4/by-color/', filters);
+}

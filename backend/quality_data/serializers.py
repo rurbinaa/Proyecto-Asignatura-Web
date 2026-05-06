@@ -85,9 +85,21 @@ class FilterOptionsSerializer(serializers.Serializer):
     line_code = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     style = serializers.ListField(child=serializers.CharField())
     color = serializers.ListField(child=serializers.CharField())
+    size = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     customer = serializers.ListField(child=serializers.CharField())
     batch = serializers.ListField(child=serializers.IntegerField())
     include_dual_lines_default = serializers.BooleanField(required=False, default=False)
+
+
+class SecondsA4FilterOptionsSerializer(serializers.Serializer):
+    """Serializer for Seconds A4 filter options endpoint contract."""
+
+    year = serializers.ListField(child=serializers.IntegerField())
+    week = serializers.ListField(child=serializers.IntegerField())
+    line = serializers.ListField(child=serializers.CharField())
+    cut_num = serializers.ListField(child=serializers.IntegerField())
+    style = serializers.ListField(child=serializers.CharField())
+    color = serializers.ListField(child=serializers.CharField())
 
 
 class WorstContainerSerializer(serializers.Serializer):
