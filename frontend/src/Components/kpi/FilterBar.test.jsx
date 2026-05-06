@@ -19,7 +19,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={defaultFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
         />
       );
@@ -34,7 +33,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={defaultFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
         />
       );
@@ -47,7 +45,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={defaultFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
         />
       );
@@ -71,7 +68,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={customerFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: ['35-36', '10-12'] }}
@@ -88,7 +84,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={customerFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="plant"
           filterOptions={{ line_code: ['35-36'] }}
@@ -103,7 +98,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={customerFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           filterOptions={{ line_code: ['35-36'] }}
         />
@@ -119,7 +113,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={filtersWithDual}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: ['35-36', '10-12', '20-21'] }}
@@ -142,7 +135,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={customerFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: ['35-36'] }}
@@ -159,7 +151,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={filtersWithDual}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: [] }}
@@ -176,7 +167,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={customerFilters}
           onFilterChange={onFilterChange}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: ['35-36'] }}
@@ -199,7 +189,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={filtersWithDual}
           onFilterChange={onFilterChange}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: ['35-36', '10-12'] }}
@@ -222,7 +211,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={filtersWithDual}
           onFilterChange={onFilterChange}
-          onApply={vi.fn()}
           onReset={vi.fn()}
           context="customer"
           filterOptions={{ line_code: ['35-36', '10-12'] }}
@@ -244,7 +232,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={defaultFilters}
           onFilterChange={onFilterChange}
-          onApply={vi.fn()}
           onReset={vi.fn()}
         />
       );
@@ -256,20 +243,16 @@ describe('FilterBar', () => {
       expect(onFilterChange).toHaveBeenCalled();
     });
 
-    it('calls onApply when Apply Filters button is clicked', () => {
-      const onApply = vi.fn();
+    it('does not render Apply Filters button', () => {
       render(
         <FilterBar
           filters={defaultFilters}
           onFilterChange={vi.fn()}
-          onApply={onApply}
           onReset={vi.fn()}
         />
       );
 
-      fireEvent.click(screen.getByRole('button', { name: /apply filters/i }));
-
-      expect(onApply).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('button', { name: /apply filters/i })).not.toBeInTheDocument();
     });
 
     it('calls onReset when Clear button is clicked', () => {
@@ -278,7 +261,6 @@ describe('FilterBar', () => {
         <FilterBar
           filters={defaultFilters}
           onFilterChange={vi.fn()}
-          onApply={vi.fn()}
           onReset={onReset}
         />
       );
@@ -286,6 +268,19 @@ describe('FilterBar', () => {
       fireEvent.click(screen.getByRole('button', { name: /clear/i }));
 
       expect(onReset).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders Clear inside the filter row actions group', () => {
+      render(
+        <FilterBar
+          filters={defaultFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('Actions')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
     });
   });
 });

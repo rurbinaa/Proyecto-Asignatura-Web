@@ -172,13 +172,13 @@ export default function SecondsGeneralDashboard() {
     });
   }, []);
 
-  const handleApply = useCallback(() => {
-    loadData(filters);
-  }, [loadData, filters]);
-
   const handleReset = useCallback(() => {
     setFilters(INITIAL_FILTERS);
   }, []);
+
+  const handleRefresh = useCallback(() => {
+    loadData(filters);
+  }, [loadData, filters]);
 
   const seriesForWeeklyTrend = weeklyTrend && weeklyTrend.length > 0
     ? weeklyTrend.map((s) => ({
@@ -191,12 +191,14 @@ export default function SecondsGeneralDashboard() {
     <div className="dashboard-view">
       <div className="dashboard-header">
         <h1 className="dashboard-title">Seconds General Analytics</h1>
+        <button className="refresh-btn" onClick={handleRefresh} disabled={loading}>
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
       </div>
 
       <FilterBar
         filters={filters}
         onFilterChange={handleFilterChange}
-        onApply={handleApply}
         onReset={handleReset}
         filterOptions={filterOptions}
         context="customer"

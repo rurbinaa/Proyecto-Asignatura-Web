@@ -144,6 +144,7 @@ function buildExcelSection(opts) {
               data={passRejectData}
               valueFormatter={formatPieces}
               tooltipLabelFormatter={(label) => `Status: ${label}`}
+              minLabelPercent={0}
             />
           )}
         </KpiCard>
@@ -190,6 +191,7 @@ function buildExcelSection(opts) {
               yAxisLabel="Style"
               xTickFormatter={(value) => `${value}%`}
               valueFormatter={formatPercent}
+              tooltipFormatter={(value) => [formatPercent(value), 'AQL']}
               tooltipLabelFormatter={(label) => `Style: ${label}`}
             />
           )}
@@ -214,6 +216,7 @@ function buildExcelSection(opts) {
               yAxisLabel="Team / Line"
               xTickFormatter={(value) => `${value}%`}
               valueFormatter={formatPercent}
+              tooltipFormatter={(value) => [formatPercent(value), 'AQL']}
               tooltipLabelFormatter={(label) => `Team / Line: ${label}`}
             />
           )}
@@ -239,7 +242,7 @@ function buildExcelSection(opts) {
               xAxisLabel="Cantidad de defectos"
               yAxisLabel="Tipo de defecto"
               xTickFormatter={formatPieces}
-              valueFormatter={(value) => `${Math.round(Number(value))} defectos`}
+              tooltipFormatter={(value) => [Math.round(Number(value)).toString(), 'defectos']}
               tooltipLabelFormatter={(label) => `Defecto: ${label}`}
             />
           )}
@@ -592,10 +595,6 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     setFilters(newFilters);
   }, []);
 
-  const handleApply = useCallback(() => {
-    loadData(filters);
-  }, [loadData, filters]);
-
   const handleReset = useCallback(() => {
     const resetFilters = {
       date_range: ['', ''],
@@ -721,7 +720,6 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
         <FilterBar
           filters={filters}
           onFilterChange={handleFilterChange}
-          onApply={handleApply}
           onReset={handleReset}
           filterOptions={filterOptions}
           context={context}

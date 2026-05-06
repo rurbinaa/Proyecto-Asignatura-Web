@@ -1,7 +1,7 @@
 import DateRangePicker from '../DateRangePicker';
 import './FilterBar.css';
 
-export default function FilterBar({ filters, onFilterChange, onApply, onReset, filterOptions, context }) {
+export default function FilterBar({ filters, onFilterChange, onReset, filterOptions, context }) {
   const handleChange = (field, value) => {
     onFilterChange({ ...filters, [field]: value });
   };
@@ -115,15 +115,13 @@ export default function FilterBar({ filters, onFilterChange, onApply, onReset, f
             </select>
           </div>
         )}
-      </div>
 
-      <div className="filter-actions">
-        <button className="filter-btn-primary" onClick={onApply}>
-          Apply Filters
-        </button>
-        <button className="filter-btn-outline" onClick={onReset}>
-          Clear
-        </button>
+        <div className="filter-group filter-group-actions">
+          <label className="filter-label">Actions</label>
+          <button className="filter-btn-outline" onClick={onReset}>
+            Clear
+          </button>
+        </div>
       </div>
     </div>
   );
