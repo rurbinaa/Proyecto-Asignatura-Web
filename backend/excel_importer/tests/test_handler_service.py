@@ -1032,6 +1032,125 @@ class BulkInsertSecondsCoverageTest(TestCase):
         bulk_insert_seconds_general(pd.DataFrame([]), ["week"], ["date"])
         self.assertEqual(SecondsGeneral.objects.count(), 0)
 
+    def test_bulk_insert_normalizes_nan_team_to_none(self):
+        """NaN team value is coerced to None before bulk insert — not stored as 'nan' string."""
+        import pandas as pd
+        import numpy as np
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2", "barre"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": float("nan"),  # NaN team
+                "line_code": None,
+                "corrido_2": 5,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        # team should be None (null in DB), NOT the string "nan"
+        self.assertIsNone(sg.team, f"Expected None for team, got {sg.team!r}")
+
+    def test_bulk_insert_normalizes_nan_line_code_to_none(self):
+        """NaN line_code value is coerced to None — not stored as 'nan' string."""
+        import pandas as pd
+        import numpy as np
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2", "barre"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": 35,
+                "line_code": float("nan"),  # NaN line_code
+                "corrido_2": 5,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        self.assertIsNone(sg.line_code, f"Expected None for line_code, got {sg.line_code!r}")
+
+    def test_bulk_insert_normalizes_blank_line_code_to_none(self):
+        """Blank/empty line_code value is coerced to None."""
+        import pandas as pd
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": 35,
+                "line_code": "",  # empty string
+                "corrido_2": 3,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        self.assertIsNone(sg.line_code, f"Expected None for blank line_code, got {sg.line_code!r}")
+
+    def test_bulk_insert_preserves_valid_line_code(self):
+        """Valid dual-line code is preserved as-is — not coerced to None."""
+        import pandas as pd
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": 35,
+                "line_code": "35-36",  # valid dual-line code
+                "corrido_2": 7,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        self.assertEqual(sg.line_code, "35-36")
+
     def test_bulk_insert_seconds_a4_creates_records(self):
         import pandas as pd
         df = pd.DataFrame([
@@ -2620,5 +2739,181 @@ class NormalizeQfcCustomerRowsTest(TestCase):
         normalize_qc_fa_customer_rows(original)
 
         # Original should still have team=60
+        self.assertEqual(original[0]["team"], 60)
+        self.assertEqual(original, original_copy)
+
+
+class NormalizeSecondsGeneralRowsTest(TestCase):
+    """Tests for normalize_seconds_general_rows — pure function."""
+
+    def test_simple_numeric_team(self):
+        """Simple numeric team (e.g. 35) passes through, line_code=None."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 35, "po": 100, "style": "STYLE-A"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 35)
+        self.assertIsNone(normalized[0].get("line_code"))
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    def test_dual_label_parsed(self):
+        """Dual label '35-36' sets team=35 and line_code='35-36'."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": "35-36", "po": 200, "style": "STYLE-B"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 35)
+        self.assertEqual(normalized[0]["line_code"], "35-36")
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+
+    def test_corrects_60_to_6(self):
+        """Team 60 is corrected to 6, counted as corrected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 60, "po": 300, "style": "STYLE-C"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 6)
+        self.assertEqual(warnings["corrected"], 1)
+        self.assertEqual(warnings["rejected"], 0)
+
+    def test_reject_zero(self):
+        """Team 0 is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 0, "po": 400, "style": "STYLE-D"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_non_numeric(self):
+        """Non-numeric team is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": "INVALID", "po": 500, "style": "STYLE-E"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_blank(self):
+        """Blank/missing team is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": None, "po": 600, "style": "STYLE-F"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_out_of_range_above_36(self):
+        """Team > 36 (and not 60) is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 99, "po": 700, "style": "STYLE-G"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_mixed_scenario(self):
+        """Mix of valid, corrected, and rejected rows."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [
+            {"team": 60, "po": 801},    # corrected
+            {"team": 0, "po": 802},     # rejected
+            {"team": 12, "po": 803},    # valid
+            {"team": 99, "po": 804},    # rejected
+            {"team": 6, "po": 805},     # valid
+            {"team": "35-36", "po": 806},  # valid dual label
+        ]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 4)  # 60→6, 12, 6, 35-36
+        self.assertEqual(normalized[0]["team"], 6)   # was 60
+        self.assertEqual(normalized[1]["team"], 12)
+        self.assertEqual(normalized[2]["team"], 6)
+        self.assertEqual(normalized[3]["team"], 35)
+        self.assertEqual(normalized[3]["line_code"], "35-36")
+        self.assertEqual(warnings["corrected"], 1)
+        self.assertEqual(warnings["rejected"], 2)
+
+    def test_message_format_corrected_and_rejected(self):
+        """Warning message mentions both corrections and rejections."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [
+            {"team": 60, "po": 901},
+            {"team": 0, "po": 902},
+        ]
+        _, warnings = normalize_seconds_general_rows(rows)
+
+        expected = "Seconds General: corrected 1 line value (60→6) and rejected 1 invalid row (0/out of range/invalid composite)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_message_format_corrected_only(self):
+        """Only corrections in message."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 60, "po": 1001}]
+        _, warnings = normalize_seconds_general_rows(rows)
+
+        expected = "Seconds General: corrected 1 line value (60→6)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_message_format_rejected_only(self):
+        """Only rejections in message."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 0, "po": 1101}]
+        _, warnings = normalize_seconds_general_rows(rows)
+
+        expected = "Seconds General: rejected 1 invalid row (0/out of range/invalid composite)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_empty_rows(self):
+        """Empty input returns empty output with zero warnings."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        normalized, warnings = normalize_seconds_general_rows([])
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    def test_preserves_other_fields(self):
+        """Non-team fields are preserved in normalized rows."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 60, "po": 1201, "date": "2025-01-01", "style": "STYLE-X", "color": "red"}]
+        normalized, _ = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["po"], 1201)
+        self.assertEqual(normalized[0]["date"], "2025-01-01")
+        self.assertEqual(normalized[0]["style"], "STYLE-X")
+        self.assertEqual(normalized[0]["color"], "red")
+
+    def test_rows_not_mutated_in_place(self):
+        """Original input rows are not mutated."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        original = [{"team": 60, "po": 1301}]
+        original_copy = [dict(r) for r in original]
+
+        normalize_seconds_general_rows(original)
+
         self.assertEqual(original[0]["team"], 60)
         self.assertEqual(original, original_copy)

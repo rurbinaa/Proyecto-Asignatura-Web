@@ -123,7 +123,7 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
         df.loc[normalized_pass_or_fail == "FAIL", "pass_or_fail"] = "REJECT"
 
     text_cols = df.select_dtypes(include=['object']).columns
-    df[text_cols] = df[text_cols].fillna("UNKNOWN")
+    df[text_cols] = df[text_cols].fillna("")
     
     return df
 
@@ -307,6 +307,87 @@ def normalize_qc_fa_customer_rows(rows):
     return normalized_rows, warnings
 
 
+def normalize_seconds_general_rows(rows):
+    """
+    Normalize Seconds General raw rows, parsing ``team`` and ``line_code``
+    at the import boundary.
+
+    Uses :func:`parse_qfc_line` to split the raw team value into
+    ``(team, line_code)``. After parsing, the classic 60→6 sanitization
+    is applied to the ``team`` portion.
+
+    Business rules:
+    - Simple numeric line (``"35"``) → ``team=35, line_code=None``
+    - Dual label (``"35-36"``) → ``team=35, line_code="35-36"``
+    - Valid ranges: ``1..36`` (and ``60`` which gets corrected to ``6``)
+    - Invalid (non-numeric, 0, composite with non-numeric segment, etc.) → rejected
+
+    The function does NOT mutate the input rows — it creates copies.
+
+    Returns:
+        tuple: (normalized_rows, warnings_dict)
+            warnings_dict has keys:
+                corrected (int): number of rows with 60→6 fix
+                rejected (int): number of rows removed as invalid
+                message (str): human-readable summary (empty if no events)
+    """
+    if not rows:
+        return [], {"corrected": 0, "rejected": 0, "message": ""}
+
+    normalized_rows = []
+    corrected_count = 0
+    rejected_count = 0
+
+    for row in rows:
+        normalized_row = dict(row)
+        raw_team = normalized_row.get("team", None)
+
+        # Parse the raw line value using the existing dual-line-aware parser
+        parsed_team, parsed_line_code = parse_qfc_line(raw_team)
+
+        # Reject rows where parsing failed
+        if parsed_team is None:
+            rejected_count += 1
+            continue
+
+        # Classic 60→6 sanitization (applied AFTER parsing)
+        if parsed_team == 60:
+            normalized_row["team"] = 6
+            corrected_count += 1
+        elif parsed_team in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            normalized_row["team"] = parsed_team
+        else:
+            # Out of range after parsing (shouldn't happen with the parser validations)
+            rejected_count += 1
+            continue
+
+        # Set line_code from parsed value (None for simple lines, label for dual)
+        normalized_row["line_code"] = parsed_line_code
+
+        normalized_rows.append(normalized_row)
+
+    # Build human-readable message
+    parts = []
+    if corrected_count:
+        s = "s" if corrected_count != 1 else ""
+        parts.append(f"corrected {corrected_count} line value{s} (60→6)")
+    if rejected_count:
+        s = "s" if rejected_count != 1 else ""
+        parts.append(f"rejected {rejected_count} invalid row{s} (0/out of range/invalid composite)")
+
+    message = ""
+    if parts:
+        message = f"Seconds General: {' and '.join(parts)}."
+
+    warnings = {
+        "corrected": corrected_count,
+        "rejected": rejected_count,
+        "message": message,
+    }
+
+    return normalized_rows, warnings
+
+
 def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type,
                 defects_only=False, color_map=None):
     """
@@ -341,7 +422,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
             color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
 
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
         production_data['table_type'] = table_type
         production_data['color'] = color_obj
         production_data = _truncate_charfields(QualityQcFa, production_data)
@@ -521,13 +602,28 @@ def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):
         color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
 
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
         production_data['color'] = color_obj
         production_data = _truncate_charfields(SecondsA4, production_data)
 
         instances.append(SecondsA4(**production_data))
 
     SecondsA4.objects.bulk_create(instances, batch_size=1000)
+
+
+def _normalize_nullable_fields(production_data):
+    """
+    Coerce NaN/blank values in nullable dual-line fields to None.
+    
+    DataFrame conversion can reintroduce NaN for missing cells. These
+    must be normalized back to None before model construction to prevent
+    Django from storing "nan"/"NaN" strings or crashing on IntegerField.
+    """
+    for field in ("team", "line_code"):
+        val = production_data.get(field)
+        if val is None or pd.isna(val) or val == "":
+            production_data[field] = None
+    return production_data
 
 
 def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
@@ -539,7 +635,8 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
     instances = []
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
+        production_data = _normalize_nullable_fields(production_data)
         production_data = _truncate_charfields(SecondsGeneral, production_data)
         instances.append(SecondsGeneral(**production_data))
 
@@ -601,7 +698,7 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
 
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
         # Normalize percentage values that Excel stored as fractions
         for pct_field in ('percentage_pass', 'percentage_reject'):
             if pct_field in production_data:
