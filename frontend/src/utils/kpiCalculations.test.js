@@ -264,10 +264,10 @@ describe('calculateContainersByState', () => {
 });
 
 describe('calculateDefectRate', () => {
-  it('computes total defects / total sample * 100', () => {
+  it('computes total defects / total accepted+rejected * 100', () => {
     const result = calculateDefectRate(SAMPLE_ROWS);
     // Total defects = 12+5+20+2+10 = 49
-    // Total sample  = 100+50+80+40+60 = 330
+    // Total inspected = (90+10)+(45+5)+(70+10)+(38+2)+(50+10) = 330
     // Defect rate = 49/330*100 ≈ 14.8485
     expect(result).toBeCloseTo(14.8485, 2);
   });
@@ -276,8 +276,18 @@ describe('calculateDefectRate', () => {
     expect(calculateDefectRate([])).toBe(0);
   });
 
-  it('skips rows with zero sample', () => {
-    const result = calculateDefectRate([{ defects_total: 5, sample: 0 }]);
+  it('skips rows with zero inspected pieces', () => {
+    const result = calculateDefectRate([{ defects_total: 5, accepted: 0, rejected: 0, sample: 999 }]);
+    expect(result).toBe(0);
+  });
+
+  it('ignores sample when accepted+rejected differs', () => {
+    const result = calculateDefectRate([{ defects_total: 10, sample: 100, accepted: 30, rejected: 20 }]);
+    expect(result).toBe(20);
+  });
+
+  it('returns 0 when accepted+rejected is missing', () => {
+    const result = calculateDefectRate([{ defects_total: 5, sample: 100 }]);
     expect(result).toBe(0);
   });
 });

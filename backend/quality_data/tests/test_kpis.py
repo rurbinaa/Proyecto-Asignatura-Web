@@ -1291,7 +1291,7 @@ class DefectRateTest(KpiTestMixin, TestCase):
     """Tests for GET /quality/kpis/defect-rate/"""
 
     def test_returns_200_with_global_rate(self):
-        """Returns 200 with global defect rate: SUM(defects_total)/SUM(sample)*100."""
+        """Returns 200 with global defect rate: SUM(defects_total)/SUM(accepted+rejected)*100."""
         url = reverse("quality_data:kpi-defect-rate")
         response = self.client.get(url)
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
@@ -1308,16 +1308,18 @@ class DefectRateTest(KpiTestMixin, TestCase):
         self.assertEqual(response.data["value"], 0)
 
     def test_defect_rate_calculation(self):
-        """value equals SUM(defects_total) / SUM(sample) * 100 for QFA (plant)."""
+        """value equals SUM(defects_total) / SUM(accepted + rejected) * 100 for plant."""
         url = reverse("quality_data:kpi-defect-rate")
         response = self.client.get(url)
         agg = QualityQcFa.objects.aggregate(
             total_defects=Sum("defects_total"),
-            total_sample=Sum("sample"),
+            total_accepted=Sum("accepted"),
+            total_rejected=Sum("rejected"),
         )
+        total_inspected = (agg["total_accepted"] or 0) + (agg["total_rejected"] or 0)
         expected = (
-            round((agg["total_defects"] / agg["total_sample"]) * 100, 2)
-            if agg["total_sample"] and agg["total_sample"] > 0
+            round((agg["total_defects"] / total_inspected) * 100, 2)
+            if total_inspected > 0
             else 0
         )
         self.assertEqual(response.data["value"], expected)
@@ -1357,8 +1359,8 @@ class DefectRateTest(KpiTestMixin, TestCase):
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertEqual(response.data["value"], 0.0)
 
-    def test_defect_rate_qfa_preserves_sample_denominator(self):
-        """QFA plant records still use sample as denominator even when accepted+rejected differs."""
+    def test_defect_rate_qfa_uses_accepted_plus_rejected(self):
+        """QFA plant records now use accepted+rejected as denominator for parity with QFC."""
         # Isolate test: remove existing QFA fixtures so aggregation is predictable
         QualityQcFa.objects.all().delete()
 
@@ -1376,10 +1378,9 @@ class DefectRateTest(KpiTestMixin, TestCase):
         # Default context=plant for QFA
         response = self.client.get(url)
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
-        # Must use sample (100), NOT accepted+rejected (50)
-        # Expected: 10/100 * 100 = 10.0
-        # Wrong (QFC formula): 10/50 * 100 = 20.0
-        self.assertAlmostEqual(response.data["value"], 10.0, places=2)
+        # Must use accepted+rejected (50), NOT sample (100)
+        # Expected: 10/50 * 100 = 20.0
+        self.assertAlmostEqual(response.data["value"], 20.0, places=2)
 
 
 class DefectOperationalDtoBoundaryTest(KpiTestMixin, TestCase):
@@ -1877,10 +1878,10 @@ class KpiContractParityTest(KpiTestMixin, TestCase):
 
         self.assertEqual(
             set(response.data.keys()),
-            {"week", "team", "line_code", "style", "color", "customer", "batch", "include_dual_lines_default"},
+            {"week", "team", "line_code", "style", "color", "size", "customer", "batch", "include_dual_lines_default"},
         )
 
-        for key in ["week", "team", "style", "color", "customer", "batch", "line_code"]:
+        for key in ["week", "team", "style", "color", "size", "customer", "batch", "line_code"]:
             self.assertIsInstance(response.data[key], list)
             self.assertEqual(response.data[key], sorted(response.data[key]))
 

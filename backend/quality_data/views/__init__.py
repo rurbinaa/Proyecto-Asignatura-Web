@@ -1080,9 +1080,7 @@ class DefectRateView(KpiFilterMixin, APIView):
     GET /api/kpis/defect-rate/
 
     Source: QualityQcFa
-    Global average: SUM(defects_total) / SUM(sample) * 100
-    For QFC (customer) records, denominator is SUM(accepted + rejected)
-    instead of SUM(sample).
+    Global average: SUM(defects_total) / SUM(accepted + rejected) * 100
 
     Response: {"label": "Defect Rate", "value": 2.34}
     If total sample = 0 → value = 0
@@ -1091,10 +1089,9 @@ class DefectRateView(KpiFilterMixin, APIView):
     def get(self, request):
         queryset = self.get_filtered_queryset(QualityQcFa.objects.all())
 
-        # Conditional denominator: QFC uses accepted+rejected, QFA uses sample
         aggregated = queryset.aggregate(
             total_defects=Sum('defects_total'),
-            total_denominator=Sum(_qfc_conditional_denominator()),
+            total_denominator=Sum(F('accepted') + F('rejected')),
         )
 
         total_defects = aggregated['total_defects'] or 0
@@ -1873,17 +1870,17 @@ class VolatileKpiView(APIView):
         return [{"name": "Rejected", "data": rejected_data}]
 
     def _calc_defect_rate(self, rows):
-        """SUM(defects_total)/SUM(sample)*100 global"""
+        """SUM(defects_total)/SUM(accepted+rejected)*100 global"""
         df = pd.DataFrame(rows)
         if df.empty:
             return {"label": "Defect Rate", "value": 0}
 
         total_defects = df['defects_total'].sum()
-        total_sample = df['sample'].sum()
+        total_inspected = (df['accepted'].fillna(0) + df['rejected'].fillna(0)).sum()
 
         value = 0
-        if total_sample > 0:
-            value = round((total_defects / total_sample) * 100, 2)
+        if total_inspected > 0:
+            value = round((total_defects / total_inspected) * 100, 2)
 
         return {"label": "Defect Rate", "value": value}
 

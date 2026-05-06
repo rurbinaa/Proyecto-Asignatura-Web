@@ -5,6 +5,7 @@ import Navbar from './Components/Navbar.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
 import DashboardShell from './views/DashboardShell.jsx';
+import QualityReportsView from './views/QualityReportsView.jsx';
 import faviconUrl from './assets/RA-ICON_embed.svg?url';
 
 import { AuthProvider } from './contexts/AuthContext.jsx'; 
@@ -16,7 +17,7 @@ function AppContent() {
   const [activeView, setActiveView] = useState(() => {
     try {
       const stored = localStorage.getItem('rift-activeView');
-      return stored === 'excel' || stored === 'dashboard' ? stored : '';
+      return stored === 'excel' || stored === 'dashboard' || stored === 'reports' ? stored : '';
     } catch {
       return '';
     }
@@ -86,6 +87,10 @@ function AppContent() {
 
           {resolvedActiveView === 'dashboard' && (
             <DashboardShell volatileData={volatileData} volatileFile={volatileFile} />
+          )}
+
+          {resolvedActiveView === 'reports' && (
+            <QualityReportsView />
           )}
 
         </main>

@@ -185,7 +185,7 @@ class VolatileKpiViewTest(TestCase):
 
     def test_volatile_zero_division_safety_defect_rate(self):
         """
-        DataFrame with sample=0 should return value=0 for _calc_defect_rate
+        DataFrame with accepted+rejected=0 should return value=0 for _calc_defect_rate
         without crashing (division by zero handled).
         """
         rows = [
@@ -198,6 +198,19 @@ class VolatileKpiViewTest(TestCase):
         ]
         result = self.view._calc_defect_rate(rows)
         self.assertEqual(result['value'], 0)
+
+    def test_volatile_defect_rate_uses_accepted_plus_rejected(self):
+        """Defect rate in volatile mode uses accepted+rejected instead of sample."""
+        rows = [
+            {
+                'defects_total': 10,
+                'sample': 100,
+                'accepted': 30,
+                'rejected': 20,
+            },
+        ]
+        result = self.view._calc_defect_rate(rows)
+        self.assertEqual(result['value'], 20.0)
 
     def test_volatile_zero_division_safety_mixed_sample(self):
         """

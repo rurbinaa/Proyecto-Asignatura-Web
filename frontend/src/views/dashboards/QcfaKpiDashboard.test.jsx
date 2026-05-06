@@ -530,9 +530,9 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(screen.getByText('FilterBar')).toBeInTheDocument();
   });
 
-  it('renders ReportGenerator component', () => {
+  it('does NOT render ReportGenerator component (moved to standalone view)', () => {
     render(<QcfaKpiDashboard context="plant" />);
-    expect(screen.getByText('ReportGenerator')).toBeInTheDocument();
+    expect(screen.queryByText('ReportGenerator')).not.toBeInTheDocument();
   });
 
   it('renders Defects by Style × Type heatmap card', () => {

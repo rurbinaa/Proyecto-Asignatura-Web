@@ -49,6 +49,11 @@ describe('Sidebar', () => {
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
     });
 
+    it('shows Quality Reports button for manager role', () => {
+      render(<Sidebar {...defaultProps} userRole="manager" />);
+      expect(screen.getByText('Quality Reports')).toBeInTheDocument();
+    });
+
     it('does NOT show Touch Capture action anymore', () => {
       render(<Sidebar {...defaultProps} userRole="manager" />);
       expect(screen.queryByText('Touch Capture')).not.toBeInTheDocument();
@@ -66,6 +71,12 @@ describe('Sidebar', () => {
       render(<Sidebar {...defaultProps} userRole="manager" activeView="excel" />);
       const excelBtn = screen.getByText('Import Batches').closest('button');
       expect(excelBtn.classList.contains('active')).toBe(true);
+    });
+
+    it('adds active class to the activeView button (reports)', () => {
+      render(<Sidebar {...defaultProps} userRole="manager" activeView="reports" />);
+      const reportsBtn = screen.getByText('Quality Reports').closest('button');
+      expect(reportsBtn.classList.contains('active')).toBe(true);
     });
 
     it('removes active class from other buttons', () => {
@@ -115,6 +126,19 @@ describe('Sidebar', () => {
       );
       fireEvent.click(screen.getByText('Dashboard'));
       expect(setVolatileData).toHaveBeenCalledWith(null);
+    });
+
+    it('calls setActiveView with "reports" when Quality Reports is clicked', () => {
+      const setActiveView = vi.fn();
+      render(
+        <Sidebar
+          {...defaultProps}
+          userRole="manager"
+          setActiveView={setActiveView}
+        />,
+      );
+      fireEvent.click(screen.getByText('Quality Reports'));
+      expect(setActiveView).toHaveBeenCalledWith('reports');
     });
   });
 
@@ -181,9 +205,13 @@ describe('Sidebar', () => {
       const collapseBtn = container.querySelector('.top-toggle');
       fireEvent.click(collapseBtn);
       const navButtons = container.querySelectorAll('.sidebar-nav-item');
-      // Find the Dashboard button (second nav item for manager)
+      expect(navButtons.length).toBeGreaterThanOrEqual(3);
+      // Dashboard button
       const dashboardBtn = navButtons[1];
       expect(dashboardBtn).toHaveAttribute('title', 'Dashboard');
+      // Quality Reports button
+      const reportsBtn = navButtons[2];
+      expect(reportsBtn).toHaveAttribute('title', 'Quality Reports');
     });
   });
 

@@ -30,7 +30,6 @@ import DonutChartKpi from '../../Components/kpi/DonutChartKpi';
 import HeatmapKpi from '../../Components/kpi/HeatmapKpi';
 import KpiNumberCard from '../../Components/kpi/KpiNumberCard';
 import FilterBar from '../../Components/kpi/FilterBar';
-import ReportGenerator from '../../Components/ReportGenerator';
 import { normalizeScalarMetric } from '../dashboardMetricUtils';
 import '../DashboardView.css';
 import { withRoleProtection } from '../../hooks/withRoleProtection';
@@ -125,7 +124,7 @@ function buildExcelSection(opts) {
             title="AQL"
             value={defectRate !== null && !isNullOrError(defectRate) ? defectRate : null}
             unit="%"
-            label={context === 'customer' ? "defects / (pass + fail) × 100" : "defects / sample × 100"}
+            label="defects / (pass + fail) × 100"
           />
         </KpiCard>
       ),
@@ -725,8 +724,6 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
           context={context}
         />
       )}
-
-      <ReportGenerator />
 
       {!isLiveMode && (
         <div className="volatile-helper" role="status" aria-live="polite">

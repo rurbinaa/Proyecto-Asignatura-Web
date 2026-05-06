@@ -264,22 +264,22 @@ export function calculateContainersByState(_) {
 }
 
 /**
- * Overall defect rate: SUM(defects_total) / SUM(sample) * 100 across all rows.
- * Rows with zero sample are excluded from the sum to avoid Infinity.
+ * Overall defect rate: SUM(defects_total) / SUM(accepted + rejected) * 100 across all rows.
+ * Rows with zero inspected pieces are excluded from the sum to avoid Infinity.
  *
  * @param {object[]} rows
  * @returns {number}
  */
 export function calculateDefectRate(rows) {
   let totalDefects = 0;
-  let totalSample = 0;
+  let totalInspected = 0;
   for (const row of rows) {
     const defects = Number(row.defects_total) || 0;
-    const sample = Number(row.sample) || 0;
-    if (sample > 0) {
+    const inspected = (Number(row.accepted) || 0) + (Number(row.rejected) || 0);
+    if (inspected > 0) {
       totalDefects += defects;
-      totalSample += sample;
+      totalInspected += inspected;
     }
   }
-  return totalSample > 0 ? (totalDefects / totalSample) * 100 : 0;
+  return totalInspected > 0 ? (totalDefects / totalInspected) * 100 : 0;
 }

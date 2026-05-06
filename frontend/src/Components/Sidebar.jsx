@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import './Sidebar.css';
-import { Database, LogOut, ChevronLeft, ChevronRight, ChartBar } from 'lucide-react';
+import { Database, LogOut, ChevronLeft, ChevronRight, ChartBar, FileText } from 'lucide-react';
 import RA_ICON from '../assets/RA-ICON_embed.svg';
 
 export default function Sidebar({ userRole, activeView, setActiveView, setVolatileData = () => {}, onLogout }) {
@@ -46,6 +46,17 @@ export default function Sidebar({ userRole, activeView, setActiveView, setVolati
             >
               <ChartBar className="sidebar-nav-icon" />
               {!isCollapsed && <span>Dashboard</span>}
+            </button>
+          )}
+
+          {userRole === 'manager' && (
+            <button 
+              className={`sidebar-nav-item ${activeView === 'reports' ? 'active' : ''}`} 
+              title={isCollapsed ? "Quality Reports" : ""}
+              onClick={() => setActiveView('reports')}
+            >
+              <FileText className="sidebar-nav-icon" />
+              {!isCollapsed && <span>Quality Reports</span>}
             </button>
           )}
           
