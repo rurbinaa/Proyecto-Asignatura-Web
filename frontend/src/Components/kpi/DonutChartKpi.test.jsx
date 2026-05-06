@@ -202,12 +202,12 @@ describe('DonutChartKpi', () => {
       expect(labelFn({ name: 'B', percent: 0.05 })).toBe('');
     });
 
-    it('returns empty label in monosegment even when showSliceLabels is true', () => {
+    it('shows label in monosegment when showSliceLabels is true', () => {
       const data = [{ name: 'A', value: 100 }];
       render(<DonutChartKpi data={data} showSliceLabels />);
       expect(pieCalls.length).toBeGreaterThan(0);
       const labelFn = pieCalls[0].label;
-      expect(labelFn({ name: 'A', percent: 1.0 })).toBe('');
+      expect(labelFn({ name: 'A', percent: 1.0 })).toBe('A: 100.0%');
     });
   });
 
@@ -223,12 +223,12 @@ describe('DonutChartKpi', () => {
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
     });
 
-    it('handles items with missing value gracefully', () => {
+    it('filters out items with missing or zero value', () => {
       render(<DonutChartKpi data={[{ name: 'A' }, { name: 'B', value: 10 }]} />);
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
       const cells = screen.getByTestId('pie').querySelectorAll('[data-testid="cell"]');
-      // Both entries generate cells even when one has no value
-      expect(cells.length).toBe(2);
+      // Entry with no value is filtered out, only entry with value=10 remains
+      expect(cells.length).toBe(1);
     });
   });
 

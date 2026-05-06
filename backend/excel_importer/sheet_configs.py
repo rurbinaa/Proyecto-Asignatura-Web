@@ -222,7 +222,7 @@ SECONDS_A4_NOT_NUMERIC_COLUMNS = [
 SECONDS_GENERAL_REMAP = {
     'Date': 'date',
     'Week': 'week',
-    'Line': 'line',
+    'Line': 'team',
     'Customer': 'customer',
     'Style': 'style',
     'ArtCode': 'artcode',
@@ -265,7 +265,7 @@ SECONDS_GENERAL_NUMERIC_COLUMNS = [
 ]
 
 SECONDS_GENERAL_NOT_NUMERIC_COLUMNS = [
-    'date', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
+    'date', 'team', 'line_code', 'customer', 'style', 'artcode', 'color', 'po', 'size',
 ]
 
 SECONDS_GENERAL_AMOUNT_DEFEACTS_FIELDS = [
@@ -334,7 +334,7 @@ QC_FA_PLANT_EXPORT_COLUMNS = list(QC_FA_PLANT_REMAP.values())
 QC_FA_CUSTOMER_EXPORT_COLUMNS = list(QC_FA_CUSTOMER_REMAP.values())
 
 SECONDS_GENERAL_EXPORT_COLUMNS = [
-    'date', 'week', 'line', 'customer', 'style', 'artcode', 'color', 'po', 'size',
+    'date', 'week', 'team', 'line_code', 'customer', 'style', 'artcode', 'color', 'po', 'size',
     'produced', 'fixed', 'definitive',
     'picado_aguja', 'manchas_sucio', 'grasa', 'tono_tela', 'fuera_medidas',
     'enganche', 'costura_torcida_insegura', 'hoyos_costura', 'heat_transfer',

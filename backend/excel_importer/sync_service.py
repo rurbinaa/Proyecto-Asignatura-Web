@@ -569,11 +569,19 @@ def create_session_from_dataframes(dataframes):
     # ── Sanitize QC FA Customer team values at the import boundary ──
     # This normalizes 60→6 and rejects 0/invalid rows BEFORE preview
     # diffing and BEFORE persistence, ensuring preview/apply parity.
-    from excel_importer.handler_service import normalize_qc_fa_customer_rows
+    from excel_importer.handler_service import (
+        normalize_qc_fa_customer_rows,
+        normalize_seconds_general_rows,
+    )
 
     qfc_raw_rows = sheet_data_map.get("qc_fa_customer", [])
     qfc_normalized, qfc_import_warnings = normalize_qc_fa_customer_rows(qfc_raw_rows)
     sheet_data_map["qc_fa_customer"] = qfc_normalized
+
+    # ── Sanitize Seconds General team/line_code values at the import boundary ──
+    sg_raw_rows = sheet_data_map.get("seconds_general", [])
+    sg_normalized, sg_import_warnings = normalize_seconds_general_rows(sg_raw_rows)
+    sheet_data_map["seconds_general"] = sg_normalized
 
     # Store parsed data — prefer Redis for auto-TTL cleanup, fall back to JSONField
     session.redis_stored = False
@@ -655,9 +663,11 @@ def create_session_from_dataframes(dataframes):
         preview = getattr(session, preview_field)
         all_warnings.extend(preview.get("warnings", []))
     all_warnings.extend(container_warnings)
-    # Append QFC import sanitization warnings
+    # Append import sanitization warnings
     if qfc_import_warnings["message"]:
         all_warnings.append(qfc_import_warnings["message"])
+    if sg_import_warnings["message"]:
+        all_warnings.append(sg_import_warnings["message"])
     session.warnings = all_warnings
 
     session.save()
@@ -790,7 +800,7 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
         data[field] = row.get(field, 0)
     for field in (not_numeric_columns or []):
         if field not in fk_fields:
-            value = row.get(field, "UNKNOWN")
+            value = row.get(field, "")
             # Canonicalize QC FA date_1 at write time so parent rows always
             # carry an ISO date — this keeps defect matching deterministic.
             if model_class == QualityQcFa and field == "date_1":

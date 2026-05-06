@@ -23,7 +23,6 @@ export default function DonutChartKpi({
 
   const renderLabel = ({ name, percent }) => {
     if (!showSliceLabels || percent < minLabelPercent) return '';
-    if (isMonosegment) return '';
     return `${name}: ${(percent * 100).toFixed(1)}%`;
   };
 
@@ -38,7 +37,7 @@ export default function DonutChartKpi({
       <ResponsiveContainer width="100%" height={340}>
         <PieChart>
           <Pie
-            data={data}
+            data={nonZeroSlices}
             dataKey="value"
             nameKey="name"
             cx="50%"
@@ -49,7 +48,7 @@ export default function DonutChartKpi({
             label={renderLabel}
             labelLine={!isMonosegment}
           >
-            {data.map((entry, index) => (
+            {nonZeroSlices.map((entry, index) => (
               <Cell key={`${entry?.name ?? 'slice'}-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
