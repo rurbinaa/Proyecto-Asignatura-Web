@@ -51,6 +51,62 @@ SECONDS_A4_FILTER_KEYS = ("year", "week", "style", "color", "line", "cut_num")
 SECONDS_A4_NUMERIC_FILTER_KEYS = ("year", "week", "cut_num")
 
 
+class SecondsA4FilterMixin:
+    """Mixin that provides SecondsA4 queryset filtering from query parameters."""
+
+    def _get_filtered_a4_queryset(self, request):
+        """
+        Apply filters from request query params to a SecondsA4 queryset.
+
+        Returns a filtered QuerySet (or complete queryset if no filters applied).
+        """
+        qs = SecondsA4.objects.all()
+
+        year = request.query_params.get("year")
+        if year is not None:
+            try:
+                year_int = int(year)
+            except (ValueError, TypeError):
+                raise rest_framework_exceptions.ValidationError({
+                    "year": "Invalid value. It must be an integer."
+                })
+            qs = qs.filter(year__exact=year_int)
+
+        week = request.query_params.get("week")
+        if week is not None:
+            try:
+                week_int = int(week)
+            except (ValueError, TypeError):
+                raise rest_framework_exceptions.ValidationError({
+                    "week": "Invalid value. It must be an integer."
+                })
+            qs = qs.filter(week__exact=week_int)
+
+        style = request.query_params.get("style")
+        if style:
+            qs = qs.filter(style__exact=style)
+
+        color = request.query_params.get("color")
+        if color:
+            qs = qs.filter(color__name__exact=color)
+
+        line = request.query_params.get("line")
+        if line:
+            qs = qs.filter(line__exact=line)
+
+        cut_num = request.query_params.get("cut_num")
+        if cut_num is not None:
+            try:
+                cut_num_int = int(cut_num)
+            except (ValueError, TypeError):
+                raise rest_framework_exceptions.ValidationError({
+                    "cut_num": "Invalid value. It must be an integer."
+                })
+            qs = qs.filter(cut_num__exact=cut_num_int)
+
+        return qs
+
+
 class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
     """
     ViewSet for Seconds A4 analytics.
