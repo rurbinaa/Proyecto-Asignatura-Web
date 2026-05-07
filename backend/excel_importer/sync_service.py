@@ -604,6 +604,252 @@ def create_session_from_dataframes(dataframes):
     return None
 
 
+def _hydrate_session_from_redis(session):
+    """Fetch row data from Redis and populate session.*_data fields."""
+    from excel_importer.preview_cache import fetch_preview_data
+
+    sheet_names = [
+        "qc_fa_plant", "qc_fa_customer", "seconds_a4",
+        "seconds_general", "container",
+    ]
+    session_fields = [
+        "qc_fa_plant_data", "qc_fa_customer_data", "seconds_a4_data",
+        "seconds_general_data", "container_data",
+    ]
+
+    for sheet_name, field_name in zip(sheet_names, session_fields):
+        rows = fetch_preview_data(session.pk, sheet_name)
+        if rows is None:
+            raise RuntimeError(
+                f"Preview data for session {session.pk}, sheet '{sheet_name}' "
+                f"has expired or is unavailable. Please re-upload the file."
+            )
+        setattr(session, field_name, rows)
+
+
+def _get_key_field_names(key_builder):
+    """Extract field names used by a key builder function."""
+    import inspect
+    sig = inspect.signature(key_builder)
+    param_names = list(sig.parameters.keys())
+    if param_names and param_names[0] == 'row':
+        param_names = param_names[1:]
+    return param_names if param_names else ['id']
+
+
+def _get_numeric_columns(sheet_key):
+    """Get numeric column names for a sheet."""
+    from excel_importer.sheet_configs import (
+        QC_FA_PLANT_NUMERIC_COLUMNS,
+        QC_FA_CUSTOMER_NUMERIC_COLUMNS,
+        SECONDS_A4_NUMERIC_COLUMNS,
+        SECONDS_GENERAL_NUMERIC_COLUMNS,
+        CONTAINER_NUMERIC_COLUMNS,
+    )
+    mapping = {
+        "qc_fa_plant": QC_FA_PLANT_NUMERIC_COLUMNS,
+        "qc_fa_customer": QC_FA_CUSTOMER_NUMERIC_COLUMNS,
+        "seconds_a4": SECONDS_A4_NUMERIC_COLUMNS,
+        "seconds_general": SECONDS_GENERAL_NUMERIC_COLUMNS,
+        "container": CONTAINER_NUMERIC_COLUMNS,
+    }
+    return mapping.get(sheet_key, [])
+
+
+def _get_not_numeric_columns(sheet_key):
+    """Get non-numeric column names for a sheet."""
+    from excel_importer.sheet_configs import (
+        QC_FA_PLANT_NOT_NUMERIC_COLUMNS,
+        QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS,
+        SECONDS_A4_NOT_NUMERIC_COLUMNS,
+        SECONDS_GENERAL_NOT_NUMERIC_COLUMNS,
+        CONTAINER_NOT_NUMERIC_COLUMNS,
+    )
+    mapping = {
+        "qc_fa_plant": QC_FA_PLANT_NOT_NUMERIC_COLUMNS,
+        "qc_fa_customer": QC_FA_CUSTOMER_NOT_NUMERIC_COLUMNS,
+        "seconds_a4": SECONDS_A4_NOT_NUMERIC_COLUMNS,
+        "seconds_general": SECONDS_GENERAL_NOT_NUMERIC_COLUMNS,
+        "container": CONTAINER_NOT_NUMERIC_COLUMNS,
+    }
+    return mapping.get(sheet_key, [])
+
+
+def _get_defect_fields(sheet_key):
+    """Get defect field names for a sheet."""
+    from excel_importer.sheet_configs import (
+        QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
+        QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
+        CONTAINER_AMOUNT_DEFEACTS_FIELDS,
+    )
+    mapping = {
+        "qc_fa_plant": QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS,
+        "qc_fa_customer": QC_FA_CUSTOMER_AMOUNT_DEFEACTS_FIELDS,
+        "container": CONTAINER_AMOUNT_DEFEACTS_FIELDS,
+    }
+    return mapping.get(sheet_key)
+
+
+def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
+                    table_type=None, color_map=None):
+    """Build a model instance from a row dict."""
+    fk_fields = {"color"}
+
+    data = {}
+    for field in (numeric_columns or []):
+        data[field] = row.get(field, 0)
+    for field in (not_numeric_columns or []):
+        if field not in fk_fields:
+            value = row.get(field, "")
+            if model_class == QualityQcFa and field == "date_1":
+                canonical = canonicalize_qc_fa_date(value)
+                if canonical is not None:
+                    value = canonical
+            data[field] = value
+    if table_type:
+        data["table_type"] = table_type
+
+    if "color" in [f.name for f in model_class._meta.fields]:
+        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+            if color_obj is None:
+                color_obj, _ = Color.objects.get_or_create(
+                    name=color_name, defaults={"is_active": True}
+                )
+        else:
+            color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        data["color"] = color_obj
+
+    if model_class == Container:
+        data["date"] = normalize_container_date(row.get("date"))
+
+    return model_class(**data)
+
+
+def _update_instance(instance, row, numeric_columns, not_numeric_columns, color_map=None):
+    """Update an existing model instance with row data."""
+    fk_fields = {"color"}
+
+    for field in (numeric_columns or []):
+        if field in row:
+            setattr(instance, field, row[field])
+    for field in (not_numeric_columns or []):
+        if field in row and field not in fk_fields:
+            if isinstance(instance, Container) and field == "date":
+                continue
+            setattr(instance, field, row[field])
+
+    if hasattr(instance, "color") and "color" in row:
+        color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
+        if color_map is not None:
+            color_obj = color_map.get(color_name)
+            if color_obj is None:
+                color_obj, _ = Color.objects.get_or_create(
+                    name=color_name, defaults={"is_active": True}
+                )
+        else:
+            color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
+        instance.color = color_obj
+
+    if isinstance(instance, Container) and "date" in row:
+        normalized = normalize_container_date(row.get("date"))
+        if normalized is not None:
+            instance.date = normalized
+
+
+def _model_to_dict(obj):
+    """Convert a model instance to a dict for comparison with Excel rows."""
+    result = {}
+    for field in obj._meta.fields:
+        value = getattr(obj, field.name)
+        if hasattr(value, "pk"):
+            result[field.name] = value.pk if field.name != "color" else str(value)
+        else:
+            result[field.name] = value
+    return result
+
+
+def _rows_differ(row_a, row_b):
+    """Compare two row dicts, ignoring None values."""
+    all_keys = set(row_a.keys()) | set(row_b.keys())
+    for key in all_keys:
+        if key in ("id", "color"):
+            continue
+        val_a = row_a.get(key)
+        val_b = row_b.get(key)
+        if val_a is None or val_b is None:
+            continue
+        if str(val_a).strip() != str(val_b).strip():
+            return True
+    return False
+
+
+def _sync_defects(excel_rows, model_class, defect_fields, color_map=None):
+    """Sync defect through-table records for QC FA or Container."""
+    if not excel_rows or not defect_fields:
+        return None
+    return _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
+
+
+def _sync_defects_timewindow(excel_rows, model_class, table_type,
+                              defect_fields, excel_dates, color_map=None):
+    """Sync defects for time-window strategy."""
+    if not excel_rows or not defect_fields:
+        return None
+    return _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                                     table_type=table_type, color_map=color_map)
+
+
+def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                              table_type=None, color_map=None):
+    """Delegate defect creation to handler_service."""
+    import pandas as pd
+    from excel_importer.handler_service import (
+        bulk_insert as handler_bulk_insert_qcfa,
+        bulk_insert_container,
+    )
+    from quality_data.models import QualityQcFa, Container
+
+    if not excel_rows or not defect_fields:
+        return None
+
+    df = pd.DataFrame(excel_rows)
+    numeric_cols = _get_numeric_columns_for_model(model_class)
+    not_numeric_cols = _get_not_numeric_columns_for_model(model_class)
+
+    if table_type is None and model_class == QualityQcFa:
+        table_types = df['table_type'].unique() if 'table_type' in df.columns else []
+        table_type = table_types[0] if len(table_types) == 1 else 'QFA'
+
+    if model_class == QualityQcFa:
+        if defect_fields:
+            qc_defect_fields = defect_fields
+        elif table_type == 'QFC':
+            qc_defect_fields = _get_defect_fields('qc_fa_customer')
+        else:
+            qc_defect_fields = _get_defect_fields('qc_fa_plant')
+
+        return handler_bulk_insert_qcfa(
+            df,
+            numeric_cols,
+            not_numeric_cols,
+            qc_defect_fields or defect_fields,
+            table_type,
+            defects_only=True,
+            color_map=color_map,
+        )
+    elif model_class == Container:
+        container_defect_fields = _get_defect_fields('container') or defect_fields
+        bulk_insert_container(
+            df,
+            numeric_cols,
+            not_numeric_cols,
+            container_defect_fields or defect_fields
+        )
+    return None
+
+
 def _get_numeric_columns_for_model(model_class):
     """Get numeric columns for a specific model class."""
     from excel_importer.sheet_configs import (
