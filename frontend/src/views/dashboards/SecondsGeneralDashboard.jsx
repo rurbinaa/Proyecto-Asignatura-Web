@@ -105,7 +105,6 @@ export default function SecondsGeneralDashboard() {
     };
   }, [filters.includeDualLines]);
 
-  // ── Data loading ────────────────────────────────────────────
 
   const loadData = useCallback(async (filtersOverride) => {
     setLoading(true);
@@ -163,7 +162,6 @@ export default function SecondsGeneralDashboard() {
     loadData(filters);
   }, [filters, loadData]);
 
-  // ── Filter handlers ─────────────────────────────────────────
 
   const handleFilterChange = useCallback((newFilters) => {
     setFilters({
@@ -204,7 +202,6 @@ export default function SecondsGeneralDashboard() {
         context="customer"
       />
 
-      {/* ── Top row: 3 independent KPI cards ── */}
       <div
         style={{
           display: 'grid',

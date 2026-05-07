@@ -42,7 +42,6 @@ def _clean_integer_value(value):
     if isinstance(value, (int, float)):
         return int(value)
     if isinstance(value, str):
-        # Remove thousand separators (commas)
         cleaned = value.replace(',', '').strip()
         try:
             return int(float(cleaned))
@@ -264,7 +263,6 @@ def parse_defects_by_style(rows):
 
         top_defect_fields = sorted(defect_totals, key=defect_totals.get, reverse=True)[:5]
 
-        # Build heatmap: style × defect
         from collections import defaultdict
         agg = defaultdict(int)
         for row in rows:
@@ -299,7 +297,6 @@ def parse_containers_by_state(file_obj):
         if df.empty:
             return []
 
-        # Convert percentage_pass to numeric
         df['percentage_pass'] = pd.to_numeric(df['percentage_pass'], errors='coerce').fillna(0)
 
         # Group by ranges

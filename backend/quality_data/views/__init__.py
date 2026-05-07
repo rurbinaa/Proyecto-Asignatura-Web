@@ -1054,7 +1054,6 @@ class ContainersByStateView(KpiFilterMixin, APIView):
             .annotate(count=Count('id'))
         )
 
-        # Build result with proper labels
         range_labels = {
             1: "< 80%",
             2: "80-90%",
@@ -1456,7 +1455,6 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             .order_by('week')
         )
 
-        # Build series data
         aql_data = []
         for row in annotated:
             week = row['week']
@@ -1468,7 +1466,6 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         if not aql_data:
             return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
-        # Calculate simple trend line (average of differences)
         if len(aql_data) >= 2:
             differences = []
             for i in range(1, len(aql_data)):
@@ -1478,7 +1475,6 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         else:
             slope = 0
 
-        # Build trend line series (same x values, linear interpolation)
         trend_data = []
         if len(aql_data) >= 2:
             first_x = aql_data[0]['x']
@@ -2000,7 +1996,6 @@ class VolatileKpiView(APIView):
 
         filtered_weeks = sorted(weeks_set)
 
-        # Step 3: Build dense series
         result = []
         for name in top_names:
             data = [

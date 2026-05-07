@@ -732,10 +732,8 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
         </div>
       )}
 
-      {/* ── Section 1: Original Excel Reports ── */}
       {renderSection('Original Excel Reports', excelCards)}
 
-      {/* ── Section 2: Rift Analytics Insights ── */}
       {renderSection('Rift Analytics Insights', riftCards)}
     </div>
   );

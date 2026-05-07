@@ -136,7 +136,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
     loadData(filters);
   }, [loadData, filters]);
 
-  // ── Transform data for charts ─────────────────────────────────
 
   const execSummary = transformContainerExecutiveSummary(kpiData?.executiveSummary);
   const containersByStateData = transformContainersByState(kpiData?.containersByState);
@@ -150,7 +149,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
     ? execSummary.data[0]
     : null;
 
-  // ── State helper functions ────────────────────────────────────
 
   const isNullOrError = (data) => data == null || (data && (data.error || data.status === 'unavailable'));
 
@@ -183,7 +181,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
 
   const nullMessage = 'No disponible en modo rápido';
 
-  // ── Trend helpers ─────────────────────────────────────────────
 
   const renderTrendChart = (title, data, yAxisLabel, valueFormatter, lineColors) => (
     <KpiCard title={title} loading={loading} error={error}>
@@ -240,7 +237,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
 
       <div className="container-dashboard-layout">
 
-        {/* ── Executive Summary — full width 4-col sub-grid ── */}
         <div className="layout-full">
           <div className="container-summary-grid">
             <KpiCard title="Total Containers" loading={loading} error={error}>
@@ -294,7 +290,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
           </div>
         </div>
 
-        {/* ── Left column / Row 1 ── */}
         <div className="layout-left">
           <KpiCard title="Container State Distribution" loading={loading} error={error}>
             {isNullOrError(containersByStateData) ? (
@@ -311,12 +306,10 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
           </KpiCard>
         </div>
 
-        {/* ── Right block / Row 1 ── */}
         <div className="layout-right-wide">
           {renderTrendChart('Inspected Trend', inspectedTrendData, 'Inspected Palettes', formatPieces, ['#10b981'])}
         </div>
 
-        {/* ── Left column / Rows 2-3 ── */}
         <div className="layout-left layout-tall">
           {renderDefectStateCard('Top Defects', topDefectsData, (data) => (
             <BarChartKpi
@@ -338,12 +331,10 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
           ))}
         </div>
 
-        {/* ── Right block / Row 2 ── */}
         <div className="layout-right-wide">
           {renderTrendChart('Rejected Trend', rejectedTrendData, 'Rejected Palettes', formatPieces, ['#ef4444'])}
         </div>
 
-        {/* ── Right block / Row 3 ── */}
         <div className="layout-right-wide layout-right-start">
           {renderTrendChart('Pass Rate Trend', passRateTrendData, 'Pass Rate (%)', formatPercent, ['#8b5cf6'])}
         </div>

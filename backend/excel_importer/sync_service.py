@@ -175,7 +175,6 @@ def compute_preview_upsert(excel_rows, db_queryset, key_builder, date_field):
     Returns:
         dict with keys: new_count, modified_count, unchanged_count, total, dates
     """
-    # Build DB index by natural key
     db_index = {}
     for obj in db_queryset:
         row_dict = _model_to_dict(obj)
@@ -236,7 +235,6 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
         if d:
             excel_date_counts[d] = excel_date_counts.get(d, 0) + 1
 
-    # Build comparison and warnings
     date_comparison = {}
     warnings = []
 
@@ -353,7 +351,6 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
         ]
         model_class.objects.bulk_update(update_instances, update_fields, batch_size=1000)
 
-    # Handle defects if applicable
     if defect_fields:
         _sync_defects(deduped_rows, model_class, defect_fields, color_map=color_map)
 
@@ -407,7 +404,6 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
     if instances:
         model_class.objects.bulk_create(instances, batch_size=1000)
 
-    # Handle defects if applicable
     if defect_fields and table_type:
         stats = _sync_defects_timewindow(excel_rows, model_class, table_type,
                                           defect_fields, excel_dates,
@@ -554,7 +550,6 @@ def create_session_from_dataframes(dataframes):
 
     session = ExcelSyncSession()
 
-    # Prepare parsed data
     raw_container_rows = dataframes.get("container", [])
     container_rows, container_warnings = _normalize_container_rows(raw_container_rows)
 
@@ -811,7 +806,6 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
     if table_type:
         data["table_type"] = table_type
 
-    # Handle FK fields
     if "color" in [f.name for f in model_class._meta.fields]:
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
@@ -845,7 +839,6 @@ def _update_instance(instance, row, numeric_columns, not_numeric_columns, color_
                 continue
             setattr(instance, field, row[field])
 
-    # Handle FK fields
     if hasattr(instance, "color") and "color" in row:
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
@@ -886,7 +879,6 @@ def _rows_differ(row_a, row_b):
         val_b = row_b.get(key)
         if val_a is None or val_b is None:
             continue
-        # Normalize for comparison
         if str(val_a).strip() != str(val_b).strip():
             return True
     return False
