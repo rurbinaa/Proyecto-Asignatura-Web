@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const identity = (value) => value;
 
-export default function BarChartKpi({
+function BarChartKpi({
   data = [],
   title,
   horizontal = false,
@@ -101,3 +102,5 @@ export default function BarChartKpi({
     </div>
   );
 }
+
+export default memo(BarChartKpi);

@@ -3,6 +3,99 @@ import { render, screen } from '@testing-library/react';
 import KpiCard from './KpiCard';
 
 describe('KpiCard', () => {
+  describe('bodyMinHeight', () => {
+    it('applies bodyMinHeight to the card body reducing Masonry reflow risk', () => {
+      render(
+        <KpiCard title="Stable Card" bodyMinHeight={360}>
+          <span>Content</span>
+        </KpiCard>
+      );
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement).toBeInTheDocument();
+      expect(bodyElement.style.minHeight).toBe('360px');
+    });
+
+    it('preserves body minHeight across loading state when bodyMinHeight is set', () => {
+      render(
+        <KpiCard title="Loading Card" loading bodyMinHeight={360} />
+      );
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement).toBeInTheDocument();
+      expect(bodyElement.style.minHeight).toBe('360px');
+    });
+
+    it('preserves body minHeight across error state when bodyMinHeight is set', () => {
+      render(
+        <KpiCard title="Error Card" error="Fail" bodyMinHeight={360} />
+      );
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement).toBeInTheDocument();
+      expect(bodyElement.style.minHeight).toBe('360px');
+    });
+
+    it('preserves body minHeight across empty state when bodyMinHeight is set', () => {
+      render(
+        <KpiCard title="Empty Card" bodyMinHeight={360} />
+      );
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement).toBeInTheDocument();
+      expect(bodyElement.style.minHeight).toBe('360px');
+    });
+
+    it('preserves body minHeight when children + bodyMinHeight are set together', () => {
+      render(
+        <KpiCard title="Content Card" bodyMinHeight={360}>
+          <span data-testid="chart">Chart</span>
+        </KpiCard>
+      );
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement).toBeInTheDocument();
+      expect(bodyElement.style.minHeight).toBe('360px');
+      expect(screen.getByTestId('chart')).toBeInTheDocument();
+    });
+
+    it('defaults to 120px minHeight when bodyMinHeight is not provided (backward compat)', () => {
+      render(<KpiCard title="Default"><span>Content</span></KpiCard>);
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement).toBeInTheDocument();
+      expect(bodyElement.style.minHeight).toBe('120px');
+    });
+  });
+  describe('loadingLabel', () => {
+    it('shows custom label when loadingLabel prop is provided during loading', () => {
+      render(<KpiCard title="Chart Card" loading loadingLabel="Rendering chart…" />);
+      expect(screen.getByText('Rendering chart…')).toBeInTheDocument();
+    });
+
+    it('shows spinner alongside custom label when loadingLabel is provided', () => {
+      render(<KpiCard title="Chart Card" loading loadingLabel="Loading data…" />);
+      // Spinner should still be present
+      const spinner = document.querySelector('.kpi-loader');
+      expect(spinner).toBeInTheDocument();
+      expect(screen.getByText('Loading data…')).toBeInTheDocument();
+    });
+
+    it('does not show loadingLabel when not loading even if prop is passed', () => {
+      render(
+        <KpiCard title="Chart Card" loadingLabel="Rendering…">
+          <span>Content</span>
+        </KpiCard>
+      );
+      expect(screen.queryByText('Rendering…')).not.toBeInTheDocument();
+      expect(screen.getByText('Content')).toBeInTheDocument();
+    });
+
+    it('does not render loadingLabel text when loadingLabel prop is not provided (backward compat)', () => {
+      render(<KpiCard title="Basic Card" loading />);
+      // The spinner should still render
+      const spinner = document.querySelector('.kpi-loader');
+      expect(spinner).toBeInTheDocument();
+      // No custom text label should appear
+      expect(screen.queryByText('Rendering')).not.toBeInTheDocument();
+      expect(screen.queryByText('Loading')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Rendering', () => {
     it('renders title when provided', () => {
       render(<KpiCard title="Test Title" />);
@@ -16,14 +109,17 @@ describe('KpiCard', () => {
       expect(bodyElement.style.minHeight).toBe('120px');
     });
 
-    it('center content (loading/error/empty) preserves min-height of 168px', () => {
+    it('centers loading content vertically when loading prop is true', () => {
       render(<KpiCard title="Test Card" loading={true} />);
       const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
       expect(bodyElement).toBeInTheDocument();
-      // Body still 120px min, but center content inside has 168px min for vertical centering
-      expect(bodyElement.style.minHeight).toBe('120px');
-      const centerContent = bodyElement.querySelector('div[style*="min-height: 168px"]');
-      expect(centerContent).toBeInTheDocument();
+      // Body uses flex centering when loading
+      expect(bodyElement.style.display).toBe('flex');
+      expect(bodyElement.style.alignItems).toBe('center');
+      expect(bodyElement.style.justifyContent).toBe('center');
+      // Spinner is rendered via CSS class
+      const spinner = document.querySelector('.kpi-loader');
+      expect(spinner).toBeInTheDocument();
     });
 
     it('renders children when data is present', () => {
@@ -37,8 +133,8 @@ describe('KpiCard', () => {
 
     it('renders loading state when loading prop is true', () => {
       render(<KpiCard title="Loading Card" loading={true} />);
-      // Loading state shows a spinner div with animation
-      const spinner = document.querySelector('div[style*="animation"]');
+      // Loading state shows a spinner via CSS class
+      const spinner = document.querySelector('.kpi-loader');
       expect(spinner).toBeInTheDocument();
     });
 

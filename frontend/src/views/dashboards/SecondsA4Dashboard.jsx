@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axiosClient from '../../api/axiosClient';
 import KpiCard from '../../Components/kpi/KpiCard';
 import BarChartKpi from '../../Components/kpi/BarChartKpi';
@@ -14,35 +14,40 @@ const SECONDS_A4_BASE = '/quality/kpis/seconds-a4';
 const INITIAL_FILTERS = {
   year: '',
   line: '',
-  cut_num: '',
+};
+
+/**
+ * Reserved body heights for KpiCard stability — chart cards get a taller
+ * reserved height to match their chart body, while summary cards get a
+ * compact height. This prevents Masonry reflow across state transitions.
+ */
+const CARD_BODY_HEIGHTS = {
+  chart: 360,
+  summary: 180,
 };
 
 /**
  * Build query params from SecondsA4 filter state.
- * Omits empty values and maps to snake_case API params.
+ * Frontend scope intentionally exposes only year + line.
  */
 function buildFilterParams(filters) {
   const params = {};
   if (filters.year) params.year = filters.year;
   if (filters.line) params.line = filters.line;
-  if (filters.cut_num) params.cut_num = filters.cut_num;
   return params;
 }
 
 /**
- * SecondsA4Dashboard — Seconds A4 analytics view with year/line/cut filters.
+ * SecondsA4Dashboard — Seconds A4 analytics view with year/line filters.
  *
- * Fetches 8 analytics + filter-options from the Seconds A4 backend:
- *   - Executive Summary (KPI number cards for totals)
- *   - Weekly Trend (line chart)
- *   - Sew vs Fabric (donut chart)
- *   - Seconds by Style (bar chart)
- *   - Seconds by Color (bar chart)
- *   - Seconds by Line (bar chart)
- *   - Seconds by Cut # (bar chart)
- *   - Pass vs Fail by Week (line chart)
+ * Cards stay mounted at all times with a stable reserved body height so
+ * Masonry never reflows. An AbortController + monotonic request-id guard
+ * ensures only the latest fetch batch commits its data to state; any stale
+ * completions from superseded filter changes are silently ignored.
  *
- * Applies year, line, and cut_num filters to all endpoints.
+ * Card rendering follows the same pattern as other dashboard sheets:
+ * while loading, KpiCard shows a spinner; when data arrives, the chart or
+ * "No data available" content is rendered. No intermediate readiness gate.
  */
 export default function SecondsA4Dashboard() {
   const [filters, setFilters] = useState(INITIAL_FILTERS);
@@ -58,19 +63,41 @@ export default function SecondsA4Dashboard() {
   const [passFailWeekly, setPassFailWeekly] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [prevFetchKey, setPrevFetchKey] = useState('');
 
-  // Build a stable key for fetch deduplication
-  const buildFetchKey = (f) => `${f.year}|${f.line}|${f.cut_num}`;
+  // Minimum loading time so the spinner is visible even on cache hits
+  const LOADING_MIN_MS = 300;
+  const loadingStartRef = useRef(0);
 
-  // ── Fetch filter options (refetches when year/line/cut_num change) ──
+  // ── Stale-response guards ──────────────────────────────────
+  // Monotonic request id — incremented each loadData call so late
+  // completions from superseded filter batches are ignored.
+  const requestIdRef = useRef(0);
+
+  // AbortController ref for the analytics batch — aborted on every
+  // new loadData call so in-flight requests are cancelled early.
+  const analyticsAbortRef = useRef(null);
+
+  // AbortController ref for the filter-options fetch.
+  const filterOptsAbortRef = useRef(null);
+
+  // ── Fetch filter options (refetches when year/line change) ──
   useEffect(() => {
-    let cancelled = false;
+    // Abort any previous filter-options request
+    if (filterOptsAbortRef.current) {
+      filterOptsAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    filterOptsAbortRef.current = controller;
+
     const params = buildFilterParams(filters);
 
-    axiosClient.get(`${SECONDS_A4_BASE}/filter-options/`, { params })
+    axiosClient.get(`${SECONDS_A4_BASE}/filter-options/`, {
+      params,
+      signal: controller.signal,
+    })
       .then((res) => {
-        if (!cancelled) {
+        // Only accept if this controller is still the active one
+        if (filterOptsAbortRef.current === controller) {
           setFilterOptions(res.data);
         }
       })
@@ -79,15 +106,26 @@ export default function SecondsA4Dashboard() {
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [filters.year, filters.line, filters.cut_num]);
+  }, [filters.year, filters.line]);
 
   // ── Data loading ────────────────────────────────────────────
 
   const loadData = useCallback(async (filtersOverride) => {
+    // Abort any previous analytics batch
+    if (analyticsAbortRef.current) {
+      analyticsAbortRef.current.abort();
+    }
+
+    // Increment request id — this batch is now the active one
+    const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
+    analyticsAbortRef.current = controller;
+
     setLoading(true);
     setError(null);
+    loadingStartRef.current = performance.now();
 
     const params = buildFilterParams(filtersOverride);
 
@@ -102,39 +140,55 @@ export default function SecondsA4Dashboard() {
         cutRes,
         passFailRes,
       ] = await Promise.all([
-        axiosClient.get(`${SECONDS_A4_BASE}/executive-summary/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/weekly-trend/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/sew-vs-fab/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/by-style/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/by-color/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/by-line/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/by-cut/`, { params }),
-        axiosClient.get(`${SECONDS_A4_BASE}/pass-fail-weekly/`, { params }),
+        axiosClient.get(`${SECONDS_A4_BASE}/executive-summary/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/weekly-trend/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/sew-vs-fab/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/by-style/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/by-color/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/by-line/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/by-cut/`, { params, signal: controller.signal }),
+        axiosClient.get(`${SECONDS_A4_BASE}/pass-fail-weekly/`, { params, signal: controller.signal }),
       ]);
 
-      setExecutiveSummary(execRes.data);
-      setWeeklyTrend(trendRes.data);
-      setSewVsFab(mixRes.data);
-      setByStyle(styleRes.data);
-      setByColor(colorRes.data);
-      setByLine(lineRes.data);
-      setByCut(cutRes.data);
-      setPassFailWeekly(passFailRes.data);
-      setLoading(false);
+      // Only commit state if THIS batch is still the active one
+      if (requestIdRef.current === requestId) {
+        setExecutiveSummary(execRes.data);
+        setWeeklyTrend(trendRes.data);
+        setSewVsFab(mixRes.data);
+        setByStyle(styleRes.data);
+        setByColor(colorRes.data);
+        setByLine(lineRes.data);
+        setByCut(cutRes.data);
+        setPassFailWeekly(passFailRes.data);
+
+        // Ensure spinner is visible at least LOADING_MIN_MS
+        const elapsed = performance.now() - loadingStartRef.current;
+        if (elapsed < LOADING_MIN_MS) {
+          await new Promise((r) => setTimeout(r, LOADING_MIN_MS - elapsed));
+        }
+        setLoading(false);
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to load analytics');
-      setLoading(false);
+      // Ignore aborted requests — they are expected
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+      // Only surface errors for the active request
+      if (requestIdRef.current === requestId) {
+        setError(err.response?.data?.detail || err.message || 'Failed to load analytics');
+
+        // Ensure spinner is visible at least LOADING_MIN_MS
+        const elapsed = performance.now() - loadingStartRef.current;
+        if (elapsed < LOADING_MIN_MS) {
+          await new Promise((r) => setTimeout(r, LOADING_MIN_MS - elapsed));
+        }
+        setLoading(false);
+      }
     }
   }, []);
 
-  // Trigger data load when filters change (debounced by fetch key)
+  // Trigger data load when filters change
   useEffect(() => {
-    const key = buildFetchKey(filters);
-    if (key !== prevFetchKey) {
-      setPrevFetchKey(key);
-      loadData(filters);
-    }
-  }, [filters, loadData, prevFetchKey]);
+    loadData(filters);
+  }, [filters, loadData]);
 
   // ── Filter handlers ─────────────────────────────────────────
 
@@ -150,20 +204,29 @@ export default function SecondsA4Dashboard() {
     loadData(filters);
   }, [loadData, filters]);
 
-  // ── Derived data ─────────────────────────────────────────────
+  // ── Derived data (memoized) ────────────────────────────────
 
-  const totals = executiveSummary?.totals;
+  const totals = useMemo(
+    () => executiveSummary?.totals ?? null,
+    [executiveSummary],
+  );
 
-  const seriesForWeeklyTrend = weeklyTrend && weeklyTrend.length > 0
-    ? weeklyTrend.map((s) => ({
-        name: s.name || 'Total of 2DS',
-        data: s.data || [],
-      }))
-    : [];
+  const seriesForWeeklyTrend = useMemo(
+    () => (weeklyTrend && weeklyTrend.length > 0
+      ? weeklyTrend.map((s) => ({
+          name: s.name || 'Total of 2DS',
+          data: s.data || [],
+        }))
+      : []),
+    [weeklyTrend],
+  );
 
-  const sewVsFabForDonut = sewVsFab && sewVsFab.length > 0
-    ? sewVsFab.map((item) => ({ name: item.label, value: item.value }))
-    : [];
+  const sewVsFabForDonut = useMemo(
+    () => (sewVsFab && sewVsFab.length > 0
+      ? sewVsFab.map((item) => ({ name: item.label, value: item.value }))
+      : []),
+    [sewVsFab],
+  );
 
   return (
     <div className="dashboard-view">
@@ -190,7 +253,7 @@ export default function SecondsA4Dashboard() {
           marginBottom: '16px',
         }}
       >
-        <KpiCard title="Total of 2DS" loading={loading} error={error}>
+        <KpiCard title="Total of 2DS" loading={loading} error={error} bodyMinHeight={CARD_BODY_HEIGHTS.summary}>
           {totals ? (
             <KpiNumberCard
               title=""
@@ -204,7 +267,7 @@ export default function SecondsA4Dashboard() {
           )}
         </KpiCard>
 
-        <KpiCard title="Sew vs Fabric" loading={loading} error={error}>
+        <KpiCard title="Sew vs Fabric" loading={loading} error={error} bodyMinHeight={CARD_BODY_HEIGHTS.summary}>
           {totals ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '16px' }}>
               <KpiNumberCard
@@ -232,13 +295,9 @@ export default function SecondsA4Dashboard() {
         columnClassName="dashboard-masonry-column"
       >
         {/* Seconds by Week */}
-        <KpiCard title="Seconds by Week" loading={loading} error={error}>
+        <KpiCard title="Seconds by Week" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {seriesForWeeklyTrend.length > 0 ? (
-            <LineChartKpi
-              series={seriesForWeeklyTrend}
-              xAxisLabel="Week"
-              yAxisLabel="Total of 2DS"
-            />
+            <LineChartKpi series={seriesForWeeklyTrend} xAxisLabel="Week" yAxisLabel="Total of 2DS" />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}
@@ -247,13 +306,9 @@ export default function SecondsA4Dashboard() {
         </KpiCard>
 
         {/* Sew vs Fabric Mix */}
-        <KpiCard title="Sew vs Fabric Mix" loading={loading} error={error}>
+        <KpiCard title="Sew vs Fabric Mix" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {sewVsFabForDonut.length > 0 ? (
-            <DonutChartKpi
-              data={sewVsFabForDonut}
-              showSliceLabels
-              minLabelPercent={0}
-            />
+            <DonutChartKpi data={sewVsFabForDonut} showSliceLabels minLabelPercent={0} />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}
@@ -262,16 +317,9 @@ export default function SecondsA4Dashboard() {
         </KpiCard>
 
         {/* Seconds by Style */}
-        <KpiCard title="Seconds by Style" loading={loading} error={error}>
+        <KpiCard title="Seconds by Style" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {byStyle && byStyle.length > 0 ? (
-            <BarChartKpi
-              data={byStyle}
-              horizontal
-              color="#8b5cf6"
-              xAxisLabel="Total of 2DS"
-              yAxisLabel="Style"
-              tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']}
-            />
+            <BarChartKpi data={byStyle} horizontal color="#8b5cf6" xAxisLabel="Total of 2DS" yAxisLabel="Style" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}
@@ -280,15 +328,9 @@ export default function SecondsA4Dashboard() {
         </KpiCard>
 
         {/* Seconds by Color */}
-        <KpiCard title="Seconds by Color" loading={loading} error={error}>
+        <KpiCard title="Seconds by Color" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {byColor && byColor.length > 0 ? (
-            <BarChartKpi
-              data={byColor}
-              color="#06b6d4"
-              xAxisLabel="Color"
-              yAxisLabel="Total of 2DS"
-              tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']}
-            />
+            <BarChartKpi data={byColor} color="#06b6d4" xAxisLabel="Color" yAxisLabel="Total of 2DS" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}
@@ -297,16 +339,9 @@ export default function SecondsA4Dashboard() {
         </KpiCard>
 
         {/* Seconds by Line */}
-        <KpiCard title="Seconds by Line" loading={loading} error={error}>
+        <KpiCard title="Seconds by Line" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {byLine && byLine.length > 0 ? (
-            <BarChartKpi
-              data={byLine}
-              horizontal
-              color="#f97316"
-              xAxisLabel="Total of 2DS"
-              yAxisLabel="Lines"
-              tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']}
-            />
+            <BarChartKpi data={byLine} horizontal color="#f97316" xAxisLabel="Total of 2DS" yAxisLabel="Lines" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}
@@ -315,16 +350,9 @@ export default function SecondsA4Dashboard() {
         </KpiCard>
 
         {/* Seconds by Cut # */}
-        <KpiCard title="Seconds by Cut #" loading={loading} error={error}>
+        <KpiCard title="Seconds by Cut #" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {byCut && byCut.length > 0 ? (
-            <BarChartKpi
-              data={byCut}
-              horizontal
-              color="#14b8a6"
-              xAxisLabel="Total of 2DS"
-              yAxisLabel="Cut #"
-              tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']}
-            />
+            <BarChartKpi data={byCut} horizontal color="#14b8a6" xAxisLabel="Total of 2DS" yAxisLabel="Cut #" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}
@@ -333,12 +361,9 @@ export default function SecondsA4Dashboard() {
         </KpiCard>
 
         {/* Pass vs Fail by Week */}
-        <KpiCard title="Pass vs Fail by Week" loading={loading} error={error}>
+        <KpiCard title="Pass vs Fail by Week" loading={loading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={error}>
           {passFailWeekly && passFailWeekly.length > 0 ? (
-            <LineChartKpi
-              series={passFailWeekly}
-              yAxisLabel="Units"
-            />
+            <LineChartKpi series={passFailWeekly} yAxisLabel="Units" forceCategoricalXAxis />
           ) : (
             <div className="null-message">
               {loading ? 'Loading...' : 'No data available'}

@@ -2,7 +2,7 @@
  * SecondsA4FilterBar — Dedicated filter surface for Seconds A4 analytics.
  *
  * Accepts the same prop shape as FilterBar for DashboardShell compatibility
- * but only surfaces year, line, and cut_num filters relevant to Seconds A4.
+ * but only surfaces year and line filters relevant to Seconds A4.
  * Falls back to shared CSS from FilterBar.css.
  */
 import './FilterBar.css';
@@ -51,11 +51,6 @@ export default function SecondsA4FilterBar({ filters, onFilterChange, onReset, f
         <div className="filter-group">
           <label className="filter-label">Line</label>
           {renderSelect('line', 'Line', 'Select Line')}
-        </div>
-
-        <div className="filter-group">
-          <label className="filter-label">Cut Number</label>
-          {renderSelect('cut_num', 'Cut Number', 'Select Cut #')}
         </div>
 
         <div className="filter-group filter-group-actions">

@@ -452,6 +452,9 @@ describe('SecondsA4Dashboard', () => {
       // Should show loading indicators — KpiCard renders spinner when loading
       // (we can't easily check the spinner DOM via mock, so verify the header renders)
       expect(screen.getByText('Seconds A4 Analytics')).toBeInTheDocument();
+
+      // Regression: "No data available" must NOT appear while still loading
+      expect(screen.queryByText('No data available')).not.toBeInTheDocument();
     });
 
     it('shows No data messages when all endpoints return empty', async () => {
@@ -494,6 +497,232 @@ describe('SecondsA4Dashboard', () => {
 
       // With empty percentages, no percentage-related heading should render
       expect(screen.queryByText('Quality Metrics')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Stale response prevention', () => {
+    it('ignores stale analytics when filters change before first batch resolves', async () => {
+      // Use deferred promises to control resolution order
+      const resolvers = [];
+
+      axiosClient.get.mockImplementation(
+        () => new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+      );
+
+      render(<SecondsA4Dashboard />);
+
+      // First batch: 9 calls dispatched
+      await waitFor(() => {
+        expect(axiosClient.get).toHaveBeenCalledTimes(9);
+      });
+
+      // Change filter — triggers second batch (9 more calls)
+      screen.getByTestId('set-year-filter').click();
+
+      await waitFor(() => {
+        expect(axiosClient.get).toHaveBeenCalledTimes(18);
+      });
+
+      // We now have 18 pending promises:
+      // indices 0-8 = first batch (stale), 9-17 = second batch (should win)
+      // index 0 & 9 = filter-options, index 1 & 10 = executive-summary, etc.
+
+      // Resolve SECOND batch first with real data
+      resolvers[9]({ data: { year: [2025] } });  // filter-options
+      resolvers[10]({                             // executive-summary
+        data: {
+          totals: { total_of_2ds: 1234, seconds_by_sew: 800, seconds_by_fab: 434 },
+          percentages: [],
+        },
+      });
+      // Resolve remaining 7 analytics for second batch
+      for (let i = 11; i <= 17; i++) resolvers[i]({ data: [] });
+
+      // Wait for new data to render
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-1234')).toBeInTheDocument();
+      });
+
+      // NOW resolve FIRST batch with stale data
+      resolvers[1]({
+        data: {
+          totals: { total_of_2ds: 999, seconds_by_sew: 0, seconds_by_fab: 0 },
+          percentages: [],
+        },
+      });
+      for (let i = 0; i <= 8; i++) {
+        if (i !== 1) resolvers[i]({ data: {} });
+      }
+
+      // Give React a tick to process
+      await new Promise((r) => setTimeout(r, 50));
+
+      // The dashboard should STILL show the latest (1234), not stale (999)
+      expect(screen.getByText('KpiNumberCard-1234')).toBeInTheDocument();
+      expect(screen.queryByText('KpiNumberCard-999')).not.toBeInTheDocument();
+    });
+
+    it('ignores stale filter-options when superseded by newer filter change', async () => {
+      const resolvers = [];
+
+      axiosClient.get.mockImplementation(
+        () => new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+      );
+
+      render(<SecondsA4Dashboard />);
+
+      // First batch dispatched
+      await waitFor(() => {
+        expect(axiosClient.get).toHaveBeenCalledTimes(9);
+      });
+
+      // Resolve first batch filter-options immediately
+      resolvers[0]({ data: { year: [2025] } });
+      resolvers[1]({ data: { totals: { total_of_2ds: 100 } } });
+      for (let i = 2; i <= 8; i++) resolvers[i]({ data: [] });
+
+      // Wait for initial render
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-100')).toBeInTheDocument();
+      });
+
+      // Change filter again
+      screen.getByTestId('set-line-filter').click();
+
+      // Second batch dispatched
+      await waitFor(() => {
+        expect(axiosClient.get).toHaveBeenCalledTimes(18);
+      });
+
+      // Resolve second batch with specific data
+      resolvers[9]({ data: { year: [2025], line: ['L1'] } });
+      resolvers[10]({
+        data: {
+          totals: { total_of_2ds: 5678, seconds_by_sew: 3000, seconds_by_fab: 2678 },
+          percentages: [],
+        },
+      });
+      for (let i = 11; i <= 17; i++) resolvers[i]({ data: [] });
+
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-5678')).toBeInTheDocument();
+      });
+
+      // Stale value should be gone
+      expect(screen.queryByText('KpiNumberCard-100')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Loading partition (shell vs content)', () => {
+    it('renders card headers immediately while analytics are in flight', async () => {
+      // Hold analytics in-flight but resolve filter-options
+      const analyticsResolvers = [];
+
+      axiosClient.get.mockImplementation((url) => {
+        if (url.includes('filter-options')) {
+          return Promise.resolve({ data: { year: [2025] } });
+        }
+        return new Promise((resolve) => {
+          analyticsResolvers.push(resolve);
+        });
+      });
+
+      render(<SecondsA4Dashboard />);
+
+      // Card titles should render immediately (cards always mounted)
+      expect(screen.getByText('Total of 2DS')).toBeInTheDocument();
+      expect(screen.getByText('Seconds by Week')).toBeInTheDocument();
+
+      // Chart content should NOT be present yet (no data resolved)
+      expect(screen.queryByText('KpiNumberCard')).not.toBeInTheDocument();
+
+      // Resolve ALL analytics deferred promises
+      // analyticsResolvers[0] = executive-summary (needs real data)
+      analyticsResolvers[0]({
+        data: {
+          totals: { total_of_2ds: 1234, seconds_by_sew: 800, seconds_by_fab: 434 },
+        },
+      });
+      // Remaining 7 resolve with empty data
+      for (let i = 1; i < analyticsResolvers.length; i++) {
+        analyticsResolvers[i]({ data: [] });
+      }
+
+      // Chart content should now appear
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-1234')).toBeInTheDocument();
+      });
+    });
+
+    it('shows chart content only for the latest accepted fetch, not in-flight reloads', async () => {
+      const batch1Resolvers = [];
+      const batch2Resolvers = [];
+      let currentBatch = null;
+
+      axiosClient.get.mockImplementation((url) => {
+        if (url.includes('filter-options')) {
+          return Promise.resolve({ data: { year: [2025] } });
+        }
+        if (currentBatch === null || currentBatch === 1) {
+          return new Promise((resolve) => {
+            batch1Resolvers.push(resolve);
+          });
+        }
+        return new Promise((resolve) => {
+          batch2Resolvers.push(resolve);
+        });
+      });
+
+      render(<SecondsA4Dashboard />);
+
+      // Wait for first batch
+      await waitFor(() => {
+        expect(axiosClient.get).toHaveBeenCalledTimes(9);
+      });
+
+      // Switch to batch 2 before clicking
+      currentBatch = 2;
+
+      // Change filter
+      screen.getByTestId('set-year-filter').click();
+
+      await waitFor(() => {
+        expect(axiosClient.get).toHaveBeenCalledTimes(18);
+      });
+
+      // Resolve SECOND batch first (the data that should win)
+      batch2Resolvers[0]({
+        data: {
+          totals: { total_of_2ds: 5678, seconds_by_sew: 3000, seconds_by_fab: 2678 },
+        },
+      });
+      for (let i = 1; i < batch2Resolvers.length; i++) {
+        batch2Resolvers[i]({ data: [] });
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-5678')).toBeInTheDocument();
+      });
+
+      // Now resolve first batch (stale) — should not change display
+      batch1Resolvers[0]({
+        data: {
+          totals: { total_of_2ds: 100 },
+        },
+      });
+      for (let i = 1; i < batch1Resolvers.length; i++) {
+        batch1Resolvers[i]({ data: [] });
+      }
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Still shows the latest batch data
+      expect(screen.getByText('KpiNumberCard-5678')).toBeInTheDocument();
+      expect(screen.queryByText('KpiNumberCard-100')).not.toBeInTheDocument();
     });
   });
 

@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const identity = (value) => value;
 
-export default function DonutChartKpi({
+function DonutChartKpi({
   data = [],
   title,
   valueFormatter = identity,
@@ -70,3 +71,5 @@ export default function DonutChartKpi({
     </div>
   );
 }
+
+export default memo(DonutChartKpi);

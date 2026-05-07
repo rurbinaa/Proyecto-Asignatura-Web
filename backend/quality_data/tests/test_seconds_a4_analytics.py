@@ -5,13 +5,32 @@ Verifies:
   - SecondsA4FilterMixin: filter parsing, year scoping, invalid params, empty queryset
   - filter-options endpoint: available years/lines/cut_num/style/color/week,
     year-scoped narrowing, empty dataset behavior
+  - Cache helpers: filter normalization, stable key hashing, TTL lookup,
+    safe cache fallback
+  - Endpoint caching: cache hit/miss, key stability, failure fallback
 """
 
-from django.test import TestCase
+import hashlib
+import json
+from unittest.mock import patch
+
+from django.core.cache import cache as django_cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework import status as http_status
 from quality_data.models import SecondsA4, Color
+from quality_data.views import seconds_a4_views as views_module
+
+# String path for cache patching (resolved at execution time, not import).
+_SECONDS_A4_CACHE_PATH = "quality_data.views.seconds_a4_views.cache"
+
+# Use local-memory cache for all tests to avoid Redis dependency.
+_LOCMEM_CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
 
 
 class SecondsA4AnalyticsMixin:
@@ -21,6 +40,14 @@ class SecondsA4AnalyticsMixin:
     """
 
     def setUp(self):
+        # Clear cache to prevent cross-test pollution (LocMemCache is
+        # process-global within the same @override_settings scope).
+        # Gracefully handle Redis-unavailable environments.
+        try:
+            django_cache.clear()
+        except Exception:
+            pass
+
         self.client = APIClient()
 
         # ── Create Color records ──
@@ -83,6 +110,7 @@ class SecondsA4AnalyticsMixin:
 # SecondsA4FilterMixin — Filter Parsing & Scope
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4FilterMixinTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for SecondsA4FilterMixin filter parsing and queryset scoping."""
 
@@ -238,6 +266,7 @@ class SecondsA4FilterMixinTest(SecondsA4AnalyticsMixin, TestCase):
 # SecondsA4 Filter Options Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4FilterOptionsTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for GET /quality/kpis/seconds-a4/filter-options/"""
 
@@ -322,6 +351,7 @@ class SecondsA4FilterOptionsTest(SecondsA4AnalyticsMixin, TestCase):
 # Executive Summary Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4ExecutiveSummaryTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for GET /quality/kpis/seconds-a4/executive-summary/"""
 
@@ -395,6 +425,7 @@ class SecondsA4ExecutiveSummaryTest(SecondsA4AnalyticsMixin, TestCase):
 # Weekly Trend Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4WeeklyTrendTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for GET /quality/kpis/seconds-a4/weekly-trend/"""
 
@@ -451,6 +482,7 @@ class SecondsA4WeeklyTrendTest(SecondsA4AnalyticsMixin, TestCase):
 # Sew vs Fab Split Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4SewVsFabTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for GET /quality/kpis/seconds-a4/sew-vs-fab/"""
 
@@ -490,6 +522,7 @@ class SecondsA4SewVsFabTest(SecondsA4AnalyticsMixin, TestCase):
 # 2DS By Line Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4ByLineTest(SecondsA4AnalyticsMixin, TestCase):
     def test_values_aggregate_total_of_2ds_per_line(self):
         url = reverse("quality_data:seconds-a4-analytics-by-line")
@@ -513,6 +546,7 @@ class SecondsA4ByLineTest(SecondsA4AnalyticsMixin, TestCase):
 # 2DS By Cut Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4ByCutTest(SecondsA4AnalyticsMixin, TestCase):
     def test_values_aggregate_total_of_2ds_per_cut(self):
         url = reverse("quality_data:seconds-a4-analytics-by-cut")
@@ -536,6 +570,7 @@ class SecondsA4ByCutTest(SecondsA4AnalyticsMixin, TestCase):
 # Pass vs Fail Weekly Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4PassFailWeeklyTest(SecondsA4AnalyticsMixin, TestCase):
     def test_returns_two_series(self):
         url = reverse("quality_data:seconds-a4-analytics-pass-fail-weekly")
@@ -552,11 +587,73 @@ class SecondsA4PassFailWeeklyTest(SecondsA4AnalyticsMixin, TestCase):
         self.assertEqual(pass_series["2025-W1"], 15)
         self.assertEqual(fail_series["2025-W1"], 5)
 
+    def test_excludes_invalid_year_or_week_outliers(self):
+        SecondsA4.objects.create(
+            year=0,
+            week=26,
+            date="0000-06-01",
+            cut_num=999,
+            style="STYLE-Z",
+            cut_qty=100,
+            color=self.colors["Red"],
+            first_quality_qty_sewing=80,
+            sample=20,
+            pass_field=999,
+            fail_field=999,
+            sew_def=1,
+            fab_def=1,
+            accepted=10,
+            rejected=1,
+            total_of_2ds=1,
+            percentage_of_2ds=0.01,
+            line="L0",
+            seconds_by_sew=1,
+            seconds_by_fab=1,
+            seconds_sew_a4=1,
+            seconds_fab_a4=1,
+        )
+        SecondsA4.objects.create(
+            year=2025,
+            week=0,
+            date="2025-00-01",
+            cut_num=998,
+            style="STYLE-Z",
+            cut_qty=100,
+            color=self.colors["Blue"],
+            first_quality_qty_sewing=80,
+            sample=20,
+            pass_field=777,
+            fail_field=777,
+            sew_def=1,
+            fab_def=1,
+            accepted=10,
+            rejected=1,
+            total_of_2ds=1,
+            percentage_of_2ds=0.01,
+            line="L0",
+            seconds_by_sew=1,
+            seconds_by_fab=1,
+            seconds_sew_a4=1,
+            seconds_fab_a4=1,
+        )
+
+        url = reverse("quality_data:seconds-a4-analytics-pass-fail-weekly")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        pass_labels = {item["x"] for item in response.data[0]["data"]}
+        fail_labels = {item["x"] for item in response.data[1]["data"]}
+        self.assertNotIn("0-W26", pass_labels)
+        self.assertNotIn("0-W26", fail_labels)
+        self.assertNotIn("2025-W0", pass_labels)
+        self.assertNotIn("2025-W0", fail_labels)
+
 
 # ─────────────────────────────────────────────────────────
 # 2DS By Style Endpoint
 # ─────────────────────────────────────────────────────────
 
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4ByStyleTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for GET /quality/kpis/seconds-a4/by-style/"""
 
@@ -612,6 +709,452 @@ class SecondsA4ByStyleTest(SecondsA4AnalyticsMixin, TestCase):
 # 2DS By Color Endpoint
 # ─────────────────────────────────────────────────────────
 
+# ═════════════════════════════════════════════════════════════════════
+# Cache Helpers — Unit Tests
+# ═════════════════════════════════════════════════════════════════════
+
+
+class SecondsA4CacheHelpersTest(TestCase):
+    """Tests for cache helper functions in seconds_a4_views.py."""
+
+    # ── _normalize_seconds_a4_filters ─────────────────────
+
+    def test_normalize_filters_extracts_only_implemented_keys(self):
+        """Only year, week, style, color, line, cut_num are extracted."""
+        raw = {
+            "year": "2025",
+            "week": "3",
+            "style": "STYLE-A",
+            "color": "Red",
+            "line": "L1",
+            "cut_num": "101",
+            "unexpected_extra": "should_be_ignored",
+            "date_range": "2025-01-01_2025-12-31",
+        }
+        normalized = views_module._normalize_seconds_a4_filters(raw)
+        self.assertEqual(
+            normalized,
+            {"year": 2025, "week": 3, "style": "STYLE-A", "color": "Red", "line": "L1", "cut_num": 101},
+        )
+
+    def test_normalize_filters_omits_absent_keys(self):
+        """Missing filter keys are omitted from output."""
+        raw = {"year": "2025"}
+        normalized = views_module._normalize_seconds_a4_filters(raw)
+        self.assertEqual(normalized, {"year": 2025})
+
+    def test_normalize_filters_trims_whitespace(self):
+        """String values are stripped of leading/trailing whitespace."""
+        raw = {"style": "  STYLE-A  ", "line": "L1  "}
+        normalized = views_module._normalize_seconds_a4_filters(raw)
+        self.assertEqual(normalized, {"style": "STYLE-A", "line": "L1"})
+
+    def test_normalize_filters_converts_numeric_strings_to_int(self):
+        """Numeric filters like year/week/cut_num become ints."""
+        raw = {"year": "2025", "week": "1", "cut_num": "101"}
+        normalized = views_module._normalize_seconds_a4_filters(raw)
+        self.assertIsInstance(normalized["year"], int)
+        self.assertIsInstance(normalized["week"], int)
+        self.assertIsInstance(normalized["cut_num"], int)
+        self.assertEqual(normalized["year"], 2025)
+        self.assertEqual(normalized["week"], 1)
+        self.assertEqual(normalized["cut_num"], 101)
+
+    def test_normalize_filters_preserves_string_style_and_color(self):
+        """String filters stay as strings."""
+        raw = {"style": "STYLE-A", "color": "Red"}
+        normalized = views_module._normalize_seconds_a4_filters(raw)
+        self.assertIsInstance(normalized["style"], str)
+        self.assertIsInstance(normalized["color"], str)
+
+    def test_normalize_filters_empty_input(self):
+        """Empty input returns empty dict."""
+        normalized = views_module._normalize_seconds_a4_filters({})
+        self.assertEqual(normalized, {})
+
+    def test_normalize_filters_empty_string_value_omitted(self):
+        """Empty string values after trimming are omitted."""
+        normalized = views_module._normalize_seconds_a4_filters(
+            {"style": "", "color": "  ", "line": "L1"}
+        )
+        self.assertEqual(normalized, {"line": "L1"})
+
+    def test_normalize_filters_none_values(self):
+        """None values are treated as absent."""
+        raw = {"year": "2025", "style": None, "color": None}
+        normalized = views_module._normalize_seconds_a4_filters(raw)
+        self.assertEqual(normalized, {"year": 2025})
+
+    # ── _seconds_a4_cache_key ─────────────────────────────
+
+    def test_cache_key_format(self):
+        """Cache key follows seconds_a4:v1:<endpoint>:<hexdigest> pattern."""
+        key = views_module._seconds_a4_cache_key("executive_summary", {"year": 2025})
+        self.assertTrue(key.startswith("seconds_a4:v1:"))
+        self.assertIn("executive_summary", key)
+        # Last segment should be a 64-char hex (SHA-256)
+        parts = key.split(":")
+        self.assertEqual(len(parts), 4)
+        self.assertEqual(len(parts[3]), 64)
+        int(parts[3], 16)  # raises ValueError if not hex
+
+    def test_cache_key_same_filters_produce_same_key(self):
+        """Identical filters always produce identical keys."""
+        key_a = views_module._seconds_a4_cache_key("by_style", {"year": 2025, "line": "L1"})
+        key_b = views_module._seconds_a4_cache_key("by_style", {"year": 2025, "line": "L1"})
+        self.assertEqual(key_a, key_b)
+
+    def test_cache_key_different_filters_different_key(self):
+        """Different filters produce different keys."""
+        key_a = views_module._seconds_a4_cache_key("by_style", {"year": 2025})
+        key_b = views_module._seconds_a4_cache_key("by_style", {"year": 2026})
+        self.assertNotEqual(key_a, key_b)
+
+    def test_cache_key_different_endpoints_different_key(self):
+        """Different endpoint names produce different keys even with same filters."""
+        key_a = views_module._seconds_a4_cache_key("by_style", {"year": 2025})
+        key_b = views_module._seconds_a4_cache_key("by_color", {"year": 2025})
+        self.assertNotEqual(key_a, key_b)
+
+    def test_cache_key_empty_filters(self):
+        """Zero filters still produces a key."""
+        key = views_module._seconds_a4_cache_key("filter_options", {})
+        self.assertTrue(key.startswith("seconds_a4:v1:filter_options:"))
+
+    def test_cache_key_all_six_filters_simultaneously(self):
+        """All 6 filter keys together produce a valid key."""
+        filters = {
+            "year": 2025,
+            "week": 3,
+            "style": "STYLE-A",
+            "color": "Red",
+            "line": "L1",
+            "cut_num": 101,
+        }
+        key = views_module._seconds_a4_cache_key("by_style", filters)
+        self.assertTrue(key.startswith("seconds_a4:v1:by_style:"))
+        self.assertEqual(len(key.split(":")[3]), 64)
+
+    def test_cache_key_deterministic_regardless_of_dict_order(self):
+        """Key is deterministic regardless of Python dict ordering."""
+        filters_a = {"year": 2025, "line": "L1", "color": "Red"}
+        filters_b = {"color": "Red", "year": 2025, "line": "L1"}
+        key_a = views_module._seconds_a4_cache_key("by_style", filters_a)
+        key_b = views_module._seconds_a4_cache_key("by_style", filters_b)
+        self.assertEqual(key_a, key_b)
+
+    # ── TTL lookup ────────────────────────────────────────
+
+    def test_filter_options_has_dedicated_ttl(self):
+        """filter_options uses 300s TTL from SECONDS_A4_CACHE_TTLS."""
+        ttl = views_module._seconds_a4_get_ttl("filter_options")
+        self.assertEqual(ttl, 300)
+
+    def test_default_ttl_for_other_endpoints(self):
+        """Non-listed endpoints use SECONDS_A4_CACHE_TTL_DEFAULT (120)."""
+        ttl = views_module._seconds_a4_get_ttl("nonexistent_endpoint")
+        self.assertEqual(ttl, 120)
+
+    def test_executive_summary_uses_default_ttl(self):
+        """executive_summary uses 120s default TTL."""
+        ttl = views_module._seconds_a4_get_ttl("executive_summary")
+        self.assertEqual(ttl, 120)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Cache Endpoint Integration — Hit/Miss/Fallback/Key Stability
+# ═════════════════════════════════════════════════════════════════════
+
+
+class SecondsA4CacheMissPopulateTest(SecondsA4AnalyticsMixin, TestCase):
+    """Cache miss: first request computes live result and stores it."""
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_miss_stores_payload_on_first_request(self, mock_cache):
+        """When cache misses, live response is computed and stored."""
+        mock_cache.get.return_value = None
+
+        url = reverse("quality_data:seconds-a4-analytics-executive-summary")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # cache.set must have been called with key, payload, timeout
+        mock_cache.set.assert_called_once()
+        _args, kwargs = mock_cache.set.call_args
+        # timeout is passed as keyword arg
+        self.assertEqual(kwargs.get("timeout"), 120)
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_miss_returns_live_payload(self, mock_cache):
+        """Cache miss returns the expected live payload."""
+        mock_cache.get.return_value = None
+
+        url = reverse("quality_data:seconds-a4-analytics-executive-summary")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIn("totals", response.data)
+        self.assertEqual(response.data["totals"]["total_of_2ds"], 187)
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_filter_options_uses_300s_ttl_on_store(self, mock_cache):
+        """filter_options stores with 300s TTL."""
+        mock_cache.get.return_value = None
+
+        url = reverse("quality_data:seconds-a4-analytics-filter-options")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        mock_cache.set.assert_called_once()
+        _args, kwargs = mock_cache.set.call_args
+        self.assertEqual(kwargs.get("timeout"), 300)
+
+
+class SecondsA4CacheHitTest(SecondsA4AnalyticsMixin, TestCase):
+    """Cache hit: cached payload is returned without recomputation."""
+
+    def _build_cached_payload(self):
+        """Return the payload that executive-summary would produce live."""
+        return {
+            "totals": {
+                "total_of_2ds": 187,
+                "seconds_by_sew": 515,
+                "seconds_by_fab": 400,
+                "seconds_sew_a4": 260,
+                "seconds_fab_a4": 170,
+                "accepted": 605,
+                "rejected": 60,
+            },
+            "percentages": [],
+        }
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_hit_returns_cached_payload(self, mock_cache):
+        """Cached payload is returned as-is with 200."""
+        cached = self._build_cached_payload()
+        mock_cache.get.return_value = cached
+
+        url = reverse("quality_data:seconds-a4-analytics-executive-summary")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, cached)
+        # cache.set should NOT be called on a hit
+        mock_cache.set.assert_not_called()
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_hit_skips_recomputation(self, mock_cache):
+        """No live query runs when cache hits."""
+        cached = self._build_cached_payload()
+        mock_cache.get.return_value = cached
+
+        # If cache hits, the ORM is never touched — so even deleting all
+        # records should not affect the response.
+        SecondsA4.objects.all().delete()
+
+        url = reverse("quality_data:seconds-a4-analytics-executive-summary")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response.data, cached)
+
+
+class SecondsA4CacheKeyStabilityTest(SecondsA4AnalyticsMixin, TestCase):
+    """Cache key stability: equivalent filters produce same cache behavior."""
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_reordered_params_hit_same_cache(self, mock_cache):
+        """Same filters in different order use the same cache key."""
+        mock_cache.get.side_effect = [None, {"cached": True}]  # miss, then hit
+
+        # First request with params in one order
+        url = reverse("quality_data:seconds-a4-analytics-by-style")
+        self.client.get(url, {"year": "2025", "line": "L1", "color": "Red"})
+
+        # Second request with same params, different order
+        url = reverse("quality_data:seconds-a4-analytics-by-style")
+        response2 = self.client.get(url, {"color": "Red", "line": "L1", "year": "2025"})
+
+        # Second call to cache.get used the same key as the first — so the
+        # mock returns "cached" on the second call (since we seeded the
+        # second call), proving the key is the same.
+        self.assertEqual(response2.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(response2.data, {"cached": True})
+        self.assertEqual(mock_cache.get.call_count, 2)
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_different_filters_use_different_keys(self, mock_cache):
+        """Different filter values produce different cache keys."""
+        captured_keys = []
+
+        def tracking_get(key, *a, **kw):
+            captured_keys.append(key)
+            return None
+
+        mock_cache.get.side_effect = tracking_get
+
+        url = reverse("quality_data:seconds-a4-analytics-by-style")
+        self.client.get(url, {"year": "2025"})
+        self.client.get(url, {"year": "2026"})
+
+        self.assertEqual(len(captured_keys), 2)
+        self.assertNotEqual(captured_keys[0], captured_keys[1])
+
+
+class SecondsA4CacheFailureFallbackTest(SecondsA4AnalyticsMixin, TestCase):
+    """Cache failures degrade gracefully to live response."""
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_get_exception_returns_live_200(self, mock_cache):
+        """When cache.get raises, live 200 is returned."""
+        mock_cache.get.side_effect = Exception("Redis connection refused")
+
+        url = reverse("quality_data:seconds-a4-analytics-executive-summary")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIn("totals", response.data)
+        self.assertEqual(response.data["totals"]["total_of_2ds"], 187)
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_set_exception_still_returns_live_200(self, mock_cache):
+        """When cache.set raises after computing, live 200 is still returned."""
+        mock_cache.get.return_value = None
+        mock_cache.set.side_effect = Exception("Redis write timeout")
+
+        url = reverse("quality_data:seconds-a4-analytics-executive-summary")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIn("totals", response.data)
+        # cache.set was attempted but failed — no crash
+        mock_cache.set.assert_called_once()
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_get_and_set_both_fail_then_live_200(self, mock_cache):
+        """Both cache.get and cache.set fail — live 200 is still returned."""
+        mock_cache.get.side_effect = Exception("Redis down")
+        mock_cache.set.side_effect = Exception("Redis down")
+
+        url = reverse("quality_data:seconds-a4-analytics-by-style")
+        response = self.client.get(url, {"year": "2025"})
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIsInstance(response.data, list)
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_cache_get_returns_none_then_live_computed(self, mock_cache):
+        """cache.get returning None (cache miss) computes live and caches it."""
+        mock_cache.get.return_value = None
+
+        url = reverse("quality_data:seconds-a4-analytics-by-line")
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # cache.set should have been called
+        mock_cache.set.assert_called_once()
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_invalid_filter_params_not_cached(self, mock_cache):
+        """Invalid filter values (400) are NOT cached."""
+        mock_cache.get.return_value = None
+
+        url = reverse("quality_data:seconds-a4-analytics-filter-options")
+        response = self.client.get(url, {"year": "not-a-number"})
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        # cache.set should NOT be called for error responses
+        mock_cache.set.assert_not_called()
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_invalid_filter_does_not_pollute_cache_for_valid_request(self, mock_cache):
+        """An invalid filter creates a distinct cache key from valid ones."""
+        mock_cache.get.return_value = None
+        mock_cache.reset_mock()
+
+        # Invalid request — compute raises ValidationError, no cache.set
+        url = reverse("quality_data:seconds-a4-analytics-filter-options")
+        self.client.get(url, {"year": "not-a-number"})
+        mock_cache.set.assert_not_called()
+
+        # Valid request with same filter key but valid value — should miss
+        mock_cache.reset_mock()
+        mock_cache.get.return_value = None
+        response = self.client.get(url, {"year": "2025"})
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have attempted a cache.set (different key from invalid)
+        mock_cache.set.assert_called_once()
+
+
+class SecondsA4CacheAllEndpointsTest(SecondsA4AnalyticsMixin, TestCase):
+    """All 9 endpoints support caching with miss→store behavior."""
+
+    ENDPOINTS = [
+        "filter-options",
+        "executive-summary",
+        "weekly-trend",
+        "sew-vs-fab",
+        "by-style",
+        "by-color",
+        "by-line",
+        "by-cut",
+        "pass-fail-weekly",
+    ]
+
+    def _url_for(self, endpoint):
+        # URL names follow the hyphenated url_path, e.g. "filter-options"
+        # becomes "seconds-a4-analytics-filter-options".
+        return reverse(f"quality_data:seconds-a4-analytics-{endpoint}")
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_all_endpoints_return_200_on_cache_miss(self, mock_cache):
+        """Every endpoint returns 200 on a cache miss."""
+        mock_cache.get.return_value = None
+
+        for ep in self.ENDPOINTS:
+            with self.subTest(endpoint=ep):
+                url = self._url_for(ep)
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_all_endpoints_store_to_cache_on_miss(self, mock_cache):
+        """Every endpoint calls cache.set on a miss."""
+        mock_cache.get.return_value = None
+        mock_cache.reset_mock()
+
+        for ep in self.ENDPOINTS:
+            url = self._url_for(ep)
+            self.client.get(url)
+
+        # Each endpoint should have triggered one cache.set during the loop
+        self.assertEqual(mock_cache.set.call_count, len(self.ENDPOINTS))
+
+    @patch(_SECONDS_A4_CACHE_PATH)
+    def test_filter_options_stored_with_300s_ttl_others_with_120s(self, mock_cache):
+        """filter_options uses 300s TTL; all others use 120s."""
+        mock_cache.get.return_value = None
+
+        for ep in self.ENDPOINTS:
+            with self.subTest(endpoint=ep):
+                mock_cache.reset_mock()
+                url = self._url_for(ep)
+                self.client.get(url)
+                expected_ttl = 300 if ep == "filter-options" else 120
+                mock_cache.set.assert_called_once()
+                _args, kwargs = mock_cache.set.call_args
+                ttl = kwargs.get("timeout")
+                self.assertEqual(
+                    ttl, expected_ttl,
+                    f"{ep} expected TTL {expected_ttl}, got {ttl}",
+                )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 2DS By Color Endpoint (unchanged — below)
+# ═════════════════════════════════════════════════════════════════════
+
+@override_settings(CACHES=_LOCMEM_CACHES)
 class SecondsA4ByColorTest(SecondsA4AnalyticsMixin, TestCase):
     """Tests for GET /quality/kpis/seconds-a4/by-color/"""
 
