@@ -242,7 +242,7 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
             serializer = KpiBarSerializer(result, many=True)
             return serializer.data
 
-return _seconds_a4_cached_action(request, "sew_vs_fab", _compute)
+        return _seconds_a4_cached_action(request, "sew_vs_fab", _compute)
 
     @action(detail=False, methods=["get"], url_path="by-cut")
     def by_cut(self, request):
@@ -305,7 +305,7 @@ return _seconds_a4_cached_action(request, "sew_vs_fab", _compute)
             serializer = KpiSeriesSerializer([pass_series, fail_series], many=True)
             return serializer.data
 
-return _seconds_a4_cached_action(request, "pass_fail_weekly", _compute)
+        return _seconds_a4_cached_action(request, "pass_fail_weekly", _compute)
 
     @action(detail=False, methods=["get"], url_path="by-color")
     def by_color(self, request):

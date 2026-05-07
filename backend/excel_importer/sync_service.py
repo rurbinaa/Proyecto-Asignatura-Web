@@ -418,7 +418,7 @@ def apply_session(session):
     ]:
         all_color_names |= _collect_sheet_colors(sheet_rows)
 
-color_map = _resolve_colors_batch(all_color_names)
+    color_map = _resolve_colors_batch(all_color_names)
 
     with transaction.atomic():
         # QC FA Plant (Time-Window)

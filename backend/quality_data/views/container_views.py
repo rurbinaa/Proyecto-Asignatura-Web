@@ -103,7 +103,7 @@ class ContainerFilterMixin:
 
         request = self.request
 
-customer = request.query_params.get('customer')
+        customer = request.query_params.get('customer')
         if customer:
             queryset = queryset.filter(customer__exact=customer)
 
@@ -218,7 +218,7 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
         ]
 
         serializer = ScalarMetricSerializer(result, many=True)
-return Response(serializer.data, status=http_status.HTTP_200_OK)
+        return Response(serializer.data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path="inspected-trend")
     def inspected_trend(self, request):
