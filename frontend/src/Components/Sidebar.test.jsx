@@ -11,7 +11,7 @@ describe('Sidebar', () => {
     userRole: 'manager',
     activeView: 'dashboard',
     setActiveView: vi.fn(),
-    setVolatileData: vi.fn(),
+    setVolatileFile: vi.fn(),
     onLogout: vi.fn(),
   };
 
@@ -100,32 +100,20 @@ describe('Sidebar', () => {
       expect(setActiveView).toHaveBeenCalledWith('excel');
     });
 
-    it('calls setActiveView with "dashboard" when Dashboard is clicked', () => {
+    it('calls setActiveView with "dashboard" and clears fast mode when Dashboard is clicked', () => {
       const setActiveView = vi.fn();
-      const setVolatileData = vi.fn();
+      const setVolatileFile = vi.fn();
       render(
         <Sidebar
           {...defaultProps}
           userRole="manager"
           setActiveView={setActiveView}
-          setVolatileData={setVolatileData}
+          setVolatileFile={setVolatileFile}
         />,
       );
       fireEvent.click(screen.getByText('Dashboard'));
       expect(setActiveView).toHaveBeenCalledWith('dashboard');
-    });
-
-    it('calls setVolatileData with null when Dashboard is clicked', () => {
-      const setVolatileData = vi.fn();
-      render(
-        <Sidebar
-          {...defaultProps}
-          userRole="manager"
-          setVolatileData={setVolatileData}
-        />,
-      );
-      fireEvent.click(screen.getByText('Dashboard'));
-      expect(setVolatileData).toHaveBeenCalledWith(null);
+      expect(setVolatileFile).toHaveBeenCalledWith(null);
     });
 
     it('calls setActiveView with "reports" when Quality Reports is clicked', () => {
@@ -215,15 +203,15 @@ describe('Sidebar', () => {
     });
   });
 
-  describe('setVolatileData optional', () => {
-    it('handles undefined setVolatileData without crashing', () => {
+  describe('setVolatileFile optional', () => {
+    it('handles undefined setVolatileFile without crashing', () => {
       render(
         <Sidebar
           userRole="manager"
           activeView="excel"
           setActiveView={vi.fn()}
           onLogout={vi.fn()}
-        // setVolatileData not provided
+        // setVolatileFile not provided
         />,
       );
       fireEvent.click(screen.getByText('Dashboard'));

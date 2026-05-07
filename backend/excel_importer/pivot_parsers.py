@@ -13,6 +13,21 @@ from excel_importer.sheet_configs import (
 )
 
 
+def _safe_int(value):
+    """
+    Convert a value to int, safely handling NaN, None, and non-numeric types.
+
+    Unlike ``int(value or 0)``, this correctly handles ``float('nan')``
+    which is truthy and would otherwise crash ``int()``.
+    """
+    if pd.isna(value):
+        return 0
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return 0
+
+
 def _clean_percentage_value(value):
     """
     Convert percentage string like "4.31 %" to float 4.31.
@@ -220,7 +235,7 @@ def parse_top_defects(rows):
 
         totals = {}
         for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
-            total = sum(int(row.get(field, 0) or 0) for row in rows)
+            total = sum(_safe_int(row.get(field)) for row in rows)
             if total > 0:
                 label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
                 totals[label] = totals.get(label, 0) + total
@@ -248,7 +263,7 @@ def parse_defects_by_style(rows):
         style_totals = {}
         for row in rows:
             style = row.get('style', 'Unknown')
-            total = sum(int(row.get(f, 0) or 0) for f in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS)
+            total = sum(_safe_int(row.get(f)) for f in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS)
             style_totals[style] = style_totals.get(style, 0) + total
 
         top_styles = sorted(style_totals, key=style_totals.get, reverse=True)[:5]
@@ -257,7 +272,7 @@ def parse_defects_by_style(rows):
         defect_totals = {}
         for row in rows:
             for field in QC_FA_PLANT_AMOUNT_DEFEACTS_FIELDS:
-                val = int(row.get(field, 0) or 0)
+                val = _safe_int(row.get(field))
                 if val > 0:
                     defect_totals[field] = defect_totals.get(field, 0) + val
 
@@ -270,7 +285,7 @@ def parse_defects_by_style(rows):
             if style not in top_styles:
                 continue
             for field in top_defect_fields:
-                val = int(row.get(field, 0) or 0)
+                val = _safe_int(row.get(field))
                 if val > 0:
                     label = DEFECT_LABEL_MAP.get(field, field.replace('_', ' ').title())
                     agg[(style, label)] += val

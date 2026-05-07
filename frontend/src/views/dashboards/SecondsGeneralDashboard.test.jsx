@@ -32,6 +32,12 @@ vi.mock('../../Components/kpi/KpiNumberCard', () => ({
   default: () => <div>KpiNumberCard</div>,
 }));
 
+vi.mock('../useVolatileDashboardCache', () => ({
+  default: vi.fn(() => ({ data: null, loading: false, error: null })),
+}));
+
+import useVolatileDashboardCache from '../useVolatileDashboardCache';
+
 vi.mock('../../Components/kpi/FilterBar', () => ({
   default: ({ filters, onFilterChange, context }) => (
     <div>
@@ -454,6 +460,109 @@ describe('SecondsGeneralDashboard', () => {
 
       await waitFor(() => {
         expect(axiosClient.get).toHaveBeenCalledTimes(12);
+      });
+    });
+  });
+
+  describe('Volatile mode', () => {
+    const mockVolatilePayload = {
+      defectsByCustomer: [{ label: 'CUST_A', value: 75 }],
+      defectsByStyle: [{ label: 'ST-100', value: 45 }],
+      weeklyTrend: [{ name: 'Defects', data: [{ x: 1, y: 30 }] }],
+      sewingVsFabric: [{ label: 'Sewing', value: 55 }, { label: 'Fabric', value: 20 }],
+      productionTotals: { total_produced: 1550, total_fixed: 775, total_definitive: 465 },
+      topSewingDefects: [{ label: 'picado_aguja', value: 10 }],
+      topFabricDefects: [{ label: 'corrido_2', value: 20 }],
+      fixVsDefinitive: [{ name: 'Fixed', data: [{ x: 1, y: 55 }] }, { name: 'Definitive', data: [{ x: 1, y: 33 }] }],
+      defectsByColor: [{ label: 'Red', value: 40 }],
+      defectsBySize: [{ label: 'M', value: 30 }],
+      defectsByLine: [{ label: 'Line 1', value: 25 }],
+    };
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      useVolatileDashboardCache.mockReturnValue({
+        data: mockVolatilePayload,
+        loading: false,
+        error: null,
+      });
+    });
+
+    it('renders dashboard title in volatile mode', () => {
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(screen.getByText('Seconds General Analytics')).toBeInTheDocument();
+    });
+
+    it('renders KPI cards with volatile data instead of FastModeUnsupportedState', () => {
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(screen.getByText('Defects by Customer')).toBeInTheDocument();
+      expect(screen.getByText('Defects by Style')).toBeInTheDocument();
+      expect(screen.getByText('Weekly Trend')).toBeInTheDocument();
+      expect(screen.getByText('Sewing vs Fabric')).toBeInTheDocument();
+      expect(screen.getByText('Top Sewing Defects')).toBeInTheDocument();
+      expect(screen.getByText('Top Fabric Defects')).toBeInTheDocument();
+      expect(screen.getByText('Fix vs Definitive')).toBeInTheDocument();
+      expect(screen.getByText('Defects by Color')).toBeInTheDocument();
+      expect(screen.getByText('Defects by Size')).toBeInTheDocument();
+      expect(screen.getByText('Defects by Line')).toBeInTheDocument();
+    });
+
+    it('does NOT make any API calls when in volatile mode', () => {
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(axiosClient.get).not.toHaveBeenCalled();
+    });
+
+    it('does NOT render FilterBar in volatile mode', () => {
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(screen.queryByText('FilterBar-customer')).not.toBeInTheDocument();
+    });
+
+    it('does NOT show FastModeUnsupportedState component', () => {
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(screen.queryByTestId('fast-mode-unsupported')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Fast mode no soportado/i)).not.toBeInTheDocument();
+    });
+
+    it('renders production KPI number cards from volatile data', () => {
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(screen.getByText('Total Produced')).toBeInTheDocument();
+      expect(screen.getByText('Total Fixed')).toBeInTheDocument();
+      expect(screen.getByText('Total Definitive')).toBeInTheDocument();
+    });
+
+    it('renders normal content when volatileFile is null (live mode)', async () => {
+      useVolatileDashboardCache.mockReturnValue({
+        data: null,
+        loading: false,
+        error: null,
+      });
+      axiosClient.get.mockResolvedValue({ data: [] });
+
+      render(<SecondsGeneralDashboard volatileFile={null} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Seconds General Analytics')).toBeInTheDocument();
+      });
+    });
+
+    it('renders FilterBar in live mode (no volatileFile)', async () => {
+      useVolatileDashboardCache.mockReturnValue({
+        data: null,
+        loading: false,
+        error: null,
+      });
+      axiosClient.get.mockResolvedValue({ data: [] });
+
+      render(<SecondsGeneralDashboard volatileFile={null} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('FilterBar-customer')).toBeInTheDocument();
       });
     });
   });

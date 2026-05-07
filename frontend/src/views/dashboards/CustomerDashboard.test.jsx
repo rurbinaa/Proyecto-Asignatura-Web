@@ -90,15 +90,15 @@ describe('CustomerDashboard — thin wrapper', () => {
     expect(screen.queryByText('Weekly Rework (seconds)')).not.toBeInTheDocument();
   });
 
-  it('forwards volatileData prop to QcfaKpiDashboard', () => {
-    const testData = [{ id: 1, value: 'test' }];
-    render(<CustomerDashboard volatileData={testData} />);
+  it('forwards volatileFile prop to QcfaKpiDashboard', () => {
+    const testFile = { name: 'test.xlsx' };
+    render(<CustomerDashboard volatileFile={testFile} />);
     const banner = screen.getByRole('status');
     expect(banner).toBeInTheDocument();
     expect(banner.textContent).toMatch(/fast mode/i);
   });
 
-  it('renders without volatileData (live mode)', () => {
+  it('renders without volatileFile (live mode)', () => {
     render(<CustomerDashboard />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });

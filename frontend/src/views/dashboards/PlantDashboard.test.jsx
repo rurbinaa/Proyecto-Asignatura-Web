@@ -91,15 +91,15 @@ describe('PlantDashboard — thin wrapper', () => {
     expect(screen.queryByText('Weekly Rework (seconds)')).not.toBeInTheDocument();
   });
 
-  it('forwards volatileData prop to QcfaKpiDashboard', () => {
-    const testData = [{ id: 1, value: 'test' }];
-    render(<PlantDashboard volatileData={testData} />);
+  it('forwards volatileFile prop to QcfaKpiDashboard', () => {
+    const testFile = { name: 'test.xlsx' };
+    render(<PlantDashboard volatileFile={testFile} />);
     const banner = screen.getByRole('status');
     expect(banner).toBeInTheDocument();
     expect(banner.textContent).toMatch(/fast mode/i);
   });
 
-  it('renders without volatileData (live mode)', () => {
+  it('renders without volatileFile (live mode)', () => {
     render(<PlantDashboard />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });

@@ -439,7 +439,12 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     for (_, row), quality_instance in zip(df.iterrows(), created_quality_instances):
         for defect_field in defeacts_fields:
-            amount = int(row.get(defect_field, 0) or 0)
+            raw = row.get(defect_field, 0)
+            amount = 0
+            try:
+                amount = int(raw) if pd.notna(raw) else 0
+            except (ValueError, TypeError):
+                amount = 0
 
             if amount <= 0:
                 continue
@@ -533,9 +538,18 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
 
     for _, row in df.iterrows():
         # ── Skip rows without any positive defect amount ──
-        has_defects = any(
-            (int(row.get(f, 0) or 0)) > 0 for f in defeacts_fields
-        )
+        raw_fields = {}
+        for f in defeacts_fields:
+            raw_val = row.get(f, 0)
+            if pd.notna(raw_val):
+                try:
+                    raw_fields[f] = int(raw_val)
+                except (ValueError, TypeError):
+                    raw_fields[f] = 0
+            else:
+                raw_fields[f] = 0
+
+        has_defects = any(v > 0 for v in raw_fields.values())
         if not has_defects:
             continue
 
@@ -566,7 +580,7 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
         matched_parent_ids.add(quality_instance.id)
 
         for defect_field in defeacts_fields:
-            amount = int(row.get(defect_field, 0) or 0)
+            amount = raw_fields.get(defect_field, 0)
             if amount <= 0:
                 continue
 
@@ -654,13 +668,21 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
         week__in=[w for _, w in date_week_pairs],
     ).order_by('pk')
 
+    def _sg_safe_int(val):
+        if pd.notna(val):
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return 0
+        return 0
+
     defects_to_create = []
     for idx, (_, row) in enumerate(df.iterrows()):
         if idx >= len(created_records):
             break
         sg = created_records[idx]
         for defect_field in defect_type_names:
-            amount = int(row.get(defect_field, 0) or 0)
+            amount = _sg_safe_int(row.get(defect_field))
             if amount <= 0:
                 continue
             defect_type = defect_type_map.get(defect_field)
@@ -748,7 +770,13 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
             continue
 
         for defect_field in defeacts_fields:
-            amount = int(row.get(defect_field, 0) or 0)
+            raw = row.get(defect_field, 0)
+            amount = 0
+            if pd.notna(raw):
+                try:
+                    amount = int(raw)
+                except (ValueError, TypeError):
+                    amount = 0
 
             if amount <= 0:
                 continue

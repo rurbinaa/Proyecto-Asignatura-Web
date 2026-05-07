@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchKpi, fetchVolatileKpis, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, getAcReRateByLine, getPerformanceByLine, fetchAllContainerKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects, getSecondsA4FilterOptions, getSecondsA4ExecutiveSummary, getSecondsA4WeeklyTrend, getSecondsA4SewVsFab, getSecondsA4ByStyle, getSecondsA4ByColor, buildSecondsA4Params } from './kpi.js';
+import { fetchKpi, fetchVolatileKpis, fetchVolatileDashboard, getFilterOptions, fetchAllKpis, getDefectComposition, getDefectTrendTop3, getAqlByTeam, getAcReRateByLine, getPerformanceByLine, fetchAllContainerKpis, fetchAllSecondsGeneralKpis, getContainerExecutiveSummary, getContainerWorstContainers, getContainerPassRateTrend, getContainerTopDefects, getSecondsA4FilterOptions, getSecondsA4ExecutiveSummary, getSecondsA4WeeklyTrend, getSecondsA4SewVsFab, getSecondsA4ByStyle, getSecondsA4ByColor, buildSecondsA4Params } from './kpi.js';
 import axiosClient from './axiosClient';
 
 vi.mock('./axiosClient');
@@ -1130,28 +1130,43 @@ describe('kpi.js - fetchAllContainerKpis - volatile mode', () => {
     vi.clearAllMocks();
   });
 
-  it('RED - returns containersByState from volatile data and unavailable for others', async () => {
+  it('returns all container KPIs from volatile response (no more unavailable)', async () => {
     const mockVolatileResponse = {
-      aql_by_style: [],
+      executive_summary: [{ label: 'Total Containers', value: 3 }],
       containers_by_state: [{ name: '< 80%', value: 3 }, { name: '80-90%', value: 5 }],
+      pass_rate_trend: [{ name: 'Pass Rate', data: [{ x: '2025-01-10', y: 70 }] }],
+      inspected_trend: [{ name: 'Inspected', data: [{ x: '2025-01-10', y: 60 }] }],
+      rejected_trend: [{ name: 'Rejected', data: [{ x: '2025-01-10', y: 20 }] }],
+      top_defects: [{ label: 'Dirt Label', value: 12 }],
+      defect_composition: [{ name: 'Dirt Label', value: 12 }],
+      worst_containers: [{ containerNumber: 100, customer: 'Alpha', passRate: 50, rejectedPalettes: 15, inspectionDate: '2025-01-11' }],
     };
     axiosClient.post.mockResolvedValueOnce({ data: mockVolatileResponse });
 
     const result = await fetchAllContainerKpis({}, new File(['test'], 'test.xlsx'));
 
-    expect(result.containersByState).toEqual([
-      { name: '< 80%', value: 3 },
-      { name: '80-90%', value: 5 },
-    ]);
-    // Container-specific KPIs are unavailable in volatile mode
-    const containerKeys = ['executiveSummary', 'passRateTrend', 'inspectedTrend', 'rejectedTrend', 'topDefects', 'defectComposition', 'worstContainers'];
-    containerKeys.forEach((key) => {
-      expect(result[key]).toEqual(expect.objectContaining({ status: 'unavailable' }));
-    });
+    expect(result.containersByState).toEqual([{ name: '< 80%', value: 3 }, { name: '80-90%', value: 5 }]);
+    expect(result.executiveSummary).toEqual([{ label: 'Total Containers', value: 3 }]);
+    expect(result.passRateTrend).toEqual([{ name: 'Pass Rate', data: [{ x: '2025-01-10', y: 70 }] }]);
+    expect(result.inspectedTrend).toEqual([{ name: 'Inspected', data: [{ x: '2025-01-10', y: 60 }] }]);
+    expect(result.rejectedTrend).toEqual([{ name: 'Rejected', data: [{ x: '2025-01-10', y: 20 }] }]);
+    expect(result.topDefects).toEqual([{ label: 'Dirt Label', value: 12 }]);
+    expect(result.defectComposition).toEqual([{ name: 'Dirt Label', value: 12 }]);
+    expect(result.worstContainers).toEqual([{ containerNumber: 100, customer: 'Alpha', passRate: 50, rejectedPalettes: 15, inspectionDate: '2025-01-11' }]);
   });
 
-  it('RED - does NOT fetch live KPIs when volatileFile is provided', async () => {
-    axiosClient.post.mockResolvedValueOnce({ data: { aql_by_style: [] } });
+  it('falls back to unavailableKpi when volatile key is missing', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: { containers_by_state: [] } });
+
+    const result = await fetchAllContainerKpis({}, new File(['test'], 'test.xlsx'));
+
+    expect(result.containersByState).toEqual([]);
+    expect(result.executiveSummary).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.passRateTrend).toEqual(expect.objectContaining({ status: 'unavailable' }));
+  });
+
+  it('does NOT fetch live KPIs when volatileFile is provided', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: { containers_by_state: [] } });
 
     await fetchAllContainerKpis({}, new File(['test'], 'test.xlsx'));
 
@@ -1432,5 +1447,318 @@ describe('kpi.js - getSecondsA4ByColor', () => {
     axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Not found' }, status: 404 } });
 
     await expect(getSecondsA4ByColor()).rejects.toThrow('Not found');
+  });
+});
+
+// ─── Slice 1: fetchVolatileDashboard ──────────────────────────────────────────
+describe('kpi.js - fetchVolatileDashboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends dashboard=qcfa in FormData with context=plant', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'qcfa', 'plant');
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('dashboard')).toBe('qcfa');
+    expect(formData.get('context')).toBe('plant');
+  });
+
+  it('sends dashboard=container without context', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'container');
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('dashboard')).toBe('container');
+    expect(formData.get('context')).toBeNull();
+  });
+
+  it('returns camelCase-mapped response', async () => {
+    const mockResponse = {
+      containers_by_state: [{ name: '< 80%', value: 3 }],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'container');
+
+    expect(result).toHaveProperty('containersByState');
+    expect(result.containersByState).toEqual([{ name: '< 80%', value: 3 }]);
+  });
+
+  it('throws on HTTP error', async () => {
+    axiosClient.post.mockRejectedValueOnce({ response: { data: { error: 'Server error' }, status: 500 } });
+
+    await expect(fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'qcfa'))
+      .rejects.toThrow('Server error');
+  });
+});
+
+// ─── Slice 3: Seconds A4 DTO mappings via mapVolatileKpisDto ────────────────
+describe('kpi.js - mapVolatileKpisDto Seconds A4 mappings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('maps seconds_a4 snake_case keys to camelCase', async () => {
+    const mockResponse = {
+      filter_options: { year: [2025], line: ['L1'] },
+      executive_summary: { totals: { total_of_2ds: 45 } },
+      weekly_trend: [{ name: '2DS', data: [] }],
+      sew_vs_fab: [{ label: 'Sew', value: 150 }],
+      by_style: [{ label: 'STYLE-A', value: 25 }],
+      by_color: [{ label: 'Red', value: 30 }],
+      by_line: [{ label: 'L1', value: 25 }],
+      by_cut: [{ label: 'Cut 101', value: 25 }],
+      pass_fail_weekly: [{ name: 'Pass', data: [] }],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'seconds_a4');
+
+    expect(result).toHaveProperty('filterOptions');
+    expect(result).toHaveProperty('executiveSummary');
+    expect(result).toHaveProperty('weeklyTrend');
+    expect(result).toHaveProperty('sewVsFab');
+    expect(result).toHaveProperty('byStyle');
+    expect(result).toHaveProperty('byColor');
+    expect(result).toHaveProperty('byLine');
+    expect(result).toHaveProperty('byCut');
+    expect(result).toHaveProperty('passFailWeekly');
+    expect(result.weeklyTrend).toEqual([{ name: '2DS', data: [] }]);
+    expect(result.byStyle).toEqual([{ label: 'STYLE-A', value: 25 }]);
+  });
+
+  it('sends dashboard=seconds_a4 in FormData', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'seconds_a4');
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('dashboard')).toBe('seconds_a4');
+  });
+});
+
+// ─── Slice 4: Seconds General DTO mappings via mapVolatileKpisDto ────────
+describe('kpi.js - mapVolatileKpisDto Seconds General mappings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('maps seconds_general snake_case keys to camelCase', async () => {
+    const mockResponse = {
+      filter_options: { customer: ['CUST_A'], style: ['ST-100'] },
+      defects_by_customer: [{ label: 'CUST_A', value: 75 }],
+      defects_by_style: [{ label: 'ST-100', value: 45 }],
+      weekly_trend: [{ name: 'Defects', data: [{ x: 1, y: 30 }] }],
+      sewing_vs_fabric: [{ label: 'Sewing', value: 55 }, { label: 'Fabric', value: 20 }],
+      production_totals: { total_produced: 1550, total_fixed: 775, total_definitive: 465 },
+      top_sewing_defects: [{ label: 'picado_aguja', value: 10 }],
+      top_fabric_defects: [{ label: 'corrido_2', value: 20 }],
+      fix_vs_definitive: [{ name: 'Fixed', data: [{ x: 1, y: 55 }] }],
+      defects_by_color: [{ label: 'Red', value: 40 }],
+      defects_by_size: [{ label: 'M', value: 30 }],
+      defects_by_line: [{ label: 'Line 1', value: 25 }],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'seconds_general');
+
+    expect(result).toHaveProperty('defectsByCustomer');
+    expect(result).toHaveProperty('defectsByStyle');
+    expect(result).toHaveProperty('weeklyTrend');
+    expect(result).toHaveProperty('sewingVsFabric');
+    expect(result).toHaveProperty('productionTotals');
+    expect(result).toHaveProperty('topSewingDefects');
+    expect(result).toHaveProperty('topFabricDefects');
+    expect(result).toHaveProperty('fixVsDefinitive');
+    expect(result).toHaveProperty('defectsByColor');
+    expect(result).toHaveProperty('defectsBySize');
+    expect(result).toHaveProperty('defectsByLine');
+
+    // Verify production_totals preserves nested keys
+    expect(result.productionTotals).toEqual({ total_produced: 1550, total_fixed: 775, total_definitive: 465 });
+    // Verify sewing_vs_fabric maps correctly
+    expect(result.sewingVsFabric).toEqual([{ label: 'Sewing', value: 55 }, { label: 'Fabric', value: 20 }]);
+  });
+
+  it('sends dashboard=seconds_general in FormData', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'seconds_general');
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('dashboard')).toBe('seconds_general');
+  });
+
+  it('handles empty arrays for all seconds_general keys', async () => {
+    const mockResponse = {
+      filter_options: {},
+      defects_by_customer: [],
+      defects_by_style: [],
+      weekly_trend: [{ name: 'Defects', data: [] }],
+      sewing_vs_fabric: [],
+      production_totals: { total_produced: 0, total_fixed: 0, total_definitive: 0 },
+      top_sewing_defects: [],
+      top_fabric_defects: [],
+      fix_vs_definitive: [{ name: 'Fixed', data: [] }, { name: 'Definitive', data: [] }],
+      defects_by_color: [],
+      defects_by_size: [],
+      defects_by_line: [],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'seconds_general');
+
+    expect(result.defectsByCustomer).toEqual([]);
+    expect(result.productionTotals).toEqual({ total_produced: 0, total_fixed: 0, total_definitive: 0 });
+  });
+
+  it('handles absent seconds_general keys gracefully (backward compat)', async () => {
+    const mockResponse = {
+      filter_options: {},
+      // No seconds_general keys at all
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'seconds_general');
+
+    expect(result.defectsByCustomer).toBeUndefined();
+    expect(result.productionTotals).toBeUndefined();
+  });
+});
+
+// ─── fetchAllSecondsGeneralKpis ──────────────────────────────────────────
+describe('kpi.js - fetchAllSecondsGeneralKpis - live mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns all seconds general KPI keys in live mode', async () => {
+    // Mock all 11 live endpoint calls
+    for (let i = 0; i < 11; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: [] });
+    }
+
+    const result = await fetchAllSecondsGeneralKpis({}, null);
+
+    expect(result).toHaveProperty('defectsByCustomer');
+    expect(result).toHaveProperty('defectsByStyle');
+    expect(result).toHaveProperty('weeklyTrend');
+    expect(result).toHaveProperty('sewingVsFabric');
+    expect(result).toHaveProperty('productionTotals');
+    expect(result).toHaveProperty('topSewingDefects');
+    expect(result).toHaveProperty('topFabricDefects');
+    expect(result).toHaveProperty('fixVsDefinitive');
+    expect(result).toHaveProperty('defectsByColor');
+    expect(result).toHaveProperty('defectsBySize');
+    expect(result).toHaveProperty('defectsByLine');
+    expect(axiosClient.get).toHaveBeenCalledTimes(11);
+  });
+
+  it('individual KPI failures become unavailable states in live mode', async () => {
+    // 5 resolve, 6 reject
+    for (let i = 0; i < 5; i++) {
+      axiosClient.get.mockResolvedValueOnce({ data: [] });
+    }
+    for (let i = 0; i < 6; i++) {
+      axiosClient.get.mockRejectedValueOnce({ response: { data: { error: 'Timeout' }, status: 504 } });
+    }
+
+    const result = await fetchAllSecondsGeneralKpis({}, null);
+
+    // First 5 resolve successfully
+    expect(result.defectsByCustomer).toEqual([]);
+    expect(result.defectsByStyle).toEqual([]);
+    expect(result.weeklyTrend).toEqual([]);
+    expect(result.sewingVsFabric).toEqual([]);
+    expect(result.productionTotals).toEqual([]);
+    // Last 6 reject
+    expect(result.topSewingDefects).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.topFabricDefects).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.fixVsDefinitive).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.defectsByColor).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.defectsBySize).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.defectsByLine).toEqual(expect.objectContaining({ status: 'unavailable' }));
+  });
+});
+
+describe('kpi.js - fetchAllSecondsGeneralKpis - volatile mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns all seconds general KPIs from volatile response', async () => {
+    const mockVolatileResponse = {
+      defects_by_customer: [{ customer: 'C1', total: 50 }],
+      defects_by_style: [{ style: 'S1', total: 30 }],
+      weekly_trend: [{ name: 'Defects', data: [{ x: 'W1', y: 10 }] }],
+      sewing_vs_fabric: [{ label: 'Sewing', value: 80 }, { label: 'Fabric', value: 20 }],
+      production_totals: { total_produced: 1000, total_fixed: 500, total_definitive: 300 },
+      top_sewing_defects: [{ label: 'Open Seam', value: 25 }],
+      top_fabric_defects: [{ label: 'Hole', value: 15 }],
+      fix_vs_definitive: [{ name: 'Fixed', data: [{ x: 'W1', y: 100 }] }],
+      defects_by_color: [{ color: 'Red', total: 10 }],
+      defects_by_size: [{ size: 'M', total: 20 }],
+      defects_by_line: [{ team: 'L1', total: 40 }],
+    };
+    axiosClient.post.mockResolvedValueOnce({ data: mockVolatileResponse });
+
+    const result = await fetchAllSecondsGeneralKpis({}, new File(['test'], 'test.xlsx'));
+
+    expect(result.defectsByCustomer).toEqual([{ customer: 'C1', total: 50 }]);
+    expect(result.defectsByStyle).toEqual([{ style: 'S1', total: 30 }]);
+    expect(result.weeklyTrend).toEqual([{ name: 'Defects', data: [{ x: 'W1', y: 10 }] }]);
+    expect(result.sewingVsFabric).toEqual([{ label: 'Sewing', value: 80 }, { label: 'Fabric', value: 20 }]);
+    expect(result.productionTotals).toEqual({ total_produced: 1000, total_fixed: 500, total_definitive: 300 });
+    expect(result.topSewingDefects).toEqual([{ label: 'Open Seam', value: 25 }]);
+    expect(result.topFabricDefects).toEqual([{ label: 'Hole', value: 15 }]);
+    expect(result.fixVsDefinitive).toEqual([{ name: 'Fixed', data: [{ x: 'W1', y: 100 }] }]);
+    expect(result.defectsByColor).toEqual([{ color: 'Red', total: 10 }]);
+    expect(result.defectsBySize).toEqual([{ size: 'M', total: 20 }]);
+    expect(result.defectsByLine).toEqual([{ team: 'L1', total: 40 }]);
+  });
+
+  it('falls back to unavailableKpi when volatile key is missing', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: { defects_by_customer: [] } });
+
+    const result = await fetchAllSecondsGeneralKpis({}, new File(['test'], 'test.xlsx'));
+
+    expect(result.defectsByCustomer).toEqual([]);
+    expect(result.defectsByStyle).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.productionTotals).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(result.topSewingDefects).toEqual(expect.objectContaining({ status: 'unavailable' }));
+  });
+
+  it('does NOT fetch live KPIs when volatileFile is provided', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: { defects_by_customer: [] } });
+
+    await fetchAllSecondsGeneralKpis({}, new File(['test'], 'test.xlsx'));
+
+    expect(axiosClient.post).toHaveBeenCalledTimes(1);
+    expect(axiosClient.get).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Slice 1: fetchVolatileDashboard + fetchAllContainerKpis integration ─────
+describe('kpi.js - fetchAllContainerKpis uses fetchVolatileDashboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('calls fetchVolatileDashboard instead of fetchVolatileKpis in volatile mode', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: { containers_by_state: [] } });
+
+    const result = await fetchAllContainerKpis({}, new File(['test'], 'test.xlsx'));
+
+    // Should call the post endpoint with dashboard=container
+    const [url, formData] = axiosClient.post.mock.calls[0];
+    expect(url).toContain('/quality/kpis/volatile/');
+    expect(formData.get('dashboard')).toBe('container');
+    // containersByState comes through, others fall back to unavailableKpi
+    expect(result.containersByState).toEqual([]);
+    expect(result.topDefects).toEqual(expect.objectContaining({ status: 'unavailable' }));
   });
 });

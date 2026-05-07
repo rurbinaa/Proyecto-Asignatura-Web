@@ -27,10 +27,11 @@ function resolveSheet(key) {
  * Uses React.lazy + Suspense for on-demand loading. The active sheet is managed
  * via local state (`activeSheet`), preserving the `/dashboard` URL contract.
  */
-export default function DashboardShell({ volatileData, volatileFile }) {
+function DashboardShell({ volatileFile }) {
   const [activeSheet, setActiveSheet] = useState(DEFAULT_SHEET);
   const sheet = resolveSheet(activeSheet);
   const ActiveComponent = sheet.Component;
+  const isFastMode = Boolean(volatileFile);
 
   return (
     <div className="dashboard-shell">
@@ -50,11 +51,15 @@ export default function DashboardShell({ volatileData, volatileFile }) {
 
       <div className="dashboard-shell-content" role="tabpanel">
         <Suspense fallback={<div>Loading dashboard...</div>}>
-          <ActiveComponent volatileData={volatileData} volatileFile={volatileFile} />
+          <ActiveComponent volatileFile={volatileFile} isFastMode={isFastMode} />
         </Suspense>
       </div>
     </div>
   );
 }
 
+export default DashboardShell;
+// Constants are exported for use by parent components (DashboardPage).
+// They are intentionally co-located with the component they configure.
+// eslint-disable-next-line react-refresh/only-export-components
 export { DEFAULT_SHEET, SHEETS, resolveSheet };

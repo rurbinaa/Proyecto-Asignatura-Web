@@ -40,8 +40,8 @@ import { withRoleProtection } from '../../hooks/withRoleProtection';
  * Volatile (fast) mode: containersByState is available; all other
  * Container-specific KPIs show explicit unavailable messaging.
  */
-function ContainerDashboard({ volatileData, volatileFile, context }) {
-  const isLiveMode = !volatileData && !volatileFile;
+function ContainerDashboard({ volatileFile, context }) {
+  const isLiveMode = !volatileFile;
   const isVolatileFileMode = !!volatileFile;
 
   const [filters, setFilters] = useState({
@@ -72,7 +72,7 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
 
   useEffect(() => {
     if (!isVolatileFileMode) {
-      loadData();
+      loadData(); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [isVolatileFileMode, loadData]);
 
@@ -228,13 +228,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
         />
       )}
 
-      {!isLiveMode && (
-        <div className="volatile-helper" role="status" aria-live="polite">
-          <strong>Fast mode:</strong> only Containers by State is available.
-          Other Container KPIs require live database connection.
-        </div>
-      )}
-
       <div className="container-dashboard-layout">
 
         <div className="layout-full">
@@ -345,4 +338,6 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
   );
 }
 
-export default withRoleProtection(ContainerDashboard, ['manager']);
+const ContainerDashboardWithRole = withRoleProtection(ContainerDashboard, ['manager']);
+ContainerDashboardWithRole.displayName = 'ContainerDashboard';
+export default ContainerDashboardWithRole;

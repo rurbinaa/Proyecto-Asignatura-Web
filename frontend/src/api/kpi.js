@@ -275,6 +275,30 @@ export function mapVolatileKpisDto(response) {
     defect_composition: 'defectComposition',
     defect_trend_top_3: 'defectTrendTop3',
     filter_options: 'filterOptions',
+    executive_summary: 'executiveSummary',
+    pass_rate_trend: 'passRateTrend',
+    inspected_trend: 'inspectedTrend',
+    rejected_trend: 'rejectedTrend',
+    worst_containers: 'worstContainers',
+    // Seconds A4 volatile KPIs
+    weekly_trend: 'weeklyTrend',
+    sew_vs_fab: 'sewVsFab',
+    by_style: 'byStyle',
+    by_color: 'byColor',
+    by_line: 'byLine',
+    by_cut: 'byCut',
+    pass_fail_weekly: 'passFailWeekly',
+    // Seconds General volatile KPIs
+    defects_by_customer: 'defectsByCustomer',
+    defects_by_style: 'defectsByStyle',
+    sewing_vs_fabric: 'sewingVsFabric',
+    production_totals: 'productionTotals',
+    top_sewing_defects: 'topSewingDefects',
+    top_fabric_defects: 'topFabricDefects',
+    fix_vs_definitive: 'fixVsDefinitive',
+    defects_by_color: 'defectsByColor',
+    defects_by_size: 'defectsBySize',
+    defects_by_line: 'defectsByLine',
   };
 
   const normalized = {};
@@ -310,6 +334,34 @@ export function mapVolatileKpisDto(response) {
 export async function fetchVolatileKpis(file, context) {
   const formData = new FormData();
   formData.append('file', file);
+  if (context) {
+    formData.append('context', context);
+  }
+  try {
+    const res = await axiosClient.post('/quality/kpis/volatile/', formData);
+    return mapVolatileKpisDto(res.data);
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'Failed to process Excel');
+  }
+}
+
+/**
+ * Dashboard-aware volatile fetch.
+ *
+ * Sends the optional ``dashboard`` parameter so the backend can dispatch
+ * to the correct sheet and return only the relevant KPIs for that dashboard.
+ *
+ * The response is also camelCase-mapped via ``mapVolatileKpisDto``.
+ *
+ * @param {File} file - The Excel file to process
+ * @param {string} dashboard - Dashboard key ('qcfa', 'container', 'seconds_a4', 'seconds_general')
+ * @param {string} [context] - Optional context ('plant', 'customer')
+ * @returns {Promise<object>} Dashboard-scoped KPI results, camelCase keys
+ */
+export async function fetchVolatileDashboard(file, dashboard, context) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('dashboard', dashboard);
   if (context) {
     formData.append('context', context);
   }
@@ -425,17 +477,17 @@ export async function getContainerWorstContainers(filters, context) {
  */
 export async function fetchAllContainerKpis(filters = {}, volatileFile = null, context) {
   if (volatileFile) {
-    // Volatile mode: only containersByState is available
-    const volatileData = await fetchVolatileKpis(volatileFile, context);
+    // Volatile mode: all Container KPIs computed server-side from the uploaded file
+    const volatileData = await fetchVolatileDashboard(volatileFile, 'container', context);
     return {
-      executiveSummary: unavailableKpi('Container Executive Summary requires live database — not available in fast mode'),
+      executiveSummary: volatileData.executiveSummary || unavailableKpi('Executive Summary not available'),
       containersByState: volatileData.containersByState || unavailableKpi('Containers by State not available'),
-      passRateTrend: unavailableKpi('Pass Rate Trend requires live database — not available in fast mode'),
-      inspectedTrend: unavailableKpi('Inspected Trend requires live database — not available in fast mode'),
-      rejectedTrend: unavailableKpi('Rejected Trend requires live database — not available in fast mode'),
-      topDefects: unavailableKpi('Top Defects requires live database — not available in fast mode'),
-      defectComposition: unavailableKpi('Defect Composition requires live database — not available in fast mode'),
-      worstContainers: unavailableKpi('Worst Containers requires live database — not available in fast mode'),
+      passRateTrend: volatileData.passRateTrend || unavailableKpi('Pass Rate Trend not available'),
+      inspectedTrend: volatileData.inspectedTrend || unavailableKpi('Inspected Trend not available'),
+      rejectedTrend: volatileData.rejectedTrend || unavailableKpi('Rejected Trend not available'),
+      topDefects: volatileData.topDefects || unavailableKpi('Top Defects not available'),
+      defectComposition: volatileData.defectComposition || unavailableKpi('Defect Composition not available'),
+      worstContainers: volatileData.worstContainers || unavailableKpi('Worst Containers not available'),
     };
   }
 
@@ -518,4 +570,70 @@ export async function getSecondsA4ByStyle(filters = {}) {
 /** Fetch Seconds A4 breakdown by color. */
 export async function getSecondsA4ByColor(filters = {}) {
   return fetchKpi('seconds-a4/by-color/', filters);
+}
+
+// ─── Seconds General volatile helper ──────────────────────────────────────
+
+/**
+ * Fetch all Seconds General KPIs in volatile (fast) mode.
+ *
+ * When volatileFile is provided, fetches all 12 Seconds General KPIs from
+ * the volatile endpoint with ``dashboard=seconds_general``.
+ * When volatileFile is null, fetches the live Seconds General analytics.
+ *
+ * @param {object} filters - Seconds General filters (customer, style, week, etc.)
+ * @param {File|null} volatileFile - Excel file for volatile mode, or null for live
+ * @returns {Promise<object>} Seconds General KPI results
+ */
+export async function fetchAllSecondsGeneralKpis(filters = {}, volatileFile = null) {
+  if (volatileFile) {
+    const volatileData = await fetchVolatileDashboard(volatileFile, 'seconds_general');
+    return {
+      defectsByCustomer: volatileData.defectsByCustomer || unavailableKpi('Defects by Customer unavailable'),
+      defectsByStyle: volatileData.defectsByStyle || unavailableKpi('Defects by Style unavailable'),
+      weeklyTrend: volatileData.weeklyTrend || unavailableKpi('Weekly Trend unavailable'),
+      sewingVsFabric: volatileData.sewingVsFabric || unavailableKpi('Sewing vs Fabric unavailable'),
+      productionTotals: volatileData.productionTotals || unavailableKpi('Production Totals unavailable'),
+      topSewingDefects: volatileData.topSewingDefects || unavailableKpi('Top Sewing Defects unavailable'),
+      topFabricDefects: volatileData.topFabricDefects || unavailableKpi('Top Fabric Defects unavailable'),
+      fixVsDefinitive: volatileData.fixVsDefinitive || unavailableKpi('Fix vs Definitive unavailable'),
+      defectsByColor: volatileData.defectsByColor || unavailableKpi('Defects by Color unavailable'),
+      defectsBySize: volatileData.defectsBySize || unavailableKpi('Defects by Size unavailable'),
+      defectsByLine: volatileData.defectsByLine || unavailableKpi('Defects by Line unavailable'),
+    };
+  }
+
+  // Live mode: fetch from Seconds General analytics endpoints
+  const kpiMap = {
+    defectsByCustomer: () => fetchKpi('seconds-general/defects-by-customer/', filters),
+    defectsByStyle: () => fetchKpi('seconds-general/defects-by-style/', filters),
+    weeklyTrend: () => fetchKpi('seconds-general/weekly-trend/', filters),
+    sewingVsFabric: () => fetchKpi('seconds-general/sewing-vs-fabric/', filters),
+    productionTotals: () => fetchKpi('seconds-general/production-totals/', filters),
+    topSewingDefects: () => fetchKpi('seconds-general/top-defects/', { ...filters, type: 'sewing' }),
+    topFabricDefects: () => fetchKpi('seconds-general/top-defects/', { ...filters, type: 'fabric' }),
+    fixVsDefinitive: () => fetchKpi('seconds-general/fix-vs-definitive/', filters),
+    defectsByColor: () => fetchKpi('seconds-general/defects-by-color/', filters),
+    defectsBySize: () => fetchKpi('seconds-general/defects-by-size/', filters),
+    defectsByLine: () => fetchKpi('seconds-general/defects-by-line/', filters),
+  };
+
+  const entries = Object.entries(kpiMap).map(([key, fn]) => [
+    key,
+    fn().catch((err) => unavailableKpi(err.message)),
+  ]);
+
+  const results = await Promise.allSettled(entries.map(([, p]) => p));
+
+  const kpis = {};
+  entries.forEach(([key], i) => {
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      kpis[key] = result.value;
+    } else {
+      kpis[key] = unavailableKpi(result.reason?.message ?? 'Unknown error');
+    }
+  });
+
+  return kpis;
 }

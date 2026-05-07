@@ -10,7 +10,7 @@ import { render, screen, act, waitFor } from '@testing-library/react';
 vi.mock('./dashboards/PlantDashboard', () => ({
   default: (props) => (
     <div data-testid="dashboard-plant">
-      PlantDashboard {props?.volatileData ? '(volatile)' : ''}
+      PlantDashboard {props?.isFastMode ? '(fast mode)' : ''}
     </div>
   ),
 }));
@@ -18,7 +18,7 @@ vi.mock('./dashboards/PlantDashboard', () => ({
 vi.mock('./dashboards/CustomerDashboard', () => ({
   default: (props) => (
     <div data-testid="dashboard-customer">
-      CustomerDashboard {props?.volatileData ? '(volatile)' : ''}
+      CustomerDashboard {props?.isFastMode ? '(fast mode)' : ''}
     </div>
   ),
 }));
@@ -220,19 +220,19 @@ describe('DashboardShell', () => {
   // Props forwarding
   // -----------------------------------------------------------------------
   describe('props forwarding', () => {
-    it('should forward volatileData to active dashboard component', async () => {
-      const volatileData = [{ id: 1, value: 'test' }];
-      render(<DashboardShell volatileData={volatileData} />);
+    it('should forward isFastMode when volatileFile is provided', async () => {
+      const volatileFile = { name: 'test.xlsx' };
+      render(<DashboardShell volatileFile={volatileFile} />);
 
       await waitForDashboard('dashboard-plant');
-      expect(screen.getByText(/\(volatile\)/)).toBeInTheDocument();
+      expect(screen.getByText(/\(fast mode\)/)).toBeInTheDocument();
     });
 
-    it('should render without volatile data (live mode)', async () => {
+    it('should render without fast mode (live mode)', async () => {
       render(<DashboardShell />);
 
       await waitForDashboard('dashboard-plant');
-      // Plant dashboard renders without "(volatile)" suffix
+      // Plant dashboard renders without "(fast mode)" suffix
       expect(screen.getByText('PlantDashboard')).toBeInTheDocument();
     });
   });

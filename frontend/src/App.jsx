@@ -23,7 +23,6 @@ function AppContent() {
     }
   });
   
-  const [volatileData, setVolatileData] = useState(null);
   const [volatileFile, setVolatileFile] = useState(null);
   const defaultView = 'excel';
   const resolvedActiveView = activeView || (isAuthenticated && user ? defaultView : '');
@@ -66,7 +65,7 @@ function AppContent() {
             setActiveView(view);
             localStorage.setItem('rift-activeView', view);
           }} 
-        setVolatileData={setVolatileData}
+        setVolatileFile={setVolatileFile}
         onLogout={handleLogout} 
       />
 
@@ -86,7 +85,7 @@ function AppContent() {
           )}
 
           {resolvedActiveView === 'dashboard' && (
-            <DashboardShell volatileData={volatileData} volatileFile={volatileFile} />
+            <DashboardShell volatileFile={volatileFile} />
           )}
 
           {resolvedActiveView === 'reports' && (

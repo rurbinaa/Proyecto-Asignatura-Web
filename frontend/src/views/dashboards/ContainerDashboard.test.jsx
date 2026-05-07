@@ -220,78 +220,89 @@ describe('ContainerDashboard — volatile mode', () => {
     vi.clearAllMocks();
   });
 
-  it('renders volatile helper banner when volatileFile is provided', () => {
-    fetchAllContainerKpis.mockResolvedValue({
-      executiveSummary: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-      containersByState: [
-        { name: '< 80%', value: 3 },
-        { name: '80-90%', value: 5 },
-      ],
-      passRateTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-      inspectedTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-      rejectedTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-      topDefects: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-      defectComposition: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-      worstContainers: { status: 'unavailable', reason: 'volatile', message: 'Not available in fast mode' },
-    });
+  // Realistic container KPI data that the backend now returns for volatile mode
+  const volatileKpiData = {
+    executiveSummary: [
+      { label: 'Total Containers', value: 3 },
+      { label: 'Average Pass Rate', value: 70.0 },
+      { label: 'Total Palettes Inspected', value: 60 },
+      { label: 'Total Rejected Palettes', value: 20 },
+    ],
+    containersByState: [
+      { name: '< 80%', value: 2 },
+      { name: '80-90%', value: 0 },
+      { name: '90-95%', value: 1 },
+      { name: '> 95%', value: 0 },
+    ],
+    passRateTrend: [{ name: 'Pass Rate', data: [{ x: '2025-01-10', y: 70.0 }] }],
+    inspectedTrend: [{ name: 'Inspected', data: [{ x: '2025-01-10', y: 60 }] }],
+    rejectedTrend: [{ name: 'Rejected', data: [{ x: '2025-01-10', y: 20 }] }],
+    topDefects: { result: [{ label: 'Dirt Label', value: 12 }] },
+    defectComposition: { result: [{ name: 'Dirt Label', value: 12 }] },
+    worstContainers: [],
+  };
+
+  it('renders all KPI cards from volatile data (no fast-mode banner)', async () => {
+    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
-    const banner = screen.getByRole('status');
-    expect(banner).toBeInTheDocument();
-    expect(banner.textContent).toMatch(/fast mode/i);
+    await waitFor(() => {
+      // Should NOT render old fast-mode banner
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByText(/only containers by state/i)).not.toBeInTheDocument();
+
+      // All KPI cards should render
+      expect(screen.getByText('Container Dashboard')).toBeInTheDocument();
+      expect(screen.getByText('Total Containers')).toBeInTheDocument();
+      expect(screen.getByText('Pass Rate Trend')).toBeInTheDocument();
+      expect(screen.getByText('Top Defects')).toBeInTheDocument();
+    });
   });
 
   it('does not show ContainerFilterBar in volatile mode', () => {
-    fetchAllContainerKpis.mockResolvedValue({
-      containersByState: [],
-      executiveSummary: { status: 'unavailable', reason: 'volatile', message: '' },
-      passRateTrend: { status: 'unavailable', reason: 'volatile', message: '' },
-      inspectedTrend: { status: 'unavailable', reason: 'volatile', message: '' },
-      rejectedTrend: { status: 'unavailable', reason: 'volatile', message: '' },
-      topDefects: { status: 'unavailable', reason: 'volatile', message: '' },
-      defectComposition: { status: 'unavailable', reason: 'volatile', message: '' },
-      worstContainers: { status: 'unavailable', reason: 'volatile', message: '' },
-    });
+    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
     expect(screen.queryByTestId('container-filter-bar')).not.toBeInTheDocument();
   });
 
-  it('renders containersByState donut in volatile mode', async () => {
+  it('renders executive summary cards in volatile mode', async () => {
+    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
+
+    render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Total Containers')).toBeInTheDocument();
+      expect(screen.getByText('Average Pass Rate')).toBeInTheDocument();
+      expect(screen.getByText('Total Inspected Palettes')).toBeInTheDocument();
+      expect(screen.getByText('Total Rejected Palettes')).toBeInTheDocument();
+    });
+  });
+
+  it('renders trend charts in volatile mode', async () => {
+    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
+
+    render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Pass Rate Trend')).toBeInTheDocument();
+      expect(screen.getByText('Inspected Trend')).toBeInTheDocument();
+      expect(screen.getByText('Rejected Trend')).toBeInTheDocument();
+    });
+  });
+
+  it('shows non-available messaging when volatile data is empty', async () => {
     fetchAllContainerKpis.mockResolvedValue({
       executiveSummary: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
-      containersByState: [
-        { name: '< 80%', value: 3 },
-        { name: '> 95%', value: 10 },
-      ],
+      containersByState: [],
       passRateTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
       inspectedTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
       rejectedTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
       topDefects: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
       defectComposition: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
       worstContainers: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
-    });
-
-    render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Container State Distribution')).toBeInTheDocument();
-    });
-  });
-
-  it('shows unavailable messaging for Container-only KPIs in volatile mode', async () => {
-    const unavailableMsg = 'Container Executive Summary requires live database';
-    fetchAllContainerKpis.mockResolvedValue({
-      executiveSummary: { status: 'unavailable', reason: 'volatile', message: unavailableMsg },
-      containersByState: [],
-      passRateTrend: { status: 'unavailable', reason: 'volatile', message: 'Pass Rate Trend requires live database' },
-      inspectedTrend: { status: 'unavailable', reason: 'volatile', message: 'Inspected Trend requires live database' },
-      rejectedTrend: { status: 'unavailable', reason: 'volatile', message: 'Rejected Trend requires live database' },
-      topDefects: { status: 'unavailable', reason: 'volatile', message: 'Top Defects requires live database' },
-      defectComposition: { status: 'unavailable', reason: 'volatile', message: 'Defect Composition requires live database' },
-      worstContainers: { status: 'unavailable', reason: 'volatile', message: 'Worst Containers requires live database' },
     });
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
@@ -340,26 +351,4 @@ describe('ContainerDashboard — render stability', () => {
   });
 });
 
-describe('ContainerDashboard — volatile mode with volatileData prop', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
 
-  it('renders volatile helper banner when volatileData is provided', () => {
-    fetchAllContainerKpis.mockResolvedValue({
-      containersByState: [],
-      executiveSummary: { status: 'unavailable', reason: 'volatile', message: '' },
-      passRateTrend: { status: 'unavailable', reason: 'volatile', message: '' },
-      inspectedTrend: { status: 'unavailable', reason: 'volatile', message: '' },
-      rejectedTrend: { status: 'unavailable', reason: 'volatile', message: '' },
-      topDefects: { status: 'unavailable', reason: 'volatile', message: '' },
-      defectComposition: { status: 'unavailable', reason: 'volatile', message: '' },
-      worstContainers: { status: 'unavailable', reason: 'volatile', message: '' },
-    });
-
-    render(<ContainerDashboard context="plant" volatileData={[{ id: 1 }]} />);
-
-    const banner = screen.getByRole('status');
-    expect(banner).toBeInTheDocument();
-  });
-});

@@ -6,6 +6,7 @@ import LineChartKpi from '../../Components/kpi/LineChartKpi';
 import DonutChartKpi from '../../Components/kpi/DonutChartKpi';
 import KpiNumberCard from '../../Components/kpi/KpiNumberCard';
 import FilterBar from '../../Components/kpi/FilterBar';
+import useVolatileDashboardCache from '../useVolatileDashboardCache';
 import Masonry from 'react-masonry-css';
 import '../DashboardView.css';
 
@@ -64,7 +65,12 @@ function buildFilterParams(filters) {
  * All data is sourced exclusively from SecondsGeneral data (spec isolation requirement).
  * Global filters are applied to all endpoints via SecondsGeneralFilterMixin on the backend.
  */
-export default function SecondsGeneralDashboard() {
+export default function SecondsGeneralDashboard({ volatileFile }) {
+  // ── Volatile (fast) mode ─────────────────────────────────────────────
+  const { data: volatileData, loading: volatileLoading, error: volatileError } =
+    useVolatileDashboardCache(volatileFile, 'seconds_general');
+
+  // ── Live mode state ──────────────────────────────────────────────────
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [filterOptions, setFilterOptions] = useState(null);
 
@@ -82,8 +88,48 @@ export default function SecondsGeneralDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch filter options on mount and whenever dual-line toggle changes.
+  // If in volatile mode, use volatile data
+  const isVolatile = Boolean(volatileFile);
+
+  // Derive state from volatile data when applicable
+  const activeDefectsByCustomer = isVolatile ? volatileData?.defectsByCustomer : defectsByCustomer;
+  const activeDefectsByStyle = isVolatile ? volatileData?.defectsByStyle : defectsByStyle;
+
+  // Weekly trend: volatile uses camelCase, live uses name/data series
+  let activeWeeklyTrend;
+  if (isVolatile) {
+    activeWeeklyTrend = volatileData?.weeklyTrend || [];
+  } else {
+    activeWeeklyTrend = weeklyTrend && weeklyTrend.length > 0
+      ? weeklyTrend.map((s) => ({ name: s.name || 'Defects', data: s.data || [] }))
+      : [];
+  }
+
+  // Sewing vs Fabric: volatile uses camelCase with label/value, live uses name/value
+  let activeSewingVsFabric;
+  if (isVolatile) {
+    activeSewingVsFabric = volatileData?.sewingVsFabric
+      ? volatileData.sewingVsFabric.map((item) => ({ name: item.label, value: item.value }))
+      : [];
+  } else {
+    activeSewingVsFabric = sewingVsFabric || [];
+  }
+
+  const activeProductionTotals = isVolatile ? volatileData?.productionTotals : productionTotals;
+  const activeTopSewingDefects = isVolatile ? volatileData?.topSewingDefects : topSewingDefects;
+  const activeTopFabricDefects = isVolatile ? volatileData?.topFabricDefects : topFabricDefects;
+  const activeFixVsDefinitive = isVolatile ? volatileData?.fixVsDefinitive : fixVsDefinitive;
+  const activeDefectsByColor = isVolatile ? volatileData?.defectsByColor : defectsByColor;
+  const activeDefectsBySize = isVolatile ? volatileData?.defectsBySize : defectsBySize;
+  const activeDefectsByLine = isVolatile ? volatileData?.defectsByLine : defectsByLine;
+
+  const activeLoading = isVolatile ? volatileLoading : loading;
+  const activeError = isVolatile ? volatileError : error;
+
+  // ── Live mode: fetch filter options on mount ─────────────────────────
   useEffect(() => {
+    if (isVolatile) return; // No filter options needed in volatile mode
+
     let cancelled = false;
 
     axiosClient.get(`${SECONDS_GEN_BASE}/filter-options/`, {
@@ -103,10 +149,11 @@ export default function SecondsGeneralDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [filters.includeDualLines]);
+  }, [filters.includeDualLines, isVolatile]);
 
 
   const loadData = useCallback(async (filtersOverride) => {
+    if (isVolatile) return; // No live fetch in volatile mode
     setLoading(true);
     setError(null);
 
@@ -155,12 +202,14 @@ export default function SecondsGeneralDashboard() {
       setError(err.response?.data?.detail || err.message || 'Failed to load analytics');
       setLoading(false);
     }
-  }, []);
+  }, [isVolatile]);
 
   // Mirror QC FA Customer behavior: filters apply immediately on change.
   useEffect(() => {
-    loadData(filters);
-  }, [filters, loadData]);
+    if (!isVolatile) {
+      loadData(filters); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [filters, loadData, isVolatile]);
 
 
   const handleFilterChange = useCallback((newFilters) => {
@@ -175,32 +224,35 @@ export default function SecondsGeneralDashboard() {
   }, []);
 
   const handleRefresh = useCallback(() => {
-    loadData(filters);
-  }, [loadData, filters]);
+    if (!isVolatile) {
+      loadData(filters);
+    }
+  }, [loadData, filters, isVolatile]);
 
-  const seriesForWeeklyTrend = weeklyTrend && weeklyTrend.length > 0
-    ? weeklyTrend.map((s) => ({
-        name: s.name || 'Defects',
-        data: s.data || [],
-      }))
+  const seriesForWeeklyTrend = Array.isArray(activeWeeklyTrend)
+    ? (activeWeeklyTrend.length > 0 && activeWeeklyTrend[0].data
+        ? activeWeeklyTrend  // Already in [{name, data}] format
+        : [{ name: 'Defects', data: [] }])
     : [];
 
   return (
     <div className="dashboard-view">
       <div className="dashboard-header">
         <h1 className="dashboard-title">Seconds General Analytics</h1>
-        <button className="refresh-btn" onClick={handleRefresh} disabled={loading}>
-          {loading ? 'Loading...' : 'Refresh'}
+        <button className="refresh-btn" onClick={handleRefresh} disabled={activeLoading}>
+          {activeLoading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
-      <FilterBar
-        filters={filters}
-        onFilterChange={handleFilterChange}
-        onReset={handleReset}
-        filterOptions={filterOptions}
-        context="customer"
-      />
+      {!isVolatile && (
+        <FilterBar
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onReset={handleReset}
+          filterOptions={filterOptions}
+          context="customer"
+        />
+      )}
 
       <div
         style={{
@@ -210,44 +262,44 @@ export default function SecondsGeneralDashboard() {
           marginBottom: '16px',
         }}
       >
-        <KpiCard title="Total Produced" loading={loading} error={error}>
-          {productionTotals ? (
+        <KpiCard title="Total Produced" loading={activeLoading} error={activeError}>
+          {activeProductionTotals ? (
             <KpiNumberCard
               title=""
-              value={productionTotals.total_produced}
+              value={activeProductionTotals.total_produced}
               decimals={0}
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
-        <KpiCard title="Total Fixed" loading={loading} error={error}>
-          {productionTotals ? (
+        <KpiCard title="Total Fixed" loading={activeLoading} error={activeError}>
+          {activeProductionTotals ? (
             <KpiNumberCard
               title=""
-              value={productionTotals.total_fixed}
+              value={activeProductionTotals.total_fixed}
               decimals={0}
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
-        <KpiCard title="Total Definitive" loading={loading} error={error}>
-          {productionTotals ? (
+        <KpiCard title="Total Definitive" loading={activeLoading} error={activeError}>
+          {activeProductionTotals ? (
             <KpiNumberCard
               title=""
-              value={productionTotals.total_definitive}
+              value={activeProductionTotals.total_definitive}
               decimals={0}
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
@@ -259,10 +311,10 @@ export default function SecondsGeneralDashboard() {
         columnClassName="dashboard-masonry-column"
       >
         {/* Defects by Customer */}
-        <KpiCard title="Defects by Customer" loading={loading} error={error}>
-          {defectsByCustomer && defectsByCustomer.length > 0 ? (
+        <KpiCard title="Defects by Customer" loading={activeLoading} error={activeError}>
+          {activeDefectsByCustomer && activeDefectsByCustomer.length > 0 ? (
             <BarChartKpi
-              data={defectsByCustomer}
+              data={activeDefectsByCustomer}
               color="#3b82f6"
               xAxisLabel="Customer"
               yAxisLabel="Total Defects"
@@ -270,16 +322,16 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Defects by Style */}
-        <KpiCard title="Defects by Style" loading={loading} error={error}>
-          {defectsByStyle && defectsByStyle.length > 0 ? (
+        <KpiCard title="Defects by Style" loading={activeLoading} error={activeError}>
+          {activeDefectsByStyle && activeDefectsByStyle.length > 0 ? (
             <BarChartKpi
-              data={defectsByStyle}
+              data={activeDefectsByStyle}
               color="#8b5cf6"
               horizontal
               xAxisLabel="Total Defects"
@@ -288,14 +340,14 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Weekly Trend */}
-        <KpiCard title="Weekly Trend" loading={loading} error={error}>
-          {seriesForWeeklyTrend.length > 0 ? (
+        <KpiCard title="Weekly Trend" loading={activeLoading} error={activeError}>
+          {seriesForWeeklyTrend.length > 0 && seriesForWeeklyTrend[0].data?.length > 0 ? (
             <LineChartKpi
               series={seriesForWeeklyTrend}
               xAxisLabel="Week"
@@ -303,16 +355,16 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Sewing vs Fabric Mix */}
-        <KpiCard title="Sewing vs Fabric" loading={loading} error={error}>
-          {sewingVsFabric && sewingVsFabric.length > 0 ? (
+        <KpiCard title="Sewing vs Fabric" loading={activeLoading} error={activeError}>
+          {activeSewingVsFabric && activeSewingVsFabric.length > 0 ? (
             <DonutChartKpi
-              data={[...sewingVsFabric].sort((a, b) => {
+              data={[...activeSewingVsFabric].sort((a, b) => {
                 if (a.name === 'Sewing') return -1;
                 if (b.name === 'Sewing') return 1;
                 return 0;
@@ -322,16 +374,16 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Top Sewing Defects */}
-        <KpiCard title="Top Sewing Defects" loading={loading} error={error}>
-          {topSewingDefects && topSewingDefects.length > 0 ? (
+        <KpiCard title="Top Sewing Defects" loading={activeLoading} error={activeError}>
+          {activeTopSewingDefects && activeTopSewingDefects.length > 0 ? (
             <BarChartKpi
-              data={topSewingDefects}
+              data={activeTopSewingDefects}
               horizontal
               color="#ef4444"
               xAxisLabel="Total Defects"
@@ -340,16 +392,16 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Top Fabric Defects */}
-        <KpiCard title="Top Fabric Defects" loading={loading} error={error}>
-          {topFabricDefects && topFabricDefects.length > 0 ? (
+        <KpiCard title="Top Fabric Defects" loading={activeLoading} error={activeError}>
+          {activeTopFabricDefects && activeTopFabricDefects.length > 0 ? (
             <BarChartKpi
-              data={topFabricDefects}
+              data={activeTopFabricDefects}
               horizontal
               color="#f59e0b"
               xAxisLabel="Total Defects"
@@ -358,31 +410,31 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Fix vs Definitive */}
-        <KpiCard title="Fix vs Definitive" loading={loading} error={error}>
-          {fixVsDefinitive && fixVsDefinitive.length > 0 ? (
+        <KpiCard title="Fix vs Definitive" loading={activeLoading} error={activeError}>
+          {activeFixVsDefinitive && activeFixVsDefinitive.length > 0 ? (
             <LineChartKpi
-              series={fixVsDefinitive}
+              series={activeFixVsDefinitive}
               xAxisLabel="Week"
               yAxisLabel="Quantity"
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Defects by Color */}
-        <KpiCard title="Defects by Color" loading={loading} error={error}>
-          {defectsByColor && defectsByColor.length > 0 ? (
+        <KpiCard title="Defects by Color" loading={activeLoading} error={activeError}>
+          {activeDefectsByColor && activeDefectsByColor.length > 0 ? (
             <BarChartKpi
-              data={defectsByColor}
+              data={activeDefectsByColor}
               color="#06b6d4"
               xAxisLabel="Color"
               yAxisLabel="Total Defects"
@@ -390,16 +442,16 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Defects by Size */}
-        <KpiCard title="Defects by Size" loading={loading} error={error}>
-          {defectsBySize && defectsBySize.length > 0 ? (
+        <KpiCard title="Defects by Size" loading={activeLoading} error={activeError}>
+          {activeDefectsBySize && activeDefectsBySize.length > 0 ? (
             <BarChartKpi
-              data={defectsBySize}
+              data={activeDefectsBySize}
               color="#84cc16"
               xAxisLabel="Size"
               yAxisLabel="Total Defects"
@@ -407,16 +459,16 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>
 
         {/* Defects by Line */}
-        <KpiCard title="Defects by Line" loading={loading} error={error}>
-          {defectsByLine && defectsByLine.length > 0 ? (
+        <KpiCard title="Defects by Line" loading={activeLoading} error={activeError}>
+          {activeDefectsByLine && activeDefectsByLine.length > 0 ? (
             <BarChartKpi
-              data={defectsByLine}
+              data={activeDefectsByLine}
               horizontal
               color="#f97316"
               xAxisLabel="Total Defects"
@@ -425,7 +477,7 @@ export default function SecondsGeneralDashboard() {
             />
           ) : (
             <div className="null-message">
-              {loading ? 'Loading...' : 'No data available'}
+              {activeLoading ? 'Loading...' : 'No data available'}
             </div>
           )}
         </KpiCard>

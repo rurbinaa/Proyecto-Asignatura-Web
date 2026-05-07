@@ -70,7 +70,7 @@ class VolatileKpiViewTest(TestCase):
             }
         ])
 
-        with patch('quality_data.views.load_and_clean', return_value=qc_df):
+        with patch('excel_importer.handler_service.load_and_clean', return_value=qc_df):
             with patch('quality_data.views.parse_seconds_rework', return_value=[]):
                 with patch('quality_data.views.parse_fabric_defects', return_value=[]):
                     with patch('quality_data.views.parse_containers_by_state', return_value=[]):
@@ -432,16 +432,20 @@ class VolatileKpiViewTest(TestCase):
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
 
-        # When load_and_clean fails, post() should return 400 with error
-        with patch('quality_data.views.load_and_clean', side_effect=Exception("Simulated I/O error")):
+        # When load_and_clean fails, post() should return 200 with empty payload
+        # (the service catches the error and returns an empty DataFrame)
+        with patch('excel_importer.handler_service.load_and_clean', side_effect=Exception("Simulated I/O error")):
             response = self.client.post(
                 self.url,
                 {'file': uploaded_file},
                 format='multipart'
             )
-            # Should return error response, not crash
-            self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
-            self.assertIn('error', response.data)
+            # Should not return error — the service handles the I/O error gracefully
+            # and returns computed KPIs from empty data.
+            self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+            # With empty rows, KPI computations return empty/nil results
+            self.assertIn('aql_by_style', response.data)
+            self.assertIsNone(response.data.get('seconds_rework'))
 
 
 # ─────────────────────────────────────────────────────────
@@ -674,7 +678,7 @@ class VolatileDefectInsightKpisTest(TestCase):
             },
         ])
 
-        with patch('quality_data.views.load_and_clean', return_value=qc_df):
+        with patch('excel_importer.handler_service.load_and_clean', return_value=qc_df):
             with patch('quality_data.views.parse_seconds_rework', return_value=[]):
                 with patch('quality_data.views.parse_fabric_defects', return_value=[]):
                     with patch('quality_data.views.parse_containers_by_state', return_value=[]):
@@ -1171,3 +1175,1211 @@ class VolatileFilterOptionsSanitizationTest(TestCase):
         ]
         result = self.view._compute_filter_options(rows)
         self.assertEqual(result['team'], [5, 10])
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 1: Dashboard dispatch + context forwarding + NaN safety
+# ─────────────────────────────────────────────────────────
+
+class VolatileDashboardDispatchTest(TestCase):
+    """Tests for the dashboard-aware dispatch in VolatileKpiView.post()."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('quality_data:kpi-volatile')
+
+    def _make_file(self):
+        return SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+    def test_post_with_dashboard_container_returns_all_container_kpis(self):
+        """POST with dashboard=container returns full container KPI payload."""
+        from unittest.mock import patch
+
+        file_obj = self._make_file()
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            # Return empty container rows (still returns zero-filled KPIs)
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                self.url,
+                {'file': file_obj, 'dashboard': 'container'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # All container KPI keys should be present
+        self.assertIn('containers_by_state', response.data)
+        self.assertIn('executive_summary', response.data)
+        self.assertIn('pass_rate_trend', response.data)
+        self.assertIn('inspected_trend', response.data)
+        self.assertIn('rejected_trend', response.data)
+        self.assertIn('top_defects', response.data)
+        self.assertIn('defect_composition', response.data)
+        self.assertIn('worst_containers', response.data)
+        # QC FA keys should NOT be present for container dashboard
+        self.assertNotIn('aql_by_style', response.data)
+        self.assertNotIn('defect_rate', response.data)
+
+    def test_post_with_dashboard_seconds_a4_returns_full_payload_now(self):
+        """POST with dashboard=seconds_a4 returns real KPI payload (no longer empty placeholder)."""
+        from unittest.mock import patch
+
+        file_obj = self._make_file()
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                self.url,
+                {'file': file_obj, 'dashboard': 'seconds_a4'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have all Seconds A4 KPIs (not empty anymore)
+        self.assertIn('executive_summary', response.data)
+        self.assertIn('weekly_trend', response.data)
+        self.assertIn('sew_vs_fab', response.data)
+        self.assertIn('by_style', response.data)
+
+    def test_post_with_dashboard_seconds_general_returns_full_payload_now(self):
+        """POST with dashboard=seconds_general returns real KPI payload (no longer empty placeholder)."""
+        from unittest.mock import patch
+
+        file_obj = self._make_file()
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                self.url,
+                {'file': file_obj, 'dashboard': 'seconds_general'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should now have real KPI keys (not empty anymore)
+        self.assertIn('defects_by_customer', response.data)
+        self.assertIn('production_totals', response.data)
+        self.assertNotEqual(response.data, {})
+
+    def test_post_with_dashboard_qcfa_and_context_customer_uses_customer_sheet(self):
+        """dashboard=qcfa + context=customer triggers QC FA Customer sheet parsing."""
+        from unittest.mock import patch
+
+        file_obj = self._make_file()
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+
+            response = self.client.post(
+                self.url,
+                {'file': file_obj, 'dashboard': 'qcfa', 'context': 'customer'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Verify _get_volatile_rows was called with correct dashboard and context
+        mock_get_rows.assert_called_once()
+        call_args = mock_get_rows.call_args[0]
+        self.assertEqual(call_args[1], 'qcfa')
+        self.assertEqual(call_args[2], 'customer')
+
+
+class VolatileNanSafetyTest(TestCase):
+    """Tests for NaN/empty-cell hardening in volatile helpers."""
+
+    def setUp(self):
+        self.view = VolatileKpiView()
+
+    def test_safe_defect_int_handles_nan(self):
+        """_safe_defect_int handles float('nan') without crashing."""
+        result = self.view._safe_defect_int(float('nan'))
+        self.assertEqual(result, 0)
+
+    def test_safe_defect_int_handles_none(self):
+        """_safe_defect_int handles None."""
+        result = self.view._safe_defect_int(None)
+        self.assertEqual(result, 0)
+
+    def test_safe_defect_int_handles_float(self):
+        """_safe_defect_int handles normal float."""
+        result = self.view._safe_defect_int(42.0)
+        self.assertEqual(result, 42)
+
+    def test_safe_defect_int_handles_string_number(self):
+        """_safe_defect_int handles numeric strings."""
+        result = self.view._safe_defect_int('15')
+        self.assertEqual(result, 15)
+
+    def test_safe_defect_int_handles_non_numeric_string(self):
+        """_safe_defect_int handles non-numeric strings gracefully."""
+        result = self.view._safe_defect_int('not-a-number')
+        self.assertEqual(result, 0)
+
+    def test_defect_composition_with_nan_values(self):
+        """_calc_defect_composition does not crash when rows contain NaN in defect fields."""
+        import math
+        rows = [
+            {
+                'uneven': float('nan'), 'broken_stitch': 5, 'open_seam': None,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 5, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_composition(rows)
+        # Should not crash - broken_stitch should be present, uneven should be 0/excluded
+        names = {item['name'] for item in result}
+        self.assertIn('Broken Stitch', names)
+        self.assertNotIn('Uneven', names)
+
+    def test_defect_trend_top_3_with_nan_values(self):
+        """_calc_defect_trend_top_3 does not crash when rows contain NaN values."""
+        rows = [
+            {
+                'uneven': float('nan'), 'broken_stitch': 5,
+                'style': 'N3165', 'week': 1, 'team': 1, 'customer': 'CUST_A',
+                'defects_total': 5, 'sample': 100, 'color': 'red', 'batch': 1,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+            {
+                'uneven': 3, 'broken_stitch': None, 'tear': 2,
+                'style': 'N3165', 'week': 2, 'team': 2, 'customer': 'CUST_B',
+                'defects_total': 5, 'sample': 100, 'color': 'blue', 'batch': 2,
+                'pass_or_fail': 'PASS', 'rejected': 0, 'accepted': 100,
+            },
+        ]
+        result = self.view._calc_defect_trend_top_3(rows)
+        # Should not crash - Broken Stitch (5) and Uneven (3) should be present
+        names = {s['name'] for s in result}
+        self.assertIn('Broken Stitch', names)
+        self.assertIn('Uneven', names)
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 2: Container volatile KPI computation tests
+# ─────────────────────────────────────────────────────────
+
+class ContainerVolatileKpiComputationTest(TestCase):
+    """Tests for container KPI computation helpers in volatile_kpi_service.py."""
+
+    def setUp(self):
+        from quality_data.volatile_kpi_service import (
+            calc_container_executive_summary,
+            calc_container_state_distribution,
+            calc_container_pass_rate_trend,
+            calc_container_inspected_trend,
+            calc_container_rejected_trend,
+            calc_container_top_defects,
+            calc_container_defect_composition,
+            calc_container_worst_containers,
+        )
+        self._exec_summary = calc_container_executive_summary
+        self._state_dist = calc_container_state_distribution
+        self._pass_trend = calc_container_pass_rate_trend
+        self._insp_trend = calc_container_inspected_trend
+        self._rej_trend = calc_container_rejected_trend
+        self._top_defects = calc_container_top_defects
+        self._defect_comp = calc_container_defect_composition
+        self._worst = calc_container_worst_containers
+
+        self.defect_fields = [
+            'dirt_label', 'dirt_container', 'dirt_cartoons', 'container_holes',
+            'writte_mark_on_label', 'written_mark_on_cartoon', 'container_poor_close',
+            'boxes_poor_close', 'printing_issues_label', 'misaligned_label',
+            'crushed_corners', 'cartoons_holes', 'warped_boxes', 'defects_label',
+            'total_defects',
+        ]
+
+        self.client = APIClient()
+
+        self.sample_rows = [
+            {
+                'container_number': 100, 'date': '2025-01-10', 'customer': 'AlphaCorp',
+                'transfer_of_container': 1, 'total_palette': 20,
+                'total_palette_pass': 18, 'total_palette_rejected': 2,
+                'percentage_pass': 90.0, 'percentage_reject': 10.0,
+                'dirt_label': 5, 'dirt_container': 3, 'total_defects': 8,
+            },
+            {
+                'container_number': 101, 'date': '2025-01-11', 'customer': 'AlphaCorp',
+                'transfer_of_container': 1, 'total_palette': 30,
+                'total_palette_pass': 15, 'total_palette_rejected': 15,
+                'percentage_pass': 50.0, 'percentage_reject': 50.0,
+                'dirt_label': 7, 'container_holes': 2, 'total_defects': 9,
+            },
+            {
+                'container_number': 102, 'date': '2025-01-12', 'customer': 'BetaInc',
+                'transfer_of_container': 1, 'total_palette': 10,
+                'total_palette_pass': 7, 'total_palette_rejected': 3,
+                'percentage_pass': 70.0, 'percentage_reject': 30.0,
+                'dirt_container': 4, 'total_defects': 4,
+            },
+        ]
+
+    # ── Executive Summary ─────────────────────────────────
+
+    def test_executive_summary_returns_expected_structure(self):
+        result = self._exec_summary(self.sample_rows)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 4)
+        labels = {item['label'] for item in result}
+        self.assertEqual(labels, {
+            'Total Containers', 'Average Pass Rate',
+            'Total Palettes Inspected', 'Total Rejected Palettes',
+        })
+        for item in result:
+            self.assertIn('label', item)
+            self.assertIn('value', item)
+
+    def test_executive_summary_values_match_computation(self):
+        result = self._exec_summary(self.sample_rows)
+        values = {item['label']: item['value'] for item in result}
+        self.assertEqual(values['Total Containers'], 3)
+        # avg of 90, 50, 70 = 70.0
+        self.assertEqual(values['Average Pass Rate'], 70.0)
+        # sum of 20, 30, 10 = 60
+        self.assertEqual(values['Total Palettes Inspected'], 60)
+        # sum of 2, 15, 3 = 20
+        self.assertEqual(values['Total Rejected Palettes'], 20)
+
+    def test_executive_summary_empty_rows(self):
+        result = self._exec_summary([])
+        for item in result:
+            self.assertEqual(item['value'], 0)
+
+    # ── Containers by State ────────────────────────────────
+
+    def test_state_distribution_returns_four_buckets(self):
+        result = self._state_dist(self.sample_rows)
+        self.assertEqual(len(result), 4)
+        names = {item['name'] for item in result}
+        self.assertEqual(names, {'< 80%', '80-90%', '90-95%', '> 95%'})
+
+    def test_state_distribution_bucket_counts(self):
+        # 50% → < 80%, 70% → < 80%, 90% → 80-90% → 90-95%
+        result = self._state_dist(self.sample_rows)
+        counts = {item['name']: item['value'] for item in result}
+        self.assertEqual(counts['< 80%'], 2)  # 50%, 70%
+        self.assertEqual(counts['80-90%'], 0)
+        self.assertEqual(counts['90-95%'], 1)  # 90%
+        self.assertEqual(counts['> 95%'], 0)
+
+    def test_state_distribution_boundary_95_excluded_from_gt_95(self):
+        """95% exactly falls in 90-95% bucket."""
+        rows = [{'percentage_pass': 95.0}]
+        result = self._state_dist(rows)
+        counts = {item['name']: item['value'] for item in result}
+        self.assertEqual(counts['90-95%'], 1)
+        self.assertEqual(counts['> 95%'], 0)
+
+    def test_state_distribution_fractional_percentage_normalized(self):
+        """0.97 (97%) should normalize to 97, then fall in > 95%."""
+        rows = [{'percentage_pass': 0.97}]
+        result = self._state_dist(rows)
+        counts = {item['name']: item['value'] for item in result}
+        self.assertEqual(counts['> 95%'], 1)
+
+    # ── Trends ─────────────────────────────────────────────
+
+    def test_pass_rate_trend_returns_series(self):
+        result = self._pass_trend(self.sample_rows)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        series = result[0]
+        self.assertIn('name', series)
+        self.assertIn('data', series)
+        self.assertGreater(len(series['data']), 0)
+        for point in series['data']:
+            self.assertIn('x', point)
+            self.assertIn('y', point)
+
+    def test_pass_rate_trend_data_points_count(self):
+        result = self._pass_trend(self.sample_rows)
+        series = result[0]
+        # 3 rows with 3 distinct dates
+        self.assertEqual(len(series['data']), 3)
+
+    def test_inspected_trend_returns_series(self):
+        result = self._insp_trend(self.sample_rows)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        self.assertIn('data', result[0])
+
+    def test_rejected_trend_returns_series(self):
+        result = self._rej_trend(self.sample_rows)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        self.assertIn('data', result[0])
+
+    def test_inspected_trend_sums_correctly(self):
+        # Only 1 row per date in sample, so total_palette = row value
+        result = self._insp_trend(self.sample_rows)
+        points = {p['x']: p['y'] for p in result[0]['data']}
+        self.assertEqual(points.get('2025-01-10'), 20)
+        self.assertEqual(points.get('2025-01-11'), 30)
+        self.assertEqual(points.get('2025-01-12'), 10)
+
+    def test_rejected_trend_sums_correctly(self):
+        result = self._rej_trend(self.sample_rows)
+        points = {p['x']: p['y'] for p in result[0]['data']}
+        self.assertEqual(points.get('2025-01-10'), 2)
+        self.assertEqual(points.get('2025-01-11'), 15)
+        self.assertEqual(points.get('2025-01-12'), 3)
+
+    def test_trends_empty_rows(self):
+        result = self._pass_trend([])
+        self.assertEqual(result[0]['data'], [])
+
+    # ── Top Defects ────────────────────────────────────────
+
+    def test_top_defects_excludes_total_defects(self):
+        result = self._top_defects(self.sample_rows, self.defect_fields)
+        labels = {item['label'] for item in result}
+        self.assertNotIn('Total Defects', labels)
+
+    def test_top_defects_aggregates_across_rows(self):
+        result = self._top_defects(self.sample_rows, self.defect_fields)
+        values = {item['label']: item['value'] for item in result}
+        # dirt_label: 5 + 7 + 0 = 12, dirt_container: 3 + 0 + 4 = 7
+        self.assertEqual(values.get('Dirt Label'), 12)
+        self.assertEqual(values.get('Dirt Container'), 7)
+        self.assertEqual(values.get('Container Holes'), 2)
+
+    def test_top_defects_sorted_by_value_desc(self):
+        result = self._top_defects(self.sample_rows, self.defect_fields)
+        if len(result) > 1:
+            for i in range(len(result) - 1):
+                self.assertGreaterEqual(result[i]['value'], result[i + 1]['value'])
+
+    def test_top_defects_empty_rows(self):
+        result = self._top_defects([], self.defect_fields)
+        self.assertEqual(result, [])
+
+    def test_top_defects_none_defect_fields(self):
+        result = self._top_defects(self.sample_rows, None)
+        self.assertEqual(result, [])
+
+    # ── Defect Composition ─────────────────────────────────
+
+    def test_defect_composition_returns_name_value(self):
+        result = self._defect_comp(self.sample_rows, self.defect_fields)
+        for item in result:
+            self.assertIn('name', item)
+            self.assertIn('value', item)
+
+    def test_defect_composition_excludes_zeros(self):
+        result = self._defect_comp(self.sample_rows, self.defect_fields)
+        for item in result:
+            self.assertGreater(item['value'], 0)
+
+    def test_defect_composition_sorted_by_value_desc_name_asc(self):
+        result = self._defect_comp(self.sample_rows, self.defect_fields)
+        if len(result) > 1:
+            for i in range(len(result) - 1):
+                if result[i]['value'] == result[i + 1]['value']:
+                    self.assertLessEqual(result[i]['name'], result[i + 1]['name'])
+                else:
+                    self.assertGreaterEqual(result[i]['value'], result[i + 1]['value'])
+
+    def test_defect_composition_empty_rows(self):
+        result = self._defect_comp([], self.defect_fields)
+        self.assertEqual(result, [])
+
+    # ── Worst Containers ───────────────────────────────────
+
+    def test_worst_containers_returns_expected_dto(self):
+        result = self._worst(self.sample_rows)
+        self.assertIsInstance(result, list)
+        if result:
+            row = result[0]
+            self.assertIn('containerNumber', row)
+            self.assertIn('customer', row)
+            self.assertIn('passRate', row)
+            self.assertIn('rejectedPalettes', row)
+            self.assertIn('inspectionDate', row)
+
+    def test_worst_containers_ordered_by_pass_rate_asc(self):
+        result = self._worst(self.sample_rows)
+        rates = [item['passRate'] for item in result]
+        self.assertEqual(rates, sorted(rates))
+
+    def test_worst_containers_default_top_5(self):
+        result = self._worst(self.sample_rows)
+        self.assertLessEqual(len(result), 5)
+
+    def test_worst_containers_empty_rows(self):
+        result = self._worst([])
+        self.assertEqual(result, [])
+
+    # ── Full container dispatch in VolatileKpiView ─────────
+
+    def test_volatile_post_dashboard_container_returns_full_payload(self):
+        """POST with dashboard=container returns all container KPIs, not just containers_by_state."""
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        url = reverse('quality_data:kpi-volatile')
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (self.sample_rows, self.defect_fields, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'container'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have all Container KPIs
+        self.assertIn('executive_summary', response.data)
+        self.assertIn('containers_by_state', response.data)
+        self.assertIn('pass_rate_trend', response.data)
+        self.assertIn('inspected_trend', response.data)
+        self.assertIn('rejected_trend', response.data)
+        self.assertIn('top_defects', response.data)
+        self.assertIn('defect_composition', response.data)
+        self.assertIn('worst_containers', response.data)
+        # QC FA keys should NOT be present
+        self.assertNotIn('aql_by_style', response.data)
+        self.assertNotIn('defect_rate', response.data)
+
+    def test_volatile_post_dashboard_container_empty_rows_returns_zeros(self):
+        """Container dispatch with empty rows returns zero-filled KPIs (no crash)."""
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        url = reverse('quality_data:kpi-volatile')
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'container'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        exec_summary = response.data.get('executive_summary', [])
+        for item in exec_summary:
+            self.assertEqual(item['value'], 0)
+        # Containers by state should have 4 buckets all at 0
+        state = response.data.get('containers_by_state', [])
+        self.assertEqual(len(state), 4)
+        for item in state:
+            self.assertEqual(item['value'], 0)
+
+
+class SecondsA4VolatileKpiComputationTest(TestCase):
+    """Tests for Seconds A4 KPI computation helpers in volatile_kpi_service.py."""
+
+    def setUp(self):
+        from quality_data.volatile_kpi_service import (
+            calc_seconds_a4_executive_summary,
+            calc_seconds_a4_weekly_trend,
+            calc_seconds_a4_sew_vs_fab,
+            calc_seconds_a4_by_style,
+            calc_seconds_a4_by_color,
+            calc_seconds_a4_by_line,
+            calc_seconds_a4_by_cut,
+            calc_seconds_a4_pass_fail_weekly,
+            calc_seconds_a4_filter_options,
+        )
+        self._exec_summary = calc_seconds_a4_executive_summary
+        self._weekly_trend = calc_seconds_a4_weekly_trend
+        self._sew_vs_fab = calc_seconds_a4_sew_vs_fab
+        self._by_style = calc_seconds_a4_by_style
+        self._by_color = calc_seconds_a4_by_color
+        self._by_line = calc_seconds_a4_by_line
+        self._by_cut = calc_seconds_a4_by_cut
+        self._pass_fail = calc_seconds_a4_pass_fail_weekly
+        self._filter_opts = calc_seconds_a4_filter_options
+
+        self.sample_rows = [
+            {
+                "year": 2025, "week": 1, "date": "2025-01-05",
+                "cut_num": 101, "style": "STYLE-A", "color": "Red",
+                "line": "L1", "total_of_2ds": 10,
+                "seconds_by_sew": 40, "seconds_by_fab": 30,
+                "seconds_sew_a4": 20, "seconds_fab_a4": 10,
+                "accepted": 50, "rejected": 5,
+                "pass_field": 15, "fail_field": 5,
+            },
+            {
+                "year": 2025, "week": 2, "date": "2025-01-12",
+                "cut_num": 101, "style": "STYLE-A", "color": "Blue",
+                "line": "L1", "total_of_2ds": 15,
+                "seconds_by_sew": 50, "seconds_by_fab": 40,
+                "seconds_sew_a4": 25, "seconds_fab_a4": 15,
+                "accepted": 60, "rejected": 6,
+                "pass_field": 12, "fail_field": 8,
+            },
+            {
+                "year": 2025, "week": 3, "date": "2025-01-19",
+                "cut_num": 102, "style": "STYLE-B", "color": "Red",
+                "line": "L2", "total_of_2ds": 20,
+                "seconds_by_sew": 60, "seconds_by_fab": 50,
+                "seconds_sew_a4": 30, "seconds_fab_a4": 20,
+                "accepted": 70, "rejected": 7,
+                "pass_field": 18, "fail_field": 2,
+            },
+        ]
+
+        self.client = APIClient()
+
+    # ── Executive Summary ─────────────────────────────────
+
+    def test_executive_summary_returns_totals_and_percentages_keys(self):
+        result = self._exec_summary(self.sample_rows)
+        self.assertIn("totals", result)
+        self.assertIn("percentages", result)
+        self.assertEqual(result["percentages"], [])
+
+    def test_executive_summary_totals_aggregate_correctly(self):
+        result = self._exec_summary(self.sample_rows)
+        t = result["totals"]
+        # total_of_2ds: 10+15+20 = 45
+        self.assertEqual(t["total_of_2ds"], 45)
+        # seconds_by_sew: 40+50+60 = 150
+        self.assertEqual(t["seconds_by_sew"], 150)
+        # seconds_by_fab: 30+40+50 = 120
+        self.assertEqual(t["seconds_by_fab"], 120)
+        # seconds_sew_a4: 20+25+30 = 75
+        self.assertEqual(t["seconds_sew_a4"], 75)
+        # seconds_fab_a4: 10+15+20 = 45
+        self.assertEqual(t["seconds_fab_a4"], 45)
+        # accepted: 50+60+70 = 180
+        self.assertEqual(t["accepted"], 180)
+        # rejected: 5+6+7 = 18
+        self.assertEqual(t["rejected"], 18)
+
+    def test_executive_summary_empty_rows(self):
+        result = self._exec_summary([])
+        for field in ("total_of_2ds", "seconds_by_sew", "seconds_by_fab",
+                      "seconds_sew_a4", "seconds_fab_a4", "accepted", "rejected"):
+            self.assertEqual(result["totals"][field], 0)
+
+    # ── Weekly Trend ───────────────────────────────────────
+
+    def test_weekly_trend_returns_series_with_name_and_data(self):
+        result = self._weekly_trend(self.sample_rows)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        series = result[0]
+        self.assertEqual(series["name"], "2DS")
+        self.assertIn("data", series)
+        self.assertGreater(len(series["data"]), 0)
+
+    def test_weekly_trend_data_points(self):
+        result = self._weekly_trend(self.sample_rows)
+        by_week = {p["x"]: p["y"] for p in result[0]["data"]}
+        self.assertEqual(by_week["2025-W1"], 10)
+        self.assertEqual(by_week["2025-W2"], 15)
+        self.assertEqual(by_week["2025-W3"], 20)
+
+    def test_weekly_trend_empty_rows(self):
+        result = self._weekly_trend([])
+        self.assertEqual(result[0]["data"], [])
+
+    # ── Sew vs Fab ─────────────────────────────────────────
+
+    def test_sew_vs_fab_returns_two_labels(self):
+        result = self._sew_vs_fab(self.sample_rows)
+        labels = {item["label"] for item in result}
+        self.assertEqual(labels, {"Sew", "Fabric"})
+
+    def test_sew_vs_fab_values(self):
+        result = self._sew_vs_fab(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["Sew"], 150)
+        self.assertEqual(values["Fabric"], 120)
+
+    def test_sew_vs_fab_empty_rows(self):
+        result = self._sew_vs_fab([])
+        self.assertEqual(result[0]["value"], 0)
+        self.assertEqual(result[1]["value"], 0)
+
+    # ── By Style ───────────────────────────────────────────
+
+    def test_by_style_aggregates_total_of_2ds(self):
+        result = self._by_style(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["STYLE-A"], 25)
+        self.assertEqual(values["STYLE-B"], 20)
+
+    def test_by_style_sorted_descending(self):
+        result = self._by_style(self.sample_rows)
+        for i in range(len(result) - 1):
+            self.assertGreaterEqual(result[i]["value"], result[i + 1]["value"])
+
+    def test_by_style_empty_rows(self):
+        result = self._by_style([])
+        self.assertEqual(result, [])
+
+    # ── By Color ───────────────────────────────────────────
+
+    def test_by_color_aggregates_total_of_2ds(self):
+        result = self._by_color(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["Red"], 30)
+
+    def test_by_color_empty_rows(self):
+        result = self._by_color([])
+        self.assertEqual(result, [])
+
+    # ── By Line ────────────────────────────────────────────
+
+    def test_by_line_aggregates_total_of_2ds(self):
+        result = self._by_line(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["L1"], 25)
+        self.assertEqual(values["L2"], 20)
+
+    def test_by_line_empty_rows(self):
+        result = self._by_line([])
+        self.assertEqual(result, [])
+
+    # ── By Cut ─────────────────────────────────────────────
+
+    def test_by_cut_aggregates_total_of_2ds(self):
+        result = self._by_cut(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["Cut 101"], 25)
+        self.assertEqual(values["Cut 102"], 20)
+
+    def test_by_cut_label_format(self):
+        result = self._by_cut(self.sample_rows)
+        labels = {item["label"] for item in result}
+        self.assertIn("Cut 101", labels)
+        self.assertIn("Cut 102", labels)
+
+    def test_by_cut_empty_rows(self):
+        result = self._by_cut([])
+        self.assertEqual(result, [])
+
+    # ── Pass Fail Weekly ───────────────────────────────────
+
+    def test_pass_fail_series_names(self):
+        result = self._pass_fail(self.sample_rows)
+        self.assertEqual(len(result), 2)
+        names = [s["name"] for s in result]
+        self.assertEqual(names, ["Pass", "Fail"])
+
+    def test_pass_fail_values(self):
+        result = self._pass_fail(self.sample_rows)
+        pass_data = {p["x"]: p["y"] for p in result[0]["data"]}
+        fail_data = {p["x"]: p["y"] for p in result[1]["data"]}
+        self.assertEqual(pass_data["2025-W1"], 15)
+        self.assertEqual(fail_data["2025-W1"], 5)
+        self.assertEqual(pass_data["2025-W2"], 12)
+        self.assertEqual(fail_data["2025-W2"], 8)
+
+    def test_pass_fail_empty_rows(self):
+        result = self._pass_fail([])
+        self.assertEqual(result[0]["data"], [])
+        self.assertEqual(result[1]["data"], [])
+
+    # ── Filter Options ─────────────────────────────────────
+
+    def test_filter_options_returns_all_keys(self):
+        result = self._filter_opts(self.sample_rows)
+        self.assertIn("year", result)
+        self.assertIn("week", result)
+        self.assertIn("line", result)
+        self.assertIn("cut_num", result)
+        self.assertIn("style", result)
+        self.assertIn("color", result)
+
+    def test_filter_options_distinct_values(self):
+        result = self._filter_opts(self.sample_rows)
+        self.assertEqual(set(result["year"]), {2025})
+        self.assertEqual(set(result["week"]), {1, 2, 3})
+        self.assertEqual(set(result["line"]), {"L1", "L2"})
+        self.assertEqual(set(result["cut_num"]), {101, 102})
+        self.assertEqual(set(result["style"]), {"STYLE-A", "STYLE-B"})
+        self.assertEqual(set(result["color"]), {"Blue", "Red"})
+
+    def test_filter_options_empty_rows(self):
+        result = self._filter_opts([])
+        for field in ("year", "week", "line", "cut_num", "style", "color"):
+            self.assertEqual(result[field], [])
+
+    # ── Full dispatch test ─────────────────────────────────
+
+    def test_volatile_post_dashboard_seconds_a4_returns_full_payload(self):
+        """POST with dashboard=seconds_a4 returns all Seconds A4 KPIs."""
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        url = reverse('quality_data:kpi-volatile')
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (self.sample_rows, None, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'seconds_a4'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have all Seconds A4 KPIs
+        self.assertIn('executive_summary', response.data)
+        self.assertIn('weekly_trend', response.data)
+        self.assertIn('sew_vs_fab', response.data)
+        self.assertIn('by_style', response.data)
+        self.assertIn('by_color', response.data)
+        self.assertIn('by_line', response.data)
+        self.assertIn('by_cut', response.data)
+        self.assertIn('pass_fail_weekly', response.data)
+        self.assertIn('filter_options', response.data)
+        # QC FA keys should NOT be present
+        self.assertNotIn('aql_by_style', response.data)
+        self.assertNotIn('defect_rate', response.data)
+
+    def test_volatile_post_dashboard_seconds_a4_empty_rows_returns_zeros(self):
+        """Seconds A4 dispatch with empty rows returns zero-filled totals (no crash)."""
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        url = reverse('quality_data:kpi-volatile')
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'seconds_a4'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Executive summary should have zeroed totals
+        totals = response.data.get('executive_summary', {}).get('totals', {})
+        for field in ("total_of_2ds", "seconds_by_sew", "seconds_by_fab",
+                      "seconds_sew_a4", "seconds_fab_a4", "accepted", "rejected"):
+            self.assertEqual(totals.get(field), 0)
+        # Weekly trend should be empty
+        self.assertEqual(response.data.get('weekly_trend', [{}])[0].get('data', []), [])
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 4: Seconds General volatile KPI computation tests
+# ─────────────────────────────────────────────────────────
+
+class SecondsGeneralVolatileKpiComputationTest(TestCase):
+    """Tests for Seconds General KPI computation helpers in volatile_kpi_service.py."""
+
+    def setUp(self):
+        from quality_data.volatile_kpi_service import (
+            calc_seconds_general_filter_options,
+            calc_seconds_general_production_totals,
+            calc_seconds_general_defects_by_customer,
+            calc_seconds_general_defects_by_style,
+            calc_seconds_general_weekly_trend,
+            calc_seconds_general_sewing_vs_fabric,
+            calc_seconds_general_top_sewing_defects,
+            calc_seconds_general_top_fabric_defects,
+            calc_seconds_general_fix_vs_definitive,
+            calc_seconds_general_defects_by_color,
+            calc_seconds_general_defects_by_size,
+            calc_seconds_general_defects_by_line,
+        )
+        self._filter_opts = calc_seconds_general_filter_options
+        self._prod_totals = calc_seconds_general_production_totals
+        self._def_by_cust = calc_seconds_general_defects_by_customer
+        self._def_by_style = calc_seconds_general_defects_by_style
+        self._weekly_trend = calc_seconds_general_weekly_trend
+        self._sew_vs_fab = calc_seconds_general_sewing_vs_fabric
+        self._top_sew = calc_seconds_general_top_sewing_defects
+        self._top_fab = calc_seconds_general_top_fabric_defects
+        self._fix_def = calc_seconds_general_fix_vs_definitive
+        self._def_color = calc_seconds_general_defects_by_color
+        self._def_size = calc_seconds_general_defects_by_size
+        self._def_line = calc_seconds_general_defects_by_line
+
+        self.sample_rows = [
+            {
+                "week": 1, "team": 5, "line_code": None,
+                "customer": "CUST_A", "style": "ST-100",
+                "color": "Red", "size": "M", "produced": 100,
+                "fixed": 50, "definitive": 30,
+                "picado_aguja": 5, "manchas_sucio": 3, "grasa": 0,
+                "tono_tela": 0, "fuera_medidas": 0, "enganche": 0,
+                "costura_torcida_insegura": 0, "hoyos_costura": 0,
+                "heat_transfer": 0, "mal_corte": 0, "trapo": 0,
+                "corrido": 0, "otros": 0,
+                "desgarre_def_tela": 10, "contamination": 0,
+                "linea_de_tela": 0, "mill_flaw": 0, "hoyos": 0,
+                "manchas_tela": 0, "corrido_2": 0, "barre": 0,
+                "otros_3": 0, "degradacion": 0, "bordados": 0,
+            },
+            {
+                "week": 1, "team": 5, "line_code": None,
+                "customer": "CUST_A", "style": "ST-200",
+                "color": "Red", "size": "L", "produced": 120,
+                "fixed": 60, "definitive": 36,
+                "picado_aguja": 0, "manchas_sucio": 0, "grasa": 8,
+                "tono_tela": 0, "fuera_medidas": 0, "enganche": 0,
+                "costura_torcida_insegura": 0, "hoyos_costura": 0,
+                "heat_transfer": 0, "mal_corte": 0, "trapo": 0,
+                "corrido": 0, "otros": 0,
+                "desgarre_def_tela": 0, "contamination": 0,
+                "linea_de_tela": 0, "mill_flaw": 0, "hoyos": 15,
+                "manchas_tela": 0, "corrido_2": 0, "barre": 0,
+                "otros_3": 0, "degradacion": 0, "bordados": 0,
+            },
+            {
+                "week": 2, "team": 10, "line_code": None,
+                "customer": "CUST_B", "style": "ST-100",
+                "color": "Blue", "size": "M", "produced": 130,
+                "fixed": 65, "definitive": 39,
+                "picado_aguja": 0, "manchas_sucio": 0, "grasa": 0,
+                "tono_tela": 4, "fuera_medidas": 0, "enganche": 0,
+                "costura_torcida_insegura": 0, "hoyos_costura": 0,
+                "heat_transfer": 7, "mal_corte": 0, "trapo": 0,
+                "corrido": 0, "otros": 0,
+                "desgarre_def_tela": 0, "contamination": 0,
+                "linea_de_tela": 0, "mill_flaw": 0, "hoyos": 0,
+                "manchas_tela": 6, "corrido_2": 0, "barre": 0,
+                "otros_3": 0, "degradacion": 0, "bordados": 0,
+            },
+        ]
+
+        self.client = APIClient()
+
+    # ── Production Totals ────────────────────────────────
+
+    def test_production_totals_returns_expected_keys(self):
+        result = self._prod_totals(self.sample_rows)
+        self.assertIn("total_produced", result)
+        self.assertIn("total_fixed", result)
+        self.assertIn("total_definitive", result)
+
+    def test_production_totals_values(self):
+        result = self._prod_totals(self.sample_rows)
+        self.assertEqual(result["total_produced"], 350)
+        self.assertEqual(result["total_fixed"], 175)
+        self.assertEqual(result["total_definitive"], 105)
+
+    def test_production_totals_empty_rows(self):
+        result = self._prod_totals([])
+        self.assertEqual(result["total_produced"], 0)
+        self.assertEqual(result["total_fixed"], 0)
+        self.assertEqual(result["total_definitive"], 0)
+
+    # ── Defects by Customer ─────────────────────────────
+
+    def test_defects_by_customer_returns_label_value(self):
+        result = self._def_by_cust(self.sample_rows)
+        self.assertIsInstance(result, list)
+        for item in result:
+            self.assertIn("label", item)
+            self.assertIn("value", item)
+
+    def test_defects_by_customer_aggregates(self):
+        result = self._def_by_cust(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # CUST_A: picado_aguja(5) + manchas_sucio(3) + grasa(8) + desgarre_def_tela(10) + hoyos(15) = 41
+        # CUST_B: tono_tela(4) + heat_transfer(7) + manchas_tela(6) = 17
+        self.assertEqual(values["CUST_A"], 41)
+        self.assertEqual(values["CUST_B"], 17)
+
+    def test_defects_by_customer_sorted_desc(self):
+        result = self._def_by_cust(self.sample_rows)
+        values = [item["value"] for item in result]
+        self.assertEqual(values, sorted(values, reverse=True))
+
+    def test_defects_by_customer_empty_rows(self):
+        result = self._def_by_cust([])
+        self.assertEqual(result, [])
+
+    # ── Defects by Style ─────────────────────────────────
+
+    def test_defects_by_style_aggregates(self):
+        result = self._def_by_style(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # ST-100 (rows 1+3): picado_aguja(5) + manchas_sucio(3) + desgarre_def_tela(10) + tono_tela(4) + heat_transfer(7) + manchas_tela(6) = 35
+        # ST-200 (row 2): grasa(8) + hoyos(15) = 23
+        self.assertEqual(values["ST-100"], 35)
+        self.assertEqual(values["ST-200"], 23)
+
+    def test_defects_by_style_empty_rows(self):
+        result = self._def_by_style([])
+        self.assertEqual(result, [])
+
+    # ── Weekly Trend ─────────────────────────────────────
+
+    def test_weekly_trend_returns_series(self):
+        result = self._weekly_trend(self.sample_rows)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        series = result[0]
+        self.assertEqual(series["name"], "Defects")
+        self.assertIn("data", series)
+
+    def test_weekly_trend_aggregates_by_week(self):
+        result = self._weekly_trend(self.sample_rows)
+        data = {p["x"]: p["y"] for p in result[0]["data"]}
+        # Week 1: 5+3+8+10+15 = 41
+        # Week 2: 4+7+6 = 17
+        self.assertEqual(data[1], 41)
+        self.assertEqual(data[2], 17)
+
+    def test_weekly_trend_sorted_by_week_ascending(self):
+        result = self._weekly_trend(self.sample_rows)
+        weeks = [p["x"] for p in result[0]["data"]]
+        self.assertEqual(weeks, sorted(weeks))
+
+    def test_weekly_trend_empty_rows(self):
+        result = self._weekly_trend([])
+        self.assertEqual(result[0]["data"], [])
+
+    # ── Sewing vs Fabric ─────────────────────────────────
+
+    def test_sewing_vs_fabric_returns_two_labels(self):
+        result = self._sew_vs_fab(self.sample_rows)
+        labels = {item["label"] for item in result}
+        self.assertEqual(labels, {"Sewing", "Fabric"})
+
+    def test_sewing_vs_fabric_values(self):
+        result = self._sew_vs_fab(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # Sewing: picado_aguja(5) + manchas_sucio(3) + grasa(8) + tono_tela(4) + heat_transfer(7) = 27
+        # Fabric: desgarre_def_tela(10) + hoyos(15) + manchas_tela(6) = 31
+        self.assertEqual(values["Sewing"], 27)
+        self.assertEqual(values["Fabric"], 31)
+
+    def test_sewing_vs_fabric_empty_rows(self):
+        result = self._sew_vs_fab([])
+        self.assertEqual(result[0]["value"], 0)
+        self.assertEqual(result[1]["value"], 0)
+
+    # ── Top Sewing Defects ───────────────────────────────
+
+    def test_top_sewing_defects_returns_label_value(self):
+        result = self._top_sew(self.sample_rows)
+        for item in result:
+            self.assertIn("label", item)
+            self.assertIn("value", item)
+
+    def test_top_sewing_defects_values(self):
+        result = self._top_sew(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # picado_aguja=5, manchas_sucio=3, grasa=8, tono_tela=4, heat_transfer=7
+        self.assertEqual(values.get("picado_aguja"), 5)
+        self.assertEqual(values.get("grasa"), 8)
+        self.assertNotIn("trapo", values)  # zero value excluded
+
+    def test_top_sewing_defects_sorted_by_value_desc(self):
+        result = self._top_sew(self.sample_rows)
+        values = [item["value"] for item in result]
+        self.assertEqual(values, sorted(values, reverse=True))
+
+    def test_top_sewing_defects_limited_to_10(self):
+        result = self._top_sew(self.sample_rows)
+        self.assertLessEqual(len(result), 10)
+
+    def test_top_sewing_defects_empty_rows(self):
+        result = self._top_sew([])
+        self.assertEqual(result, [])
+
+    # ── Top Fabric Defects ───────────────────────────────
+
+    def test_top_fabric_defects_values(self):
+        result = self._top_fab(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # desgarre_def_tela=10, hoyos=15, manchas_tela=6
+        self.assertEqual(values.get("desgarre_def_tela"), 10)
+        self.assertEqual(values.get("hoyos"), 15)
+
+    def test_top_fabric_defects_excludes_sewing_defects(self):
+        result = self._top_fab(self.sample_rows)
+        labels = {item["label"] for item in result}
+        self.assertNotIn("picado_aguja", labels)
+
+    def test_top_fabric_defects_empty_rows(self):
+        result = self._top_fab([])
+        self.assertEqual(result, [])
+
+    # ── Fix vs Definitive ────────────────────────────────
+
+    def test_fix_vs_definitive_returns_two_series(self):
+        result = self._fix_def(self.sample_rows)
+        self.assertEqual(len(result), 2)
+        series_names = {s["name"] for s in result}
+        self.assertEqual(series_names, {"Fixed", "Definitive"})
+
+    def test_fix_vs_definitive_values(self):
+        result = self._fix_def(self.sample_rows)
+        fixed = {p["x"]: p["y"] for p in result[0]["data"]}
+        definitive = {p["x"]: p["y"] for p in result[1]["data"]}
+        self.assertEqual(fixed[1], 110)  # 50+60
+        self.assertEqual(fixed[2], 65)
+        self.assertEqual(definitive[1], 66)  # 30+36
+        self.assertEqual(definitive[2], 39)
+
+    def test_fix_vs_definitive_sorted_by_week_asc(self):
+        result = self._fix_def(self.sample_rows)
+        weeks = [p["x"] for p in result[0]["data"]]
+        self.assertEqual(weeks, sorted(weeks))
+
+    def test_fix_vs_definitive_empty_rows(self):
+        result = self._fix_def([])
+        self.assertEqual(result[0]["data"], [])
+        self.assertEqual(result[1]["data"], [])
+
+    # ── Defects by Color ─────────────────────────────────
+
+    def test_defects_by_color_aggregates(self):
+        result = self._def_color(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # Red: rows 1+2 = 5+3+8+10+15 = 41
+        # Blue: row 3 = 4+7+6 = 17
+        self.assertEqual(values["Red"], 41)
+        self.assertEqual(values["Blue"], 17)
+
+    def test_defects_by_color_empty_rows(self):
+        result = self._def_color([])
+        self.assertEqual(result, [])
+
+    # ── Defects by Size ──────────────────────────────────
+
+    def test_defects_by_size_aggregates(self):
+        result = self._def_size(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # M: rows 1 (5+3+10=18) + 3 (4+7+6=17) = 35
+        # L: row 2 (8+15=23)
+        self.assertEqual(values["M"], 35)
+        self.assertEqual(values["L"], 23)
+
+    def test_defects_by_size_empty_rows(self):
+        result = self._def_size([])
+        self.assertEqual(result, [])
+
+    # ── Defects by Line ──────────────────────────────────
+
+    def test_defects_by_line_aggregates_by_team(self):
+        result = self._def_line(self.sample_rows)
+        values = {item["label"]: item["value"] for item in result}
+        # Team 5: row 1 (5+3+10=18) + row 2 (8+15=23) = 41
+        # Team 10: row 3 (4+7+6=17)
+        self.assertEqual(values["Line 5"], 41)
+        self.assertEqual(values["Line 10"], 17)
+
+    def test_defects_by_line_label_format(self):
+        result = self._def_line(self.sample_rows)
+        labels = {item["label"] for item in result}
+        self.assertIn("Line 5", labels)
+        self.assertIn("Line 10", labels)
+
+    def test_defects_by_line_empty_rows(self):
+        result = self._def_line([])
+        self.assertEqual(result, [])
+
+    # ── Filter Options ───────────────────────────────────
+
+    def test_filter_options_all_keys(self):
+        result = self._filter_opts(self.sample_rows)
+        self.assertIn("customer", result)
+        self.assertIn("style", result)
+        self.assertIn("week", result)
+        self.assertIn("color", result)
+        self.assertIn("size", result)
+        self.assertIn("team", result)
+
+    def test_filter_options_distinct_values(self):
+        result = self._filter_opts(self.sample_rows)
+        self.assertEqual(set(result["customer"]), {"CUST_A", "CUST_B"})
+        self.assertEqual(set(result["style"]), {"ST-100", "ST-200"})
+        self.assertEqual(set(result["week"]), {1, 2})
+        self.assertEqual(set(result["color"]), {"Blue", "Red"})
+        self.assertEqual(set(result["size"]), {"L", "M"})
+        self.assertEqual(set(result["team"]), {5, 10})
+
+    def test_filter_options_empty_rows(self):
+        result = self._filter_opts([])
+        for field in ("customer", "style", "week", "color", "size", "team"):
+            self.assertEqual(result[field], [])
+
+    # ── Full dispatch test ───────────────────────────────
+
+    def test_volatile_post_dashboard_seconds_general_returns_full_payload_now(self):
+        """POST with dashboard=seconds_general returns all 12 KPIs (not empty anymore)."""
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        url = reverse('quality_data:kpi-volatile')
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (self.sample_rows, None, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'seconds_general'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should have all Seconds General KPIs (not empty placeholder anymore)
+        self.assertIn('filter_options', response.data)
+        self.assertIn('defects_by_customer', response.data)
+        self.assertIn('defects_by_style', response.data)
+        self.assertIn('weekly_trend', response.data)
+        self.assertIn('sewing_vs_fabric', response.data)
+        self.assertIn('production_totals', response.data)
+        self.assertIn('top_sewing_defects', response.data)
+        self.assertIn('top_fabric_defects', response.data)
+        self.assertIn('fix_vs_definitive', response.data)
+        self.assertIn('defects_by_color', response.data)
+        self.assertIn('defects_by_size', response.data)
+        self.assertIn('defects_by_line', response.data)
+        # QC FA keys should NOT be present
+        self.assertNotIn('aql_by_style', response.data)
+        self.assertNotIn('defect_rate', response.data)
+
+    def test_volatile_post_dashboard_seconds_general_empty_rows_returns_zeros(self):
+        """Seconds General dispatch with empty rows returns zero-filled totals (no crash)."""
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        url = reverse('quality_data:kpi-volatile')
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'seconds_general'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Production totals should be zeroed
+        pt = response.data.get('production_totals', {})
+        self.assertEqual(pt.get('total_produced'), 0)
+        self.assertEqual(pt.get('total_fixed'), 0)
+        self.assertEqual(pt.get('total_definitive'), 0)
+        # Defects by customer should be empty
+        self.assertEqual(response.data.get('defects_by_customer', []), [])

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchAllKpis, fetchVolatileKpis, getFilterOptions } from '../../api/kpi';
-import * as calc from '../../utils/kpiCalculations';
+import { fetchAllKpis, getFilterOptions } from '../../api/kpi';
+import useVolatileDashboardCache from '../useVolatileDashboardCache';
 import {
   transformPassReject,
   transformAqlByStyle,
@@ -33,65 +33,6 @@ import FilterBar from '../../Components/kpi/FilterBar';
 import { normalizeScalarMetric } from '../dashboardMetricUtils';
 import '../DashboardView.css';
 import { withRoleProtection } from '../../hooks/withRoleProtection';
-
-/**
- * Calculate all KPIs from volatile (Excel) data.
- * Returns null for KPIs not available in volatile mode.
- * @param {object[]} rows - Parsed Excel rows
- * @returns {object} KPI results object
- */
-function calculateAllKpis(rows) {
-  if (!rows || rows.length === 0) {
-    return {
-      aqlByStyle: null,
-      aqlByTeam: null,
-      aqlWeekly: null,
-      auditedPieces: null,
-      acReRateByLine: null,
-      performanceByCustomer: null,
-      performanceByLine: null,
-      topDefects: null,
-      defectsByStyleType: null,
-      passRejectDistribution: null,
-      rejectedEvolution: null,
-      defectRate: null,
-      defectComposition: unavailableState(
-        'local_fast_unsupported',
-        'Defect Composition requires InspectionDefect data — not available in fast mode',
-      ),
-      defectTrendTop3: unavailableState(
-        'local_fast_unsupported',
-        'Defect Trend Top 3 requires InspectionDefect data — not available in fast mode',
-      ),
-    };
-  }
-
-  return {
-    aqlByStyle: calc.calculateAqlByStyle(rows),
-    aqlByTeam: unavailableState(
-      'local_fast_unsupported',
-      'AQL by Team/Line requires live database — not available in fast mode',
-    ),
-    aqlWeekly: calc.calculateAqlWeekly(rows),
-    auditedPieces: calc.calculateAuditedPieces(rows),
-    acReRateByLine: calc.calculateAcReRateByLine(rows),
-    performanceByCustomer: calc.calculatePerformanceByCustomer(rows),
-    performanceByLine: calc.calculatePerformanceByLine(rows),
-    topDefects: calc.calculateTopDefects(rows),
-    defectsByStyleType: calc.calculateDefectsByStyleType(rows),
-    passRejectDistribution: calc.calculatePassRejectDistribution(rows),
-    rejectedEvolution: calc.calculateRejectedEvolution(rows),
-    defectRate: calc.calculateDefectRate(rows),
-    defectComposition: unavailableState(
-      'local_fast_unsupported',
-      'Defect Composition requires InspectionDefect data — not available in fast mode',
-    ),
-    defectTrendTop3: unavailableState(
-      'local_fast_unsupported',
-      'Defect Trend Top 3 requires InspectionDefect data — not available in fast mode',
-    ),
-  };
-}
 
 /**
  * Section descriptor for the exclusive QFA/QFC layout.
@@ -495,9 +436,8 @@ function renderSection(sectionTitle, cards) {
   );
 }
 
-function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
-  const isLiveMode = !volatileData && !volatileFile;
-  const isVolatileFileMode = !!volatileFile;
+function QcfaKpiDashboard({ volatileFile, context }) {
+  const isLiveMode = !volatileFile;
 
   const [filters, setFilters] = useState({
     date_range: ['', ''],
@@ -530,29 +470,24 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     setError(null);
 
     try {
-      if (isLiveMode) {
-        const result = await fetchAllKpis(mapFiltersForApi(activeFilters), context);
-        setKpiData(result);
-      } else {
-        const result = calculateAllKpis(volatileData);
-        setKpiData(result);
-      }
+      const result = await fetchAllKpis(mapFiltersForApi(activeFilters), context);
+      setKpiData(result);
     } catch (err) {
       setError(err.message || 'Error loading data');
     } finally {
       setLoading(false);
     }
-  }, [isLiveMode, volatileData, filters, context, mapFiltersForApi]);
+  }, [filters, context, mapFiltersForApi]);
 
   useEffect(() => {
-    if (!isVolatileFileMode) {
+    if (!volatileFile) {
       loadData();
     }
-  }, [isVolatileFileMode, loadData]);
+  }, [volatileFile, loadData]);
 
   // Fetch filter options for live mode
   useEffect(() => {
-    if (!isLiveMode) return;
+    if (volatileFile) return;
 
     const fetchOptions = async () => {
       try {
@@ -565,30 +500,31 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
     };
 
     fetchOptions();
-  }, [isLiveMode, context, filters.includeDualLines]);
+  }, [volatileFile, context, filters.includeDualLines]);
 
-  // Fetch KPIs from volatile file (server-side calculation)
+  // Volatile dashboard cache hook — prevents re-upload on tab switch.
+  // Uses module-level cache keyed by file identity + dashboard + context.
+  const {
+    data: volatileData,
+    loading: volatileLoading,
+    error: volatileError,
+  } = useVolatileDashboardCache(volatileFile || null, 'qcfa', context);
+
+  // Sync volatile cache result into shared component state
   useEffect(() => {
     if (!volatileFile) return;
 
-    const fetchVolatile = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await fetchVolatileKpis(volatileFile, context);
-        setKpiData(result);
-        if (result.filterOptions) {
-          setFilterOptions(result.filterOptions);
-        }
-      } catch (err) {
-        setError(err.message || 'Error processing Excel file');
-      } finally {
-        setLoading(false);
+    setLoading(volatileLoading);
+    if (volatileError) {
+      setError(volatileError);
+    }
+    if (volatileData) {
+      setKpiData(volatileData);
+      if (volatileData.filterOptions) {
+        setFilterOptions(volatileData.filterOptions);
       }
-    };
-
-    fetchVolatile();
-  }, [volatileFile]);
+    }
+  }, [volatileFile, volatileData, volatileLoading, volatileError]);
 
   const handleFilterChange = useCallback((newFilters) => {
     setFilters(newFilters);
@@ -607,10 +543,10 @@ function QcfaKpiDashboard({ volatileData, volatileFile, context }) {
       lineCode: '',
     };
     setFilters(resetFilters);
-    if (isLiveMode) {
+    if (!volatileFile) {
       loadData(resetFilters);
     }
-  }, [isLiveMode, loadData]);
+  }, [volatileFile, loadData]);
 
   const handleRefresh = useCallback(() => {
     loadData(filters);

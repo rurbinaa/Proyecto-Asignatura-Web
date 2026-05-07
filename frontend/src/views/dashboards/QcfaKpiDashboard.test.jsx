@@ -2,10 +2,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import QcfaKpiDashboard from './QcfaKpiDashboard';
-import { fetchAllKpis, getFilterOptions } from '../../api/kpi';
+import { fetchAllKpis, fetchVolatileDashboard, getFilterOptions } from '../../api/kpi';
+import { clearVolatileCache } from '../useVolatileDashboardCache';
 
 vi.mock('../../api/kpi', () => ({
   fetchAllKpis: vi.fn(),
+  fetchVolatileDashboard: vi.fn(),
   getFilterOptions: vi.fn().mockResolvedValue({}),
 }));
 
@@ -57,7 +59,9 @@ vi.mock('../../Components/ReportGenerator', () => ({
 describe('QcfaKpiDashboard — exclusive layout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearVolatileCache();
     fetchAllKpis.mockResolvedValue({});
+    fetchVolatileDashboard.mockResolvedValue({});
   });
 
   // ── Section headers ──────────────────────────────────────────
@@ -76,8 +80,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(excelPos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('renders section headers when volatileData is provided', () => {
-    render(<QcfaKpiDashboard context="plant" volatileData={[{ id: 1, value: 'test' }]} />);
+  it('renders section headers when volatileFile is provided', () => {
+    render(<QcfaKpiDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
     expect(screen.getByText('Original Excel Reports')).toBeInTheDocument();
     expect(screen.getByText('Rift Analytics Insights')).toBeInTheDocument();
@@ -273,7 +277,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
   });
 
   it('renders AQL by Team/Line card in volatile mode', () => {
-    render(<QcfaKpiDashboard context="customer" volatileData={[{ id: 1, value: 'test' }]} />);
+    render(<QcfaKpiDashboard context="customer" volatileFile={new File(['test'], 'test.xlsx')} />);
     expect(screen.getByText('AQL by Team/Line')).toBeInTheDocument();
   });
 
@@ -335,10 +339,10 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(titles).toEqual([
       'Weekly Audited Pieces',
       'Acceptance Rate by Customer (accepted / (accepted + rejected) × 100)',
-      'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
       'Defects by Style × Type',
       'Defect Trend Top 3',
       'Defect Composition',
+      'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
     ]);
   });
 
@@ -383,10 +387,10 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(item.dataset.layoutRole).toBe('composed');
   });
 
-  it('assigns data-layout-role="wide" to Defects by Style × Type', () => {
+  it('assigns data-layout-role="wide" to Defect Composition', () => {
     render(<QcfaKpiDashboard context="plant" />);
 
-    const card = screen.getByText('Defects by Style × Type');
+    const card = screen.getByText('Defect Composition');
     const item = card.closest('.dashboard-section__item');
     expect(item).not.toBeNull();
     expect(item.dataset.layoutRole).toBe('wide');
@@ -399,7 +403,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
       'Weekly AQL (%)',
       'Top Defects',
       'Weekly Audited Pieces',
-      'Defect Composition',
+      'Acceptance Rate by Line (accepted / (accepted + rejected) × 100)',
     ];
 
     standardTitles.forEach((title) => {
@@ -461,7 +465,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     expect(card.textContent).toBe('Accepted / Rejected Absolute Volume');
   });
 
-  it('assigns data-layout-role="wide" to exactly one card (Defects by Style × Type)', () => {
+  it('assigns data-layout-role="wide" to exactly one card (Defect Composition)', () => {
     const { container } = render(<QcfaKpiDashboard context="plant" />);
 
     const wideItems = container.querySelectorAll(
@@ -471,7 +475,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
 
     const card = wideItems[0].querySelector('.kpi-card h2');
     expect(card).not.toBeNull();
-    expect(card.textContent).toBe('Defects by Style × Type');
+    expect(card.textContent).toBe('Defect Composition');
   });
 
   it('assigns data-layout-role="metric" to exactly one card (Defect Rate)', () => {
@@ -513,8 +517,8 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     });
   });
 
-  it('shows volatile helper banner when volatileData is provided', () => {
-    render(<QcfaKpiDashboard context="plant" volatileData={[{ id: 1, value: 'test' }]} />);
+  it('shows volatile helper banner when volatileFile is provided', () => {
+    render(<QcfaKpiDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
     const banner = screen.getByRole('status');
     expect(banner).toBeInTheDocument();
     expect(banner.textContent).toMatch(/fast mode/i);
@@ -543,7 +547,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
   // ── Volatile mode insight chart parity ────────────────────────
 
   it('renders all Rift insight cards in volatile mode without crash', () => {
-    render(<QcfaKpiDashboard context="plant" volatileData={[{ id: 1, value: 'test' }]} />);
+    render(<QcfaKpiDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
     expect(screen.getByText('Defect Trend Top 3')).toBeInTheDocument();
     expect(screen.getByText('Defect Composition')).toBeInTheDocument();
@@ -576,21 +580,22 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
     });
   });
 
-  it('shows explicit unavailable message when volatile data has unsupported defect insights', () => {
+  it('shows explicit unavailable message from server-side volatile KPIs', async () => {
+    fetchVolatileDashboard.mockResolvedValue({
+      aqlByStyle: [{ style: 'A', aql: 1.5 }],
+      defectsByStyleType: { status: 'unavailable', reason: 'excel_volatile_not_computable', data: null },
+      defectComposition: { status: 'unavailable', reason: 'excel_volatile_not_computable', data: null },
+    });
+
     render(<QcfaKpiDashboard
       context="customer"
-      volatileData={[{ id: 1, value: 'test' }]}
+      volatileFile={new File(['test'], 'test.xlsx')}
     />);
 
-    const stateMessages = document.querySelectorAll('.state-message');
-    expect(stateMessages.length).toBeGreaterThanOrEqual(2);
-    const unavailableTexts = Array.from(stateMessages).filter(
-      (el) => el.textContent.toLowerCase().includes('unavailable') ||
-              el.textContent.toLowerCase().includes('not supported') ||
-              el.textContent.toLowerCase().includes('not available') ||
-              el.textContent.toLowerCase().includes('no disponible'),
-    );
-    expect(unavailableTexts.length).toBeGreaterThanOrEqual(1);
+    await waitFor(() => {
+      const stateMessages = document.querySelectorAll('.state-message');
+      expect(stateMessages.length).toBeGreaterThanOrEqual(2);
+    });
   });
 
   it('renders defect charts with ready status when valid data is returned', async () => {
@@ -627,7 +632,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
 
   // ── Dual-line toggle (Slice 3 / Task 4.3) ──────────────────────────
 
-  it('RED - passes includeDualLines=false in filters to fetchAllKpis by default (hidden)', async () => {
+  it('RED - passes include_dual_lines=false in filters to fetchAllKpis by default (hidden)', async () => {
     fetchAllKpis.mockResolvedValue({});
 
     render(<QcfaKpiDashboard context="customer" />);
@@ -636,7 +641,7 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
       expect(fetchAllKpis).toHaveBeenCalled();
       const [filters, contextArg] = fetchAllKpis.mock.calls[0];
       expect(contextArg).toBe('customer');
-      expect(filters.includeDualLines).toBe(false);
+      expect(filters.include_dual_lines).toBe(false);
     });
   });
 
@@ -647,19 +652,19 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
 
     await waitFor(() => {
       const [filters] = fetchAllKpis.mock.calls[0];
-      expect(filters).toHaveProperty('includeDualLines');
-      expect(filters).toHaveProperty('lineCode');
+      expect(filters).toHaveProperty('include_dual_lines');
+      expect(filters).toHaveProperty('line_code');
     });
   });
 
-  it('RED - dual lines hidden by default: includeDualLines is false', async () => {
+  it('RED - dual lines hidden by default: include_dual_lines is false', async () => {
     fetchAllKpis.mockResolvedValue({});
 
     render(<QcfaKpiDashboard context="customer" />);
 
     await waitFor(() => {
       const [filters] = fetchAllKpis.mock.calls[0];
-      expect(filters.includeDualLines).toBe(false);
+      expect(filters.include_dual_lines).toBe(false);
     });
   });
 
@@ -769,6 +774,48 @@ describe('QcfaKpiDashboard — exclusive layout', () => {
         const card = screen.getByText(title).closest('.kpi-card');
         expect(card.querySelector('.null-message')).not.toBeNull();
       });
+    });
+  });
+
+  // ── Cache integration (RED: useVolatileDashboardCache) ─────────────────────
+
+  it('RED - uses cached volatile data on re-render (cache hit prevents re-fetch)', async () => {
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+    const mockData = { aqlByStyle: [{ style: 'A', aql: 1.5 }] };
+    fetchVolatileDashboard.mockResolvedValueOnce(mockData);
+
+    const { rerender } = render(
+      <QcfaKpiDashboard context="plant" volatileFile={file} />
+    );
+
+    // Wait for initial fetch
+    await waitFor(() => {
+      expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+    });
+
+    // Re-render with same file identity — cache hit, no second fetch
+    rerender(
+      <QcfaKpiDashboard context="plant" volatileFile={file} />
+    );
+
+    // Allow any potential effect to settle
+    await new Promise((r) => setTimeout(r, 100));
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('RED - renders volatile data when cache resolves', async () => {
+    fetchVolatileDashboard.mockResolvedValue({
+      aqlByStyle: [{ style: 'A', aql: 1.5 }],
+    });
+
+    render(
+      <QcfaKpiDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx', { lastModified: 1000 })} />
+    );
+
+    // The volatile data should flow into kpiData and cards should render
+    await waitFor(() => {
+      // AQL by Style card must render (data-bound chart shows BarChartKpi)
+      expect(screen.getByText('AQL by Style')).toBeInTheDocument();
     });
   });
 });

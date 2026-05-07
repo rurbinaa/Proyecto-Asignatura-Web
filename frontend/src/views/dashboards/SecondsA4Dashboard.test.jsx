@@ -737,4 +737,53 @@ describe('SecondsA4Dashboard', () => {
       });
     });
   });
+
+  describe('Fast mode (volatile)', () => {
+    it('renders dashboard title immediately when volatileFile is provided', () => {
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(screen.getByText('Seconds A4 Analytics')).toBeInTheDocument();
+    });
+
+    it('does NOT make any live API calls when in fast mode', () => {
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      expect(axiosClient.get).not.toHaveBeenCalled();
+    });
+
+    it('renders KPI cards when volatile data resolves', async () => {
+      const mockVolatileData = {
+        executiveSummary: { totals: { total_of_2ds: 45, seconds_by_sew: 150, seconds_by_fab: 120 } },
+        weeklyTrend: [{ name: '2DS', data: [{ x: '2025-W1', y: 10 }] }],
+        sewsVsFab: [{ label: 'Sew', value: 150 }, { label: 'Fabric', value: 120 }],
+        byStyle: [{ label: 'STYLE-A', value: 25 }],
+        byColor: [{ label: 'Red', value: 30 }],
+        byLine: [{ label: 'L1', value: 25 }],
+        byCut: [{ label: 'Cut 101', value: 25 }],
+        passFailWeekly: [{ name: 'Pass', data: [{ x: '2025-W1', y: 15 }] }],
+      };
+
+      // Mock fetchVolatileDashboard via axiosClient (used by useVolatileDashboardCache)
+      axiosClient.post.mockResolvedValueOnce({ data: mockVolatileData });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Should call POST to volatile endpoint with dashboard=seconds_a4
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalled();
+      });
+      const [, formData] = axiosClient.post.mock.calls[0];
+      expect(formData.get('dashboard')).toBe('seconds_a4');
+    });
+
+    it('renders normal content when volatileFile is null', async () => {
+      axiosClient.get.mockResolvedValue({ data: [] });
+
+      render(<SecondsA4Dashboard volatileFile={null} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Seconds A4 Analytics')).toBeInTheDocument();
+      });
+    });
+  });
 });
