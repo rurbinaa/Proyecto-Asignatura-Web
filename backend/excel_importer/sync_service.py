@@ -548,60 +548,92 @@ def create_session_from_dataframes(dataframes):
     sg_normalized, sg_import_warnings = normalize_seconds_general_rows(sg_raw_rows)
     sheet_data_map["seconds_general"] = sg_normalized
 
-    from excel_importer.handler_service import (
-        bulk_insert as handler_bulk_insert_qcfa,
-        bulk_insert_container,
-    )
     from quality_data.models import QualityQcFa, Container
 
-    if not excel_rows or not defect_fields:
-        return None
+    # Store parsed data — prefer Redis for auto-TTL cleanup, fall back to JSONField
+    session.redis_stored = False
+    if is_redis_available():
+        session.save()  # Need PK for Redis key
+        if store_preview_data(session.pk, sheet_data_map):
+            # Data is in Redis — clear JSONFields to avoid duplicate storage
+            session.redis_stored = True
 
-    df = pd.DataFrame(excel_rows)
+    # Assign data to session fields (either full data or empty lists if in Redis)
+    session.qc_fa_plant_data = sheet_data_map["qc_fa_plant"] if not session.redis_stored else []
+    session.qc_fa_customer_data = sheet_data_map["qc_fa_customer"] if not session.redis_stored else []
+    session.seconds_a4_data = sheet_data_map["seconds_a4"] if not session.redis_stored else []
+    session.seconds_general_data = sheet_data_map["seconds_general"] if not session.redis_stored else []
+    session.container_data = sheet_data_map["container"] if not session.redis_stored else []
 
-    # Get column lists from sheet_configs
-    numeric_cols = _get_numeric_columns_for_model(model_class)
-    not_numeric_cols = _get_not_numeric_columns_for_model(model_class)
+    # For preview computation, always use the in-memory data (before it's cleared)
+    qc_fa_plant_rows = sheet_data_map["qc_fa_plant"]
+    qc_fa_customer_rows = sheet_data_map["qc_fa_customer"]
+    seconds_a4_rows = sheet_data_map["seconds_a4"]
+    seconds_general_rows = sheet_data_map["seconds_general"]
+    container_rows = sheet_data_map["container"]
 
-    # Determine table_type for QualityQcFa.
-    # Prefer the caller-supplied value; fall back to DataFrame detection
-    # (which only works when the row dicts already carry the column).
-    if table_type is None and model_class == QualityQcFa:
-        table_types = df['table_type'].unique() if 'table_type' in df.columns else []
-        table_type = table_types[0] if len(table_types) == 1 else 'QFA'
+    # QC FA Plant (time_window)
+    qfa_plant_dates = extract_dates(qc_fa_plant_rows, "date_1")
+    session.qc_fa_plant_preview = compute_preview_timewindow(
+        qc_fa_plant_rows,
+        QualityQcFa.objects.filter(table_type="QFA", date_1__in=qfa_plant_dates).select_related('color')
+        if qfa_plant_dates else QualityQcFa.objects.none(),
+        date_field="date_1",
+    )
 
-    # Call the appropriate handler based on model
-    if model_class == QualityQcFa:
-        # Use caller-provided defect_fields when available; fall back to the
-        # sheet-specific list. This preserves testability and lets callers
-        # scope defect processing without pulling in the full sheet list.
-        if defect_fields:
-            qc_defect_fields = defect_fields
-        elif table_type == 'QFC':
-            qc_defect_fields = _get_defect_fields('qc_fa_customer')
-        else:
-            qc_defect_fields = _get_defect_fields('qc_fa_plant')
+    # QC FA Customer (time_window)
+    qfa_customer_dates = extract_dates(qc_fa_customer_rows, "date_1")
+    session.qc_fa_customer_preview = compute_preview_timewindow(
+        qc_fa_customer_rows,
+        QualityQcFa.objects.filter(table_type="QFC", date_1__in=qfa_customer_dates).select_related('color')
+        if qfa_customer_dates else QualityQcFa.objects.none(),
+        date_field="date_1",
+    )
 
-        # For QC FA time-window: parent records are already created by apply_timewindow.
-        # Use defects_only=True to only create InspectionDefect records.
-        return handler_bulk_insert_qcfa(
-            df,
-            numeric_cols,
-            not_numeric_cols,
-            qc_defect_fields or defect_fields,
-            table_type,
-            defects_only=True,  # Parents already exist, only create defects
-            color_map=color_map,
-        )
-    elif model_class == Container:
-        container_defect_fields = _get_defect_fields('container') or defect_fields
-        bulk_insert_container(
-            df,
-            numeric_cols,
-            not_numeric_cols,
-            container_defect_fields or defect_fields
-        )
-    return None
+    # SecondsA4 (upsert)
+    seconds_a4_dates = extract_dates(seconds_a4_rows, "date")
+    session.seconds_a4_preview = compute_preview_upsert(
+        seconds_a4_rows,
+        SecondsA4.objects.filter(date__in=seconds_a4_dates).select_related('color')
+        if seconds_a4_dates else SecondsA4.objects.none(),
+        key_builder=build_seconds_a4_key,
+        date_field="date",
+    )
+
+    # Seconds General (time_window)
+    seconds_general_dates = extract_dates(seconds_general_rows, "date")
+    session.seconds_general_preview = compute_preview_timewindow(
+        seconds_general_rows,
+        SecondsGeneral.objects.filter(date__in=seconds_general_dates)
+        if seconds_general_dates else SecondsGeneral.objects.none(),
+        date_field="date",
+    )
+
+    # Container (upsert)
+    container_dates = extract_dates(container_rows, "date")
+    session.container_preview = compute_preview_upsert(
+        container_rows,
+        Container.objects.filter(date__in=container_dates)
+        if container_dates else Container.objects.none(),
+        key_builder=build_container_key,
+        date_field="date",
+    )
+
+    # Collect all warnings
+    all_warnings = []
+    for preview_field in ["qc_fa_plant_preview", "qc_fa_customer_preview",
+                          "seconds_general_preview"]:
+        preview = getattr(session, preview_field)
+        all_warnings.extend(preview.get("warnings", []))
+    all_warnings.extend(container_warnings)
+    if qfc_import_warnings["message"]:
+        all_warnings.append(qfc_import_warnings["message"])
+    if sg_import_warnings["message"]:
+        all_warnings.append(sg_import_warnings["message"])
+    session.warnings = all_warnings
+
+    session.save()
+    return session
 
 
 def _hydrate_session_from_redis(session):
