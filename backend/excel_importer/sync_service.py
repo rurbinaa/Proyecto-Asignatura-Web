@@ -397,6 +397,16 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
     return None
 
 
+def reject_session(session):
+    """Reject a pending session — mark it as rejected and clean up Redis."""
+    if session.redis_stored:
+        from excel_importer.preview_cache import delete_preview_data
+        delete_preview_data(session.pk)
+
+    session.status = "rejected"
+    session.save()
+
+
 def apply_session(session):
     """
     Apply all sheets from an ExcelSyncSession in a single atomic transaction.
