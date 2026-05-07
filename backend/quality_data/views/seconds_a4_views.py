@@ -40,19 +40,135 @@ from quality_data.serializers import (
 
 logger = logging.getLogger(__name__)
 
+# ── Cache constants ─────────────────────────────────────────────────
+
 SECONDS_A4_CACHE_PREFIX = "seconds_a4"
 SECONDS_A4_CACHE_VERSION = "v1"
-SECONDS_A4_CACHE_TTL_DEFAULT = 120
+SECONDS_A4_CACHE_TTL_DEFAULT = 120  # seconds
 SECONDS_A4_CACHE_TTLS = {
     "filter_options": 300,
 }
 
+# Implemented filter keys (matching _get_filtered_a4_queryset).
 SECONDS_A4_FILTER_KEYS = ("year", "week", "style", "color", "line", "cut_num")
+
+# Numeric filter keys — coerced to int during normalization.
 SECONDS_A4_NUMERIC_FILTER_KEYS = ("year", "week", "cut_num")
 
 
+# ── Cache helpers ────────────────────────────────────────────────────
+
+
+def _normalize_seconds_a4_filters(query_params):
+    """
+    Extract and normalize only the implemented filter keys from request
+    query params. Returns a stable dict suitable for cache key hashing.
+
+    - Keeps only ``year``, ``week``, ``style``, ``color``, ``line``,
+      ``cut_num``.
+    - Tries to convert numeric filters (year, week, cut_num) to int;
+      keeps raw string if conversion fails so invalid values produce a
+      distinct (uncacheable) key and the compute path's validation error
+      still fires.
+    - Trims whitespace from string values.
+    - Omits None/empty string values.
+    """
+    normalized = {}
+    for key in SECONDS_A4_FILTER_KEYS:
+        raw = query_params.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            raw = raw.strip()
+            if not raw:
+                continue
+        if key in SECONDS_A4_NUMERIC_FILTER_KEYS:
+            try:
+                normalized[key] = int(raw)
+            except (ValueError, TypeError):
+                # Keep raw string so the cache key is distinct from
+                # valid values and the 400 validation in
+                # _get_filtered_a4_queryset can fire normally.
+                normalized[key] = raw
+        else:
+            normalized[key] = raw
+    return normalized
+
+
+def _seconds_a4_cache_key(endpoint_name, filters):
+    """
+    Build a stable cache key for a Seconds A4 endpoint + filter state.
+
+    Format::
+
+        seconds_a4:v1:<endpoint_name>:<sha256_hexdigest>
+
+    The hex digest is computed from a deterministic JSON serialisation
+    of the normalized filters dict (sorted by key), so equivalent filter
+    states always produce the same key regardless of param ordering.
+    """
+    raw = json.dumps(filters, separators=(",", ":"), sort_keys=True)
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    return f"{SECONDS_A4_CACHE_PREFIX}:{SECONDS_A4_CACHE_VERSION}:{endpoint_name}:{digest}"
+
+
+def _seconds_a4_get_ttl(endpoint_name):
+    """Return the TTL (seconds) for a given endpoint name."""
+    return SECONDS_A4_CACHE_TTLS.get(endpoint_name, SECONDS_A4_CACHE_TTL_DEFAULT)
+
+
+def _seconds_a4_cache_get(endpoint_name, filters):
+    """
+    Try to read a cached payload for *endpoint_name* + *filters*.
+
+    Returns ``(payload_dict, True)`` on cache hit,
+    ``(None, False)`` on miss or failure.
+    """
+    key = _seconds_a4_cache_key(endpoint_name, filters)
+    try:
+        payload = cache.get(key)
+        if payload is not None:
+            return payload, True
+        return None, False
+    except Exception:
+        logger.warning(
+            "Cache read failed for %s (key=%s), falling through to live",
+            endpoint_name, key, exc_info=True,
+        )
+        return None, False
+
+
+def _seconds_a4_cache_set(endpoint_name, filters, payload):
+    """
+    Best-effort store of *payload* for *endpoint_name* + *filters*.
+
+    Failures are logged but never propagated — the caller has already
+    computed the live response by the time this is called.
+    """
+    key = _seconds_a4_cache_key(endpoint_name, filters)
+    ttl = _seconds_a4_get_ttl(endpoint_name)
+    try:
+        cache.set(key, payload, timeout=ttl)
+    except Exception:
+        logger.warning(
+            "Cache write failed for %s (key=%s), live response returned",
+            endpoint_name, key, exc_info=True,
+        )
+
+
 class SecondsA4FilterMixin:
-    """Mixin that provides SecondsA4 queryset filtering from query parameters."""
+    """
+    Mixin that provides SecondsA4 queryset filtering from query parameters.
+
+    Supported filters:
+        - year: year__exact (integer)
+        - week: week__exact (integer)
+        - date: date__gte / date__lte via date_range
+        - style: style__exact (string)
+        - color: color__name__exact (string, traverses FK)
+        - line: line__exact (string)
+        - cut_num: cut_num__exact (integer)
+    """
 
     def _get_filtered_a4_queryset(self, request):
         """
@@ -62,6 +178,7 @@ class SecondsA4FilterMixin:
         """
         qs = SecondsA4.objects.all()
 
+        # ── year: exact integer match ──
         year = request.query_params.get("year")
         if year is not None:
             try:
@@ -72,6 +189,7 @@ class SecondsA4FilterMixin:
                 })
             qs = qs.filter(year__exact=year_int)
 
+        # ── week: exact integer match ──
         week = request.query_params.get("week")
         if week is not None:
             try:
@@ -82,18 +200,22 @@ class SecondsA4FilterMixin:
                 })
             qs = qs.filter(week__exact=week_int)
 
+        # ── style: exact string match ──
         style = request.query_params.get("style")
         if style:
             qs = qs.filter(style__exact=style)
 
+        # ── color: FK traversal via color__name ──
         color = request.query_params.get("color")
         if color:
             qs = qs.filter(color__name__exact=color)
 
+        # ── line: exact string match ──
         line = request.query_params.get("line")
         if line:
             qs = qs.filter(line__exact=line)
 
+        # ── cut_num: exact integer match ──
         cut_num = request.query_params.get("cut_num")
         if cut_num is not None:
             try:
@@ -105,6 +227,40 @@ class SecondsA4FilterMixin:
             qs = qs.filter(cut_num__exact=cut_num_int)
 
         return qs
+
+
+# ── Cache action wrapper ──────────────────────────────────────────────
+
+
+def _seconds_a4_cached_action(request, endpoint_name, compute_payload):
+    """
+    Wrapper that applies cache read-then-write around *compute_payload*.
+
+    Args:
+        request: DRF request (used to extract filters).
+        endpoint_name: Cache-key endpoint segment (e.g. ``"filter_options"``).
+        compute_payload: Zero-arg callable that returns the final
+            serialised payload (the same value that would be handed to
+            ``Response(data=...)``).
+
+    Returns:
+        A ``Response`` — either from cache (hit) or freshly computed
+        and then stored (miss/failure).
+    """
+    filters = _normalize_seconds_a4_filters(request.query_params)
+
+    # Try cache hit.
+    cached, was_hit = _seconds_a4_cache_get(endpoint_name, filters)
+    if was_hit:
+        return Response(cached, status=http_status.HTTP_200_OK)
+
+    # Cache miss — compute live.
+    payload = compute_payload()
+
+    # Best-effort store (failure is logged, never propagated).
+    _seconds_a4_cache_set(endpoint_name, filters, payload)
+
+    return Response(payload, status=http_status.HTTP_200_OK)
 
 
 class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
@@ -127,6 +283,8 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
         - GET by-cut/
         - GET pass-fail-weekly/
     """
+
+    # ── Filter Options ───────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="filter-options")
     def filter_options(self, request):
@@ -198,6 +356,8 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
 
         return _seconds_a4_cached_action(request, "filter_options", _compute)
 
+    # ── Executive Summary ────────────────────────────────
+
     @action(detail=False, methods=["get"], url_path="executive-summary")
     def executive_summary(self, request):
         """
@@ -242,6 +402,8 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
 
         return _seconds_a4_cached_action(request, "executive_summary", _compute)
 
+    # ── Weekly Trend ─────────────────────────────────────
+
     @action(detail=False, methods=["get"], url_path="weekly-trend")
     def weekly_trend(self, request):
         """
@@ -269,6 +431,8 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
             return serializer.data
 
         return _seconds_a4_cached_action(request, "weekly_trend", _compute)
+
+    # ── Sew vs Fab Split ─────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="sew-vs-fab")
     def sew_vs_fab(self, request):
@@ -300,6 +464,33 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
 
         return _seconds_a4_cached_action(request, "sew_vs_fab", _compute)
 
+    # ── 2DS by Line ──────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="by-line")
+    def by_line(self, request):
+        """GET /quality/kpis/seconds-a4/by-line/"""
+
+        def _compute():
+            qs = self._get_filtered_a4_queryset(request)
+
+            aggregated = (
+                qs.values("line")
+                .annotate(total=Coalesce(Sum("total_of_2ds"), Value(0)))
+                .order_by("-total")
+            )
+
+            result = [
+                {"label": item["line"] or "Unknown", "value": item["total"]}
+                for item in aggregated
+            ]
+
+            serializer = KpiBarSerializer(result, many=True)
+            return serializer.data
+
+        return _seconds_a4_cached_action(request, "by_line", _compute)
+
+    # ── 2DS by Cut ───────────────────────────────────────
+
     @action(detail=False, methods=["get"], url_path="by-cut")
     def by_cut(self, request):
         """GET /quality/kpis/seconds-a4/by-cut/"""
@@ -322,6 +513,8 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
             return serializer.data
 
         return _seconds_a4_cached_action(request, "by_cut", _compute)
+
+    # ── Pass vs Fail Weekly ──────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="pass-fail-weekly")
     def pass_fail_weekly(self, request):
@@ -362,6 +555,41 @@ class SecondsA4AnalyticsViewSet(SecondsA4FilterMixin, ViewSet):
             return serializer.data
 
         return _seconds_a4_cached_action(request, "pass_fail_weekly", _compute)
+
+    # ── 2DS by Style ─────────────────────────────────────
+
+    @action(detail=False, methods=["get"], url_path="by-style")
+    def by_style(self, request):
+        """
+        GET /quality/kpis/seconds-a4/by-style/
+
+        Groups filtered SecondsA4 records by style and sums total_of_2ds.
+        Sorted descending by total.
+
+        Response:
+            [{"label": "STYLE-A", "value": <int>}, ...]
+        """
+
+        def _compute():
+            qs = self._get_filtered_a4_queryset(request)
+
+            aggregated = (
+                qs.values("style")
+                .annotate(total=Coalesce(Sum("total_of_2ds"), Value(0)))
+                .order_by("-total")
+            )
+
+            result = [
+                {"label": item["style"] or "Unknown", "value": item["total"]}
+                for item in aggregated
+            ]
+
+            serializer = KpiBarSerializer(result, many=True)
+            return serializer.data
+
+        return _seconds_a4_cached_action(request, "by_style", _compute)
+
+    # ── 2DS by Color ─────────────────────────────────────
 
     @action(detail=False, methods=["get"], url_path="by-color")
     def by_color(self, request):

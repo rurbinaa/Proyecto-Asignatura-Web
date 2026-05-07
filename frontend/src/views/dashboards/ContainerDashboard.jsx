@@ -136,7 +136,8 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
     loadData(filters);
   }, [loadData, filters]);
 
-  // Transform data for charts
+  // ── Transform data for charts ─────────────────────────────────
+
   const execSummary = transformContainerExecutiveSummary(kpiData?.executiveSummary);
   const containersByStateData = transformContainersByState(kpiData?.containersByState);
   const passRateTrendData = kpiData?.passRateTrend;
@@ -149,7 +150,7 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
     ? execSummary.data[0]
     : null;
 
-  // State helper functions
+  // ── State helper functions ────────────────────────────────────
 
   const isNullOrError = (data) => data == null || (data && (data.error || data.status === 'unavailable'));
 
@@ -182,7 +183,7 @@ function ContainerDashboard({ volatileData, volatileFile, context }) {
 
   const nullMessage = 'No disponible en modo rápido';
 
-  // Trend helpers
+  // ── Trend helpers ─────────────────────────────────────────────
 
   const renderTrendChart = (title, data, yAxisLabel, valueFormatter, lineColors) => (
     <KpiCard title={title} loading={loading} error={error}>

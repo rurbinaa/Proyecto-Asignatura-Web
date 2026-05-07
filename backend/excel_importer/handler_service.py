@@ -160,6 +160,7 @@ def parse_qfc_line(raw_value):
         Returns ``(None, None)`` when the value cannot be parsed as a
         valid line identity.
     """
+    # ── Handle integer (or float-as-int) input directly ──
     if isinstance(raw_value, (int, float)):
         try:
             team_val = int(raw_value)
@@ -169,6 +170,7 @@ def parse_qfc_line(raw_value):
             return team_val, None
         return None, None
 
+    # ── Handle string input ──
     if not isinstance(raw_value, str):
         return None, None
 
@@ -283,6 +285,7 @@ def normalize_qc_fa_customer_rows(rows):
 
         normalized_rows.append(normalized_row)
 
+    # Build human-readable message
     parts = []
     if corrected_count:
         s = "s" if corrected_count != 1 else ""
@@ -363,6 +366,7 @@ def normalize_seconds_general_rows(rows):
 
         normalized_rows.append(normalized_row)
 
+    # Build human-readable message
     parts = []
     if corrected_count:
         s = "s" if corrected_count != 1 else ""
