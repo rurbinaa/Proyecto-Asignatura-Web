@@ -105,7 +105,7 @@ export default function SecondsGeneralDashboard() {
     };
   }, [filters.includeDualLines]);
 
-  // ── Data loading ────────────────────────────────────────────
+  // Data loading
 
   const loadData = useCallback(async (filtersOverride) => {
     setLoading(true);
@@ -163,7 +163,7 @@ export default function SecondsGeneralDashboard() {
     loadData(filters);
   }, [filters, loadData]);
 
-  // ── Filter handlers ─────────────────────────────────────────
+  // Filter handlers
 
   const handleFilterChange = useCallback((newFilters) => {
     setFilters({

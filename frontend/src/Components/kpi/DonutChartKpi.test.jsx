@@ -75,7 +75,8 @@ describe('DonutChartKpi', () => {
       const formatter = tooltipCalls[0].formatter;
       expect(formatter).toBeDefined();
       const result = formatter(10, 'ignored', { payload: { name: 'TestName' } });
-      expect(result).toEqual([10, 'TestName']);
+      // Default formatter includes percentage: "value · percentage"
+      expect(result).toEqual(['10 · 100.0%', 'TestName']);
     });
 
     it('uses custom tooltipFormatter when provided', () => {
@@ -122,7 +123,8 @@ describe('DonutChartKpi', () => {
       const legendFormatter = legendCalls[0].formatter;
       const result = legendFormatter('A', { payload: { value: 42 } });
       expect(valueFormatter).toHaveBeenCalledWith(42);
-      expect(result).toBe('A (42%)');
+      // Legend includes percentage: "name (value · percentage)"
+      expect(result).toBe('A (42% · 100.0%)');
     });
   });
 
@@ -243,7 +245,9 @@ describe('DonutChartKpi', () => {
       expect(legendCalls.length).toBeGreaterThan(0);
       const legendFormatter = legendCalls[legendCalls.length - 1].formatter;
       const result = legendFormatter('Other', { payload: { name: 'Other', value: 85, groupedItems: data[1].groupedItems } });
-      expect(result).toBe('Other (85 pcs)');
+      // Legend includes percentage: "name (value · percentage)"
+      // 85 / (100 + 85) = 45.9%
+      expect(result).toBe('Other (85 pcs · 45.9%)');
     });
 
     it('RED - Other slice tooltip shows grouped member details', () => {
@@ -254,11 +258,12 @@ describe('DonutChartKpi', () => {
       render(<DonutChartKpi data={data} valueFormatter={(v) => `${v} total`} />);
       expect(tooltipCalls.length).toBeGreaterThan(0);
       const formatter = tooltipCalls[tooltipCalls.length - 1].formatter;
-      // Default tooltip formatter uses valueFormatter
+      // Default tooltip formatter uses valueFormatter and includes percentage
       const otherPayload = { name: 'Other', value: 60, groupedItems: data[1].groupedItems };
       const result = formatter(60, 'Other', { payload: otherPayload });
-      // Should show value and name
-      expect(result[0]).toBe('60 total');
+      // Should show value, percentage, and name
+      // 60 / (100 + 60) = 37.5%
+      expect(result[0]).toBe('60 total · 37.5%');
       expect(result[1]).toBe('Other');
     });
 

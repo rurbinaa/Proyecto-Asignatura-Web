@@ -123,81 +123,6 @@ def _resolve_context_table_type(context_raw):
             "context": f"Unsupported context '{context}'. Valid values: plant, customer."
         })
 
-# ─────────────────────────────────────────────────────────
-# Shared acceptance-rate and team-sanitization helpers
-# ─────────────────────────────────────────────────────────
-
-_valid_team_range = range(1, 37)
-
-
-def _calculate_acceptance_rate(total_accepted, total_rejected):
-    """
-    Compute acceptance rate as accepted / (accepted + rejected) * 100.
-
-    Returns a float rounded to 2 decimal places. Returns 0 when the
-    denominator (accepted + rejected) is zero. Handles None inputs by
-    treating them as 0.
-    """
-    accepted = total_accepted or 0
-    rejected = total_rejected or 0
-    denominator = accepted + rejected
-    if denominator > 0:
-        return round((accepted / denominator) * 100, 2)
-    return 0
-
-
-def _apply_team_sanitization_queryset(queryset):
-    """
-    Canonicalize team 60→6 via a `canonical_team` annotation, then keep
-    only rows where canonical_team is within 1..36.
-
-    After calling this, use `canonical_team` (not `team`) in values(),
-    F() expressions, and group-bys. The raw `team` field preserves the
-    original value; `canonical_team` holds the sanitized value.
-
-    Returns the annotated and filtered queryset.
-    """
-    from django.db.models import Case, When, Value, IntegerField
-    return queryset.annotate(
-        canonical_team=Case(
-            When(team=60, then=Value(6)),
-            default=F('team'),
-            output_field=IntegerField(),
-        )
-    ).filter(canonical_team__gte=1, canonical_team__lte=36)
-
-
-def _qfc_conditional_denominator():
-    """
-    Return a Case/When expression for the defect rate denominator.
-
-    For QFC (customer) records, the denominator is `accepted + rejected`.
-    For all other records (e.g. QFA plant), it remains `sample`.
-
-    Use this in aggregate() and annotate() calls where the denominator
-    of the defect rate formula depends on table_type.
-    """
-    return Case(
-        When(table_type='QFC', then=F('accepted') + F('rejected')),
-        default=F('sample'),
-        output_field=FloatField(),
-    )
-
-
-def _sanitize_team_dataframe(df):
-    """
-    Sanitize a pandas DataFrame by canonicalizing team 60→6 and then
-    keeping only rows where the 'team' column value is within 1..36.
-
-    Returns a filtered DataFrame (may be empty). Does NOT mutate the input.
-    """
-    if df is None or df.empty:
-        return df
-    df = df.copy()
-    df['team'] = df['team'].replace(60, 6)
-    return df[df['team'].isin(_valid_team_range)]
-
-
 class Process(APIView):
     """
     Process an uploaded Excel file for preview (V2 workflow).
@@ -264,10 +189,6 @@ class Process(APIView):
         return Response(status = 204)
 
 
-# ─────────────────────────────────────────────────────────
-# New V2 Views — Preview → Confirm → Apply workflow
-# ─────────────────────────────────────────────────────────
-
 class ExcelPreviewView(APIView):
     """
     Upload an Excel file and return a preview diff without modifying the database.
@@ -292,7 +213,6 @@ class ExcelPreviewView(APIView):
             except Exception:
                 excel_file = None
 
-            # Parse all 5 sheets
             dataframes = {}
 
             qc_fa_plant_df = load_and_clean(
@@ -676,10 +596,6 @@ class KpiFilterMixin:
         )
         return queryset, include_dual_lines
 
-
-# ─────────────────────────────────────────────────────────
-# Grupo 3 - KPIs Defectos Endpoints
-# ─────────────────────────────────────────────────────────
 
 class TopDefectsView(KpiFilterMixin, APIView):
     """
@@ -1131,10 +1047,6 @@ class CorporateXlsxReportView(KpiFilterMixin, APIView):
         return response
 
 
-# ─────────────────────────────────────────────────────────
-# Grupo 2 - KPIs Rendimiento Endpoints
-# ─────────────────────────────────────────────────────────
-
 class KpiViewSet(KpiFilterMixin, ViewSet):
     """
     KPI endpoints for rendimiento (performance) metrics.
@@ -1314,10 +1226,6 @@ class KpiViewSet(KpiFilterMixin, ViewSet):
         return Response(dto_data, status=http_status.HTTP_200_OK)
 
 
-# ─────────────────────────────────────────────────────────
-# Grupo 1 - KPIs AQL Endpoints
-# ─────────────────────────────────────────────────────────
-
 class AqlKpiViewSet(ViewSet, KpiFilterMixin):
     """
     KPI endpoints for AQL (Acceptable Quality Limit) metrics.
@@ -1456,7 +1364,6 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
             .order_by('week')
         )
 
-        # Build series data
         aql_data = []
         for row in annotated:
             week = row['week']
@@ -1468,7 +1375,6 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         if not aql_data:
             return Response(_serialize_envelope(KpiSeriesEnvelopeSerializer, []))
 
-        # Calculate simple trend line (average of differences)
         if len(aql_data) >= 2:
             differences = []
             for i in range(1, len(aql_data)):
@@ -1478,7 +1384,6 @@ class AqlKpiViewSet(ViewSet, KpiFilterMixin):
         else:
             slope = 0
 
-        # Build trend line series (same x values, linear interpolation)
         trend_data = []
         if len(aql_data) >= 2:
             first_x = aql_data[0]['x']
@@ -1641,7 +1546,6 @@ class VolatileKpiView(APIView):
             return Response({"error": "No file provided"}, status=400)
 
         try:
-            # Parsear QC FA Plant (header=2, 67 columnas)
             df = load_and_clean(
                 file_obj,
                 QC_FA_PLANT_REMAP,
@@ -1653,7 +1557,6 @@ class VolatileKpiView(APIView):
             )
             rows = df.to_dict('records')
 
-            # Parsear KPIs desde ranges dinámicos del Excel
             try:
                 seconds_rework = parse_seconds_rework(file_obj)
             except Exception:
@@ -2000,7 +1903,6 @@ class VolatileKpiView(APIView):
 
         filtered_weeks = sorted(weeks_set)
 
-        # Step 3: Build dense series
         result = []
         for name in top_names:
             data = [

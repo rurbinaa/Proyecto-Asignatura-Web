@@ -68,7 +68,7 @@ export default function SecondsA4Dashboard() {
   const LOADING_MIN_MS = 300;
   const loadingStartRef = useRef(0);
 
-  // ── Stale-response guards ──────────────────────────────────
+  // ── Stale-response guards
   // Monotonic request id — incremented each loadData call so late
   // completions from superseded filter batches are ignored.
   const requestIdRef = useRef(0);
@@ -80,7 +80,7 @@ export default function SecondsA4Dashboard() {
   // AbortController ref for the filter-options fetch.
   const filterOptsAbortRef = useRef(null);
 
-  // ── Fetch filter options (refetches when year/line change) ──
+  // ── Fetch filter options
   useEffect(() => {
     // Abort any previous filter-options request
     if (filterOptsAbortRef.current) {
@@ -110,7 +110,7 @@ export default function SecondsA4Dashboard() {
     };
   }, [filters.year, filters.line]);
 
-  // ── Data loading ────────────────────────────────────────────
+  // ── Data loading
 
   const loadData = useCallback(async (filtersOverride) => {
     // Abort any previous analytics batch
@@ -190,7 +190,7 @@ export default function SecondsA4Dashboard() {
     loadData(filters);
   }, [filters, loadData]);
 
-  // ── Filter handlers ─────────────────────────────────────────
+  // ── Filter handlers
 
   const handleFilterChange = useCallback((newFilters) => {
     setFilters(newFilters);
@@ -204,7 +204,7 @@ export default function SecondsA4Dashboard() {
     loadData(filters);
   }, [loadData, filters]);
 
-  // ── Derived data (memoized) ────────────────────────────────
+  // ── Derived data
 
   const totals = useMemo(
     () => executiveSummary?.totals ?? null,

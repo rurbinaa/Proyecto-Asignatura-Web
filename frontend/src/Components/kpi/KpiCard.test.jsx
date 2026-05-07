@@ -149,6 +149,39 @@ describe('KpiCard', () => {
     });
   });
 
+  describe('Loading behavior', () => {
+    it('body uses flex column layout when NOT loading so chart fills the card', () => {
+      render(
+        <KpiCard title="Chart Card">
+          <span>Chart</span>
+        </KpiCard>
+      );
+      const bodyElement = document.querySelector('.kpi-card > div:nth-child(2)');
+      expect(bodyElement.style.display).toBe('flex');
+      expect(bodyElement.style.flexDirection).toBe('column');
+      // No centering when not loading — charts should top-align
+      expect(bodyElement.style.alignItems).toBe('');
+      expect(bodyElement.style.justifyContent).toBe('');
+    });
+
+    it('does not render children when loading even if children are present', () => {
+      render(
+        <KpiCard title="Test" loading>
+          <span data-testid="child-content">Should not appear</span>
+        </KpiCard>
+      );
+      // Spinner should be visible
+      expect(document.querySelector('.kpi-loader')).toBeInTheDocument();
+      // Children should NOT be rendered
+      expect(screen.queryByTestId('child-content')).not.toBeInTheDocument();
+    });
+
+    it('does not render spinner when not loading', () => {
+      render(<KpiCard title="Test"><span>Content</span></KpiCard>);
+      expect(document.querySelector('.kpi-loader')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Layout and Spacing', () => {
     it('card body has no padding - charts handle their own padding for consistency', () => {
       render(<KpiCard title="Test Card"><span>Content</span></KpiCard>);

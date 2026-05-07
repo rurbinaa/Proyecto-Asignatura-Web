@@ -34,11 +34,6 @@ from quality_data.serializers import (
 )
 
 
-# ─────────────────────────────────────────────────────────
-# ContainerFilterMixin
-# ─────────────────────────────────────────────────────────
-
-
 class ContainerFilterMixin:
     """
     Mixin that filters Container querysets based on Container-specific query params.
@@ -108,12 +103,10 @@ class ContainerFilterMixin:
 
         request = self.request
 
-        # ── customer filter ──
-        customer = request.query_params.get("customer")
+customer = request.query_params.get('customer')
         if customer:
             queryset = queryset.filter(customer__exact=customer)
 
-        # ── date filtering ──
         date_range_raw = request.query_params.get("date_range")
         from_date = None
         to_date = None
@@ -141,11 +134,6 @@ class ContainerFilterMixin:
             queryset = queryset.filter(date__lte=to_date)
 
         return queryset
-
-
-# ─────────────────────────────────────────────────────────
-# ContainerKpiViewSet
-# ─────────────────────────────────────────────────────────
 
 
 class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
@@ -195,8 +183,6 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
         )
         return Response({"customer": customers}, status=http_status.HTTP_200_OK)
 
-    # ── Executive Summary ────────────────────────────────────
-
     @action(detail=False, methods=["get"], url_path="executive-summary")
     def executive_summary(self, request):
         """
@@ -232,90 +218,7 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
         ]
 
         serializer = ScalarMetricSerializer(result, many=True)
-        return Response(serializer.data, status=http_status.HTTP_200_OK)
-
-    # ── Containers by State ──────────────────────────────────
-
-    @action(detail=False, methods=["get"], url_path="containers-by-state")
-    def containers_by_state(self, request):
-        """
-        GET /quality/kpis/container/containers-by-state/
-
-        Group by percentage_pass buckets:
-          - "< 80%"
-          - "80-90%"   (>= 80, < 90)
-          - "90-95%"   (>= 90, <= 95)
-          - "> 95%"    (> 95)
-
-        Response: [{"name": "< 80%", "value": 3}, ...]
-        All four ranges always present, even with zero count.
-        """
-        queryset = self._base_queryset()
-
-        aggregated = (
-            queryset
-            .annotate(
-                range_bucket=Case(
-                    When(percentage_pass__lt=80, then=1),
-                    When(percentage_pass__gte=80, percentage_pass__lt=90, then=2),
-                    When(percentage_pass__gte=90, percentage_pass__lte=95, then=3),
-                    When(percentage_pass__gt=95, then=4),
-                    output_field=IntegerField(),
-                )
-            )
-            .values("range_bucket")
-            .annotate(count=Count("id"))
-        )
-
-        range_labels = {
-            1: "< 80%",
-            2: "80-90%",
-            3: "90-95%",
-            4: "> 95%",
-        }
-
-        result_dict = {
-            range_labels[item["range_bucket"]]: item["count"]
-            for item in aggregated
-        }
-
-        all_ranges = ["< 80%", "80-90%", "90-95%", "> 95%"]
-        result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
-
-        serializer = KpiDonutSerializer(result, many=True)
-        return Response(serializer.data, status=http_status.HTTP_200_OK)
-
-    # ── Trend KPIs ───────────────────────────────────────────
-
-    @action(detail=False, methods=["get"], url_path="pass-rate-trend")
-    def pass_rate_trend(self, request):
-        """
-        GET /quality/kpis/container/pass-rate-trend/
-
-        Daily average pass rate trend. Grouped by Container.date, AVG(percentage_pass).
-        Ordered by date ASC. Null dates excluded.
-
-        Response: [{"name": "Pass Rate", "data": [{"x": "2025-01-10", "y": 85.0}, ...]}]
-        """
-        queryset = self._base_queryset()
-        # Exclude null dates — trends require a date axis
-        queryset = queryset.exclude(date__isnull=True)
-
-        aggregated = (
-            queryset
-            .values(date_val=F("date"))
-            .annotate(avg_pass=Avg("percentage_pass"))
-            .order_by("date_val")
-        )
-
-        data_points = [
-            {"x": item["date_val"].isoformat(), "y": round(item["avg_pass"], 2)}
-            for item in aggregated
-        ]
-
-        result = [{"name": "Pass Rate", "data": data_points}]
-        serializer = KpiSeriesSerializer(result, many=True)
-        return Response(serializer.data, status=http_status.HTTP_200_OK)
+return Response(serializer.data, status=http_status.HTTP_200_OK)
 
     @action(detail=False, methods=["get"], url_path="inspected-trend")
     def inspected_trend(self, request):
@@ -375,8 +278,6 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
         serializer = KpiSeriesSerializer(result, many=True)
         return Response(serializer.data, status=http_status.HTTP_200_OK)
 
-    # ── Defect KPIs ──────────────────────────────────────────
-
     @action(detail=False, methods=["get"], url_path="top-defects")
     def top_defects(self, request):
         """
@@ -435,8 +336,6 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
         serializer = KpiDonutSerializer(result, many=True)
         return Response(serializer.data, status=http_status.HTTP_200_OK)
 
-    # ── Worst Containers ─────────────────────────────────────
-
     @action(detail=False, methods=["get"], url_path="worst-containers")
     def worst_containers(self, request):
         """
@@ -459,8 +358,6 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
         """
         queryset = self._base_queryset()
         queryset = queryset.order_by("percentage_pass", "container_number")
-
-        # ── top-N support ────────────────────────────────────
         try:
             top = int(request.query_params.get("top", 5))
         except (ValueError, TypeError):
