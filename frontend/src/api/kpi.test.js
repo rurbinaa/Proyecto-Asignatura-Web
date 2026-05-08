@@ -1494,6 +1494,75 @@ describe('kpi.js - fetchVolatileDashboard', () => {
     await expect(fetchVolatileDashboard(new File(['test'], 'test.xlsx'), 'qcfa'))
       .rejects.toThrow('Server error');
   });
+
+  // ── In-flight deduplication (Slice 4 / Task 4.1) ────────────────
+
+  it('RED - deduplicates in-flight requests with identical file+dashboard+context (single network call)', async () => {
+    const mockResponse = { containers_by_state: [{ name: '< 80%', value: 3 }] };
+    // Single mock (not Once) — both callers must share the same promise
+    axiosClient.post.mockResolvedValue({ data: mockResponse });
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    const [r1, r2] = await Promise.all([
+      fetchVolatileDashboard(file, 'container', 'plant'),
+      fetchVolatileDashboard(file, 'container', 'plant'),
+    ]);
+
+    // Only one actual POST call hit axiosClient
+    expect(axiosClient.post).toHaveBeenCalledTimes(1);
+    expect(r1).toHaveProperty('containersByState');
+    expect(r2).toHaveProperty('containersByState');
+    expect(r1.containersByState).toEqual([{ name: '< 80%', value: 3 }]);
+  });
+
+  it('RED - different dashboard values do NOT share in-flight promise (separate calls)', async () => {
+    axiosClient.post.mockResolvedValue({ data: {} });
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    await Promise.all([
+      fetchVolatileDashboard(file, 'container'),
+      fetchVolatileDashboard(file, 'qcfa'),
+    ]);
+
+    // Two different dashboard values → two network calls
+    expect(axiosClient.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('RED - different file identity does NOT share in-flight promise', async () => {
+    axiosClient.post.mockResolvedValue({ data: {} });
+
+    await Promise.all([
+      fetchVolatileDashboard(new File(['a'], 'a.xlsx', { lastModified: 1000 }), 'container'),
+      fetchVolatileDashboard(new File(['b'], 'b.xlsx', { lastModified: 2000 }), 'container'),
+    ]);
+
+    // Different files → two network calls
+    expect(axiosClient.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('RED - dedupe does NOT carry over between subsequent requests (clean slate after resolve)', async () => {
+    const mockResponse = { containers_by_state: [] };
+    axiosClient.post.mockResolvedValue({ data: mockResponse });
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    // First request pair (deduped)
+    await Promise.all([
+      fetchVolatileDashboard(file, 'container'),
+      fetchVolatileDashboard(file, 'container'),
+    ]);
+    expect(axiosClient.post).toHaveBeenCalledTimes(1);
+
+    // Second request pair — should be clean (no stale dedupe)
+    await Promise.all([
+      fetchVolatileDashboard(file, 'container'),
+      fetchVolatileDashboard(file, 'container'),
+    ]);
+    // Both pairs = 2 total calls (one per pair)
+    expect(axiosClient.post).toHaveBeenCalledTimes(2);
+  });
 });
 
 // ─── Slice 3: Seconds A4 DTO mappings via mapVolatileKpisDto ────────────────

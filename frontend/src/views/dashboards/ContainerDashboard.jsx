@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAllContainerKpis, getContainerFilterOptions } from '../../api/kpi';
+import useVolatileDashboardCache from '../useVolatileDashboardCache';
 import {
   transformContainerExecutiveSummary,
   transformContainersByState,
@@ -56,6 +57,23 @@ function ContainerDashboard({ volatileFile, context }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // ── Volatile (fast) mode: use shared cache hook ─────────────────
+  const {
+    data: volatileData,
+    loading: volatileLoading,
+    error: volatileError,
+  } = useVolatileDashboardCache(volatileFile, 'container', context);
+
+  // ── Volatile data sync ──
+  useEffect(() => {
+    if (!volatileFile) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setKpiData(volatileData);
+    setLoading(volatileLoading);
+    if (volatileError) setError(volatileError);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [volatileFile, volatileData, volatileLoading, volatileError]);
+
   const loadData = useCallback(async (activeFilters = filters) => {
     setLoading(true);
     setError(null);
@@ -78,42 +96,8 @@ function ContainerDashboard({ volatileFile, context }) {
 
   useEffect(() => {
     if (!isLiveMode) return;
-
-    let active = true;
-    getContainerFilterOptions()
-      .then((options) => {
-        if (!active) return;
-        setCustomerOptions(Array.isArray(options?.customer) ? options.customer : []);
-      })
-      .catch(() => {
-        if (!active) return;
-        setCustomerOptions([]);
-      });
-
-    return () => {
-      active = false;
-    };
+    // ...
   }, [isLiveMode]);
-
-  // Fetch KPIs from volatile file (server-side calculation)
-  useEffect(() => {
-    if (!volatileFile) return;
-
-    const fetchVolatile = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await fetchAllContainerKpis(filters, volatileFile, context);
-        setKpiData(result);
-      } catch (err) {
-        setError(err.message || 'Error processing Excel file');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchVolatile();
-  }, [volatileFile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFilterChange = useCallback((newFilters) => {
     setFilters(newFilters);

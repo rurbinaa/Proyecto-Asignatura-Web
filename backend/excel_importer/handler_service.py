@@ -824,3 +824,163 @@ def _resolve_container_date(raw_date, existing_date):
     if normalized is not None:
         return normalized
     return existing_date
+
+
+# ─────────────────────────────────────────────────────────
+# Container row normalization (Slice 3 — import boundary)
+# ─────────────────────────────────────────────────────────
+
+_CONTAINER_NUMERIC_COUNT_FIELDS = {
+    "total_palette",
+    "total_palette_pass",
+    "total_palette_rejected",
+    "transfer_of_container",
+}
+
+_CONTAINER_PERCENTAGE_FIELDS = {"percentage_pass", "percentage_reject"}
+
+_CONTAINER_DEFECT_FIELDS = {
+    "dirt_label", "dirt_container", "dirt_cartoons", "container_holes",
+    "writte_mark_on_label", "written_mark_on_cartoon", "container_poor_close",
+    "boxes_poor_close", "printing_issues_label", "misaligned_label",
+    "crushed_corners", "cartoons_holes", "warped_boxes", "defects_label",
+    "total_defects",
+}
+
+
+def _coerce_numeric(value):
+    """
+    Convert a value to float, returning None for non-convertible inputs.
+    Handles NaN, None, strings, and numeric types.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        if pd.isna(value):
+            return None
+        return float(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def normalize_container_rows(rows):
+    """
+    Normalize container rows at the import boundary before KPI computation.
+
+    Enforces the container contract:
+    - ``percentage_pass`` / ``percentage_reject``: NaN → None, fractional → 0-100 scale
+    - ``total_palette``, ``total_palette_pass``, ``total_palette_rejected``,
+      ``transfer_of_container``: NaN/None → 0
+    - Defect fields: NaN/None → 0
+    - ``container_number``: NaN/None/invalid → row dropped with warning
+    - ``customer``: None → empty string
+    - ``date``: invalid → None, valid ISO dates preserved
+    - Other fields pass through unchanged
+
+    The function does NOT mutate input rows — it creates copies.
+
+    Returns:
+        tuple: (normalized_rows, warnings_dict)
+            warnings_dict has keys:
+                corrected (int): number of percentage values rescaled (fractional→0-100)
+                rejected (int): number of rows removed as invalid
+                message (str): human-readable summary (empty if no events)
+    """
+    if not rows:
+        return [], {"corrected": 0, "rejected": 0, "message": ""}
+
+    normalized_rows = []
+    corrected_count = 0
+    rejected_count = 0
+
+    for row in rows:
+        normalized_row = dict(row)
+
+        # ── Validate container_number — drop if invalid ──
+        raw_cn = normalized_row.get("container_number")
+        cn_numeric = _coerce_numeric(raw_cn)
+        if cn_numeric is None:
+            rejected_count += 1
+            continue
+        try:
+            normalized_row["container_number"] = int(cn_numeric)
+        except (ValueError, TypeError):
+            rejected_count += 1
+            continue
+
+        # ── Count fields: NaN/None → 0 ──
+        for field in _CONTAINER_NUMERIC_COUNT_FIELDS:
+            raw = normalized_row.get(field)
+            coerced = _coerce_numeric(raw)
+            if coerced is None:
+                normalized_row[field] = 0
+            else:
+                normalized_row[field] = int(coerced)
+
+        # ── Percentage fields: NaN → None, fractional → 0-100 ──
+        for field in _CONTAINER_PERCENTAGE_FIELDS:
+            raw = normalized_row.get(field)
+            coerced = _coerce_numeric(raw)
+            if coerced is None:
+                normalized_row[field] = None
+            else:
+                # Normalize fractional (0-1) to 0-100 scale
+                if 0 < coerced <= 1:
+                    normalized_row[field] = round(coerced * 100, 2)
+                    corrected_count += 1
+                else:
+                    normalized_row[field] = round(coerced, 2)
+
+        # ── Defect fields: NaN/None → 0 ──
+        for field in _CONTAINER_DEFECT_FIELDS:
+            raw = normalized_row.get(field)
+            coerced = _coerce_numeric(raw)
+            if coerced is None:
+                normalized_row[field] = 0
+            else:
+                normalized_row[field] = int(coerced)
+
+        # ── Customer: None → empty string ──
+        customer = normalized_row.get("customer")
+        if customer is None or (isinstance(customer, float) and pd.isna(customer)):
+            normalized_row["customer"] = ""
+
+        # ── Date: invalid → None ──
+        raw_date = normalized_row.get("date")
+        if raw_date is not None:
+            parsed = normalize_container_date(raw_date)
+            if parsed is None:
+                normalized_row["date"] = None
+            else:
+                # Convert back to ISO string for volatile service
+                normalized_row["date"] = parsed.isoformat()
+
+        normalized_rows.append(normalized_row)
+
+    # Build human-readable message
+    parts = []
+    if corrected_count:
+        s = "s" if corrected_count != 1 else ""
+        parts.append(f"corrected {corrected_count} percentage value{s} (fraction→scale)")
+    if rejected_count:
+        s = "s" if rejected_count != 1 else ""
+        parts.append(f"rejected {rejected_count} invalid row{s} (bad container_number)")
+
+    message = ""
+    if parts:
+        message = f"Container: {' and '.join(parts)}."
+
+    warnings = {
+        "corrected": corrected_count,
+        "rejected": rejected_count,
+        "message": message,
+    }
+
+    return normalized_rows, warnings

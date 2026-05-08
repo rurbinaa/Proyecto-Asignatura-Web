@@ -13,6 +13,10 @@ import numpy as np
 import datetime
 from quality_data.models import QualityQcFa, SecondsA4, SecondsGeneral, Container, ExcelSyncSession, InspectionDefect, Color
 from quality_data.volatile_kpi_service import VolatileWorkbookService
+from quality_data.dashboard_contracts import (
+    CONTAINER_STATE_BUCKET_LABELS,
+    ALL_CONTAINER_STATE_BUCKET_LABELS,
+)
 from quality_data.volatile_kpi_service import (
     calc_container_executive_summary,
     calc_container_state_distribution,
@@ -1090,22 +1094,17 @@ class ContainersByStateView(KpiFilterMixin, APIView):
             .annotate(count=Count('id'))
         )
 
-        range_labels = {
-            1: "< 80%",
-            2: "80-90%",
-            3: "90-95%",
-            4: "> 95%",
-        }
-
         result = [
-            {"name": range_labels[item['range_bucket']], "value": item['count']}
+            {"name": CONTAINER_STATE_BUCKET_LABELS[item['range_bucket']], "value": item['count']}
             for item in aggregated
         ]
 
         # Ensure all ranges are present (even if 0)
-        all_ranges = ["< 80%", "80-90%", "90-95%", "> 95%"]
         result_dict = {r["name"]: r["value"] for r in result}
-        result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
+        result = [
+            {"name": r, "value": result_dict.get(r, 0)}
+            for r in ALL_CONTAINER_STATE_BUCKET_LABELS
+        ]
 
         dto_data = _serialize_payload(KpiDonutSerializer, result, many=True)
         return Response(dto_data, status=http_status.HTTP_200_OK)
@@ -1695,7 +1694,30 @@ class VolatileKpiView(APIView):
                 file_obj, dashboard or 'qcfa', context or 'plant',
             )
 
-            # Parsear KPIs desde ranges dinámicos del Excel
+            # Dispatch by dashboard FIRST — legacy pivot parsers only for QC FA
+            from quality_data.dashboard_assemblers import (
+                build_container_payload,
+                build_seconds_a4_payload,
+                build_seconds_general_payload,
+                build_qcfa_payload,
+            )
+
+            if dashboard == 'container':
+                kpi_data = self._compute_container_kpis(rows, defect_fields)
+                payload = build_container_payload(kpi_data)
+                return Response(payload, status=200)
+
+            if dashboard == 'seconds_a4':
+                kpi_data = self._compute_seconds_a4_kpis(rows)
+                payload = build_seconds_a4_payload(kpi_data)
+                return Response(payload, status=200)
+
+            if dashboard == 'seconds_general':
+                kpi_data = self._compute_seconds_general_kpis(rows)
+                payload = build_seconds_general_payload(kpi_data)
+                return Response(payload, status=200)
+
+            # QC FA (default): legacy pivot reads for seconds_rework and fabric_defects
             try:
                 seconds_rework = parse_seconds_rework(file_obj)
             except Exception:
@@ -1706,170 +1728,103 @@ class VolatileKpiView(APIView):
             except Exception:
                 fabric_defects = None
 
+            # Containers by state from shared volatile service — not legacy parser
             try:
-                containers = parse_containers_by_state(file_obj)
+                container_rows, _ = service.get_parsed_data('container')
+                containers_state = calc_container_state_distribution(container_rows)
             except Exception:
-                containers = None
+                containers_state = None
 
-            # Si es container → KPIs completos desde las filas parseadas
-            if dashboard == 'container':
-                kpis = self._build_container_payload(rows, defect_fields)
-                return Response(kpis, status=200)
+            kpi_data = self._compute_qcfa_kpis(rows, seconds_rework, fabric_defects, containers_state)
 
-            if dashboard == 'seconds_a4':
-                kpis = self._build_seconds_a4_payload(rows)
-                return Response(kpis, status=200)
+            # filter_options: compute only when rows available (otherwise None for assembler)
+            filter_options = self._compute_filter_options(rows) if rows else None
+            kpi_data["filter_options"] = filter_options
 
-            if dashboard == 'seconds_general':
-                kpis = self._build_seconds_general_payload(rows)
-                return Response(kpis, status=200)
-
-            # QC FA (default): todos los KPIs desde las filas QC FA
-            kpis = self._build_qcfa_payload(rows, seconds_rework, fabric_defects, containers)
-
-            if rows:
-                filter_options = self._compute_filter_options(rows)
-                kpis["filter_options"] = _serialize_payload(
-                    FilterOptionsSerializer, filter_options, many=False,
-                )
-
-            return Response(kpis, status=200)
+            payload = build_qcfa_payload(kpi_data)
+            return Response(payload, status=200)
 
         except Exception as e:
             return Response({"error": str(e)}, status=400)
 
-    def _build_qcfa_payload(self, rows, seconds_rework, fabric_defects, containers):
-        """Build the full 16-KPI payload from QC FA rows (backward compat)."""
+    def _compute_qcfa_kpis(self, rows, seconds_rework, fabric_defects, containers_state):
+        """
+        Compute ALL QC FA KPI data from volatile rows and return as a raw
+        kpi_data dict (pre-serialization) for the shared assembler.
+        """
         return {
-            "aql_by_style": _serialize_payload(KpiBarSerializer, self._calc_aql_by_style(rows), many=True),
-            "aql_weekly": _serialize_payload(KpiSeriesSerializer, self._calc_aql_weekly(rows), many=True),
-            "audited_pieces": _serialize_payload(KpiSeriesSerializer, self._calc_audited_pieces(rows), many=True),
-            "ac_re_rate_by_line": _serialize_payload(KpiBarSerializer, self._calc_ac_re_rate(rows), many=True),
-            "seconds_rework": _serialize_payload(KpiSeriesSerializer, seconds_rework, many=True) if seconds_rework is not None else None,
-            "performance_by_customer": _serialize_payload(KpiBarSerializer, self._calc_perf_by_customer(rows), many=True),
-            "performance_by_line": _serialize_payload(KpiBarSerializer, self._calc_perf_by_line(rows), many=True),
-            "top_defects": _serialize_payload(KpiBarSerializer, parse_top_defects(rows), many=True),
-            "fabric_defects": _serialize_payload(KpiBarSerializer, fabric_defects, many=True) if fabric_defects is not None else None,
-            "defects_by_style_type": _serialize_payload(KpiHeatmapSerializer, parse_defects_by_style(rows), many=True),
-            "pass_reject_distribution": _serialize_payload(KpiDonutSerializer, self._calc_pass_reject(rows), many=True),
-            "rejected_evolution": _serialize_payload(KpiSeriesSerializer, self._calc_rejected_evolution(rows), many=True),
-            "containers_by_state": _serialize_payload(KpiDonutSerializer, containers, many=True) if containers is not None else None,
-            "defect_rate": _serialize_payload(ScalarMetricSerializer, self._calc_defect_rate(rows), many=False),
-            "defect_composition": _serialize_payload(KpiDonutSerializer, self._calc_defect_composition(rows), many=True),
-            "defect_trend_top_3": _serialize_payload(KpiSeriesSerializer, self._calc_defect_trend_top_3(rows), many=True),
+            "aql_by_style": self._calc_aql_by_style(rows),
+            "aql_by_team": self._calc_aql_by_team(rows),
+            "aql_weekly": self._calc_aql_weekly(rows),
+            "audited_pieces": self._calc_audited_pieces(rows),
+            "ac_re_rate_by_line": self._calc_ac_re_rate(rows),
+            "seconds_rework": seconds_rework,
+            "performance_by_customer": self._calc_perf_by_customer(rows),
+            "performance_by_line": self._calc_perf_by_line(rows),
+            "top_defects": parse_top_defects(rows),
+            "fabric_defects": fabric_defects,
+            "defects_by_style_type": parse_defects_by_style(rows),
+            "pass_reject_distribution": self._calc_pass_reject(rows),
+            "rejected_evolution": self._calc_rejected_evolution(rows),
+            "containers_by_state": containers_state,
+            "defect_rate": self._calc_defect_rate(rows),
+            "defect_composition": self._calc_defect_composition(rows),
+            "defect_trend_top_3": self._calc_defect_trend_top_3(rows),
         }
 
-    def _build_container_payload(self, rows, defect_fields):
+    def _compute_container_kpis(self, rows, defect_fields):
         """
-        Build full Container KPI payload from parsed container rows.
-
-        Computes all 7 Container KPI families + containers_by_state directly
-        from the volatile parsed rows, matching live endpoint formulas exactly.
+        Compute ALL Container KPI data from volatile rows and return as a raw
+        kpi_data dict (pre-serialization) for the shared assembler.
         """
         defect_fields = defect_fields or CONTAINER_AMOUNT_DEFEACTS_FIELDS
 
         return {
-            "executive_summary": _serialize_payload(
-                ScalarMetricSerializer, calc_container_executive_summary(rows), many=True,
-            ),
-            "containers_by_state": _serialize_payload(
-                KpiDonutSerializer, calc_container_state_distribution(rows), many=True,
-            ),
-            "pass_rate_trend": _serialize_payload(
-                KpiSeriesSerializer, calc_container_pass_rate_trend(rows), many=True,
-            ),
-            "inspected_trend": _serialize_payload(
-                KpiSeriesSerializer, calc_container_inspected_trend(rows), many=True,
-            ),
-            "rejected_trend": _serialize_payload(
-                KpiSeriesSerializer, calc_container_rejected_trend(rows), many=True,
-            ),
-            "top_defects": _serialize_payload(
-                KpiBarSerializer, calc_container_top_defects(rows, defect_fields), many=True,
-            ),
-            "defect_composition": _serialize_payload(
-                KpiDonutSerializer, calc_container_defect_composition(rows, defect_fields), many=True,
-            ),
-            "worst_containers": _serialize_payload(
-                WorstContainerSerializer, calc_container_worst_containers(rows), many=True,
-            ),
+            "executive_summary": calc_container_executive_summary(rows),
+            "containers_by_state": calc_container_state_distribution(rows),
+            "pass_rate_trend": calc_container_pass_rate_trend(rows),
+            "inspected_trend": calc_container_inspected_trend(rows),
+            "rejected_trend": calc_container_rejected_trend(rows),
+            "top_defects": calc_container_top_defects(rows, defect_fields),
+            "defect_composition": calc_container_defect_composition(rows, defect_fields),
+            "worst_containers": calc_container_worst_containers(rows),
         }
 
-    def _build_seconds_a4_payload(self, rows):
+    def _compute_seconds_a4_kpis(self, rows):
         """
-        Build full Seconds A4 KPI payload from parsed volatile rows.
-
-        Computes all 8 KPI families matching live endpoint contracts.
+        Compute ALL Seconds A4 KPI data from volatile rows and return as a raw
+        kpi_data dict (pre-serialization) for the shared assembler.
         """
         return {
-            "filter_options": _serialize_payload(
-                SecondsA4FilterOptionsSerializer,
-                calc_seconds_a4_filter_options(rows),
-                many=False,
-            ),
+            "filter_options": calc_seconds_a4_filter_options(rows),
             "executive_summary": calc_seconds_a4_executive_summary(rows),
-            "weekly_trend": _serialize_payload(
-                KpiSeriesSerializer, calc_seconds_a4_weekly_trend(rows), many=True,
-            ),
-            "sew_vs_fab": _serialize_payload(
-                KpiBarSerializer, calc_seconds_a4_sew_vs_fab(rows), many=True,
-            ),
-            "by_style": _serialize_payload(
-                KpiBarSerializer, calc_seconds_a4_by_style(rows), many=True,
-            ),
-            "by_color": _serialize_payload(
-                KpiBarSerializer, calc_seconds_a4_by_color(rows), many=True,
-            ),
-            "by_line": _serialize_payload(
-                KpiBarSerializer, calc_seconds_a4_by_line(rows), many=True,
-            ),
-            "by_cut": _serialize_payload(
-                KpiBarSerializer, calc_seconds_a4_by_cut(rows), many=True,
-            ),
-            "pass_fail_weekly": _serialize_payload(
-                KpiSeriesSerializer, calc_seconds_a4_pass_fail_weekly(rows), many=True,
-            ),
+            "weekly_trend": calc_seconds_a4_weekly_trend(rows),
+            "sew_vs_fab": calc_seconds_a4_sew_vs_fab(rows),
+            "by_style": calc_seconds_a4_by_style(rows),
+            "by_color": calc_seconds_a4_by_color(rows),
+            "by_line": calc_seconds_a4_by_line(rows),
+            "by_cut": calc_seconds_a4_by_cut(rows),
+            "pass_fail_weekly": calc_seconds_a4_pass_fail_weekly(rows),
         }
 
-    def _build_seconds_general_payload(self, rows):
+    def _compute_seconds_general_kpis(self, rows):
         """
-        Build full Seconds General KPI payload from parsed volatile rows.
-
-        Computes all 12 KPI families matching live endpoint contracts.
+        Compute ALL Seconds General KPI data from volatile rows and return as a raw
+        kpi_data dict (pre-serialization) for the shared assembler.
         """
         return {
             "filter_options": calc_seconds_general_filter_options(rows),
-            "defects_by_customer": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_defects_by_customer(rows), many=True,
-            ),
-            "defects_by_style": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_defects_by_style(rows), many=True,
-            ),
-            "weekly_trend": _serialize_payload(
-                KpiSeriesSerializer, calc_seconds_general_weekly_trend(rows), many=True,
-            ),
-            "sewing_vs_fabric": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_sewing_vs_fabric(rows), many=True,
-            ),
+            "defects_by_customer": calc_seconds_general_defects_by_customer(rows),
+            "defects_by_style": calc_seconds_general_defects_by_style(rows),
+            "weekly_trend": calc_seconds_general_weekly_trend(rows),
+            "sewing_vs_fabric": calc_seconds_general_sewing_vs_fabric(rows),
             "production_totals": calc_seconds_general_production_totals(rows),
-            "top_sewing_defects": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_top_sewing_defects(rows), many=True,
-            ),
-            "top_fabric_defects": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_top_fabric_defects(rows), many=True,
-            ),
-            "fix_vs_definitive": _serialize_payload(
-                KpiSeriesSerializer, calc_seconds_general_fix_vs_definitive(rows), many=True,
-            ),
-            "defects_by_color": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_defects_by_color(rows), many=True,
-            ),
-            "defects_by_size": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_defects_by_size(rows), many=True,
-            ),
-            "defects_by_line": _serialize_payload(
-                KpiBarSerializer, calc_seconds_general_defects_by_line(rows), many=True,
-            ),
+            "top_sewing_defects": calc_seconds_general_top_sewing_defects(rows),
+            "top_fabric_defects": calc_seconds_general_top_fabric_defects(rows),
+            "fix_vs_definitive": calc_seconds_general_fix_vs_definitive(rows),
+            "defects_by_color": calc_seconds_general_defects_by_color(rows),
+            "defects_by_size": calc_seconds_general_defects_by_size(rows),
+            "defects_by_line": calc_seconds_general_defects_by_line(rows),
         }
 
     def _build_unsupported_payload(self):
@@ -1889,6 +1844,28 @@ class VolatileKpiView(APIView):
         grouped['aql'] = (grouped['total_defects'] / grouped['total_sample'] * 100).round(2)
         result = [
             {"label": row['style'], "value": row['aql']}
+            for _, row in grouped.iterrows()
+        ]
+        result.sort(key=lambda x: x['value'], reverse=True)
+        return result
+
+    def _calc_aql_by_team(self, rows):
+        """GROUP BY team: SUM(defects_total)/SUM(sample)*100"""
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return []
+        grouped = df.groupby('team').agg(
+            total_defects=('defects_total', 'sum'),
+            total_sample=('sample', 'sum')
+        ).reset_index()
+        # Guard: filter out non-finite team values (inf, -inf, NaN) that would
+        # crash int() below with OverflowError. np.isfinite returns False for
+        # inf, -inf, and NaN, so only clean numeric values survive.
+        grouped = grouped[np.isfinite(grouped['team'])]
+        grouped = grouped[grouped['total_sample'] > 0]
+        grouped['aql'] = (grouped['total_defects'] / grouped['total_sample'] * 100).round(2)
+        result = [
+            {"label": str(int(row['team'])), "value": row['aql']}
             for _, row in grouped.iterrows()
         ]
         result.sort(key=lambda x: x['value'], reverse=True)

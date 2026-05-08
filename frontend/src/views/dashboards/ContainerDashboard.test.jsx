@@ -2,12 +2,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import ContainerDashboard from './ContainerDashboard';
-import { fetchAllContainerKpis, getContainerFilterOptions } from '../../api/kpi';
+import { fetchAllContainerKpis, getContainerFilterOptions, fetchVolatileDashboard } from '../../api/kpi';
+import { clearVolatileCache } from '../useVolatileDashboardCache';
 
 vi.mock('../../api/kpi', () => ({
   fetchAllContainerKpis: vi.fn(),
   getContainerFilterOptions: vi.fn().mockResolvedValue({ customer: ['Customer A', 'Customer B'] }),
   fetchVolatileKpis: vi.fn(),
+  fetchVolatileDashboard: vi.fn(),
   getContainersByState: vi.fn(),
   fetchKpi: vi.fn(),
 }));
@@ -218,6 +220,7 @@ describe('ContainerDashboard — live mode', () => {
 describe('ContainerDashboard — volatile mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearVolatileCache();
   });
 
   // Realistic container KPI data that the backend now returns for volatile mode
@@ -243,7 +246,7 @@ describe('ContainerDashboard — volatile mode', () => {
   };
 
   it('renders all KPI cards from volatile data (no fast-mode banner)', async () => {
-    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
+    fetchVolatileDashboard.mockResolvedValue(volatileKpiData);
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
@@ -261,7 +264,7 @@ describe('ContainerDashboard — volatile mode', () => {
   });
 
   it('does not show ContainerFilterBar in volatile mode', () => {
-    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
+    fetchVolatileDashboard.mockResolvedValue(volatileKpiData);
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
@@ -269,7 +272,7 @@ describe('ContainerDashboard — volatile mode', () => {
   });
 
   it('renders executive summary cards in volatile mode', async () => {
-    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
+    fetchVolatileDashboard.mockResolvedValue(volatileKpiData);
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
@@ -282,7 +285,7 @@ describe('ContainerDashboard — volatile mode', () => {
   });
 
   it('renders trend charts in volatile mode', async () => {
-    fetchAllContainerKpis.mockResolvedValue(volatileKpiData);
+    fetchVolatileDashboard.mockResolvedValue(volatileKpiData);
 
     render(<ContainerDashboard context="plant" volatileFile={new File(['test'], 'test.xlsx')} />);
 
@@ -294,7 +297,7 @@ describe('ContainerDashboard — volatile mode', () => {
   });
 
   it('shows non-available messaging when volatile data is empty', async () => {
-    fetchAllContainerKpis.mockResolvedValue({
+    fetchVolatileDashboard.mockResolvedValue({
       executiveSummary: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
       containersByState: [],
       passRateTrend: { status: 'unavailable', reason: 'volatile', message: 'Not available' },
@@ -312,6 +315,57 @@ describe('ContainerDashboard — volatile mode', () => {
       expect(screen.getByText('Container Dashboard')).toBeInTheDocument();
       expect(screen.getByText('Container State Distribution')).toBeInTheDocument();
     });
+  });
+
+  // ── Cache alignment tests (Slice 4 / Task 4.2) ────────────────
+
+  it('RED - uses cached volatile data on re-render (cache hit prevents re-fetch)', async () => {
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+    fetchVolatileDashboard.mockResolvedValueOnce(volatileKpiData);
+
+    const { rerender } = render(
+      <ContainerDashboard context="plant" volatileFile={file} />
+    );
+
+    await waitFor(() => {
+      expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Total Containers')).toBeInTheDocument();
+      expect(screen.getByText('Pass Rate Trend')).toBeInTheDocument();
+    });
+
+    // Re-render with same file identity — cache hit, no second fetch
+    rerender(
+      <ContainerDashboard context="plant" volatileFile={file} />
+    );
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Total Containers')).toBeInTheDocument();
+  });
+
+  it('RED - live mode still works unaffected when volatile mode uses cache hook', async () => {
+    fetchAllContainerKpis.mockResolvedValue({
+      executiveSummary: [
+        { label: 'Total Containers', value: 150 },
+        { label: 'Average Pass Rate', value: 87.5 },
+      ],
+      containersByState: [],
+      passRateTrend: [],
+      inspectedTrend: [],
+      rejectedTrend: [],
+      topDefects: { result: [] },
+      defectComposition: { result: [] },
+      worstContainers: [],
+    });
+
+    render(<ContainerDashboard context="plant" />);
+
+    await waitFor(() => {
+      expect(fetchAllContainerKpis).toHaveBeenCalled();
+      expect(screen.getByText('Total Containers')).toBeInTheDocument();
+    });
+    // Volatile cache hook should NOT have been invoked
+    expect(fetchVolatileDashboard).not.toHaveBeenCalled();
   });
 });
 

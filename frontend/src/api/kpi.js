@@ -346,12 +346,34 @@ export async function fetchVolatileKpis(file, context) {
 }
 
 /**
- * Dashboard-aware volatile fetch.
+ * Module-level in-flight promise map for volatile dashboard requests.
+ * Deduplicates concurrent requests with identical file+dashboard+context.
+ * @type {Map<string, Promise<object>>}
+ */
+const volatileInFlight = new Map();
+
+/**
+ * Build a stable deduplication key from volatile request parameters.
+ * @param {File} file
+ * @param {string} dashboard
+ * @param {string|null} [context]
+ * @returns {string}
+ */
+function buildVolatileKey(file, dashboard, context) {
+  return `${file.name}:${file.size}:${file.lastModified}:${dashboard}:${context || ''}`;
+}
+
+/**
+ * Dashboard-aware volatile fetch with in-flight deduplication.
  *
  * Sends the optional ``dashboard`` parameter so the backend can dispatch
  * to the correct sheet and return only the relevant KPIs for that dashboard.
  *
  * The response is also camelCase-mapped via ``mapVolatileKpisDto``.
+ *
+ * Concurrent calls with the same file+dashboard+context share a single
+ * in-flight promise. The promise is removed from the dedupe map after
+ * settlement so subsequent calls always get a fresh request.
  *
  * @param {File} file - The Excel file to process
  * @param {string} dashboard - Dashboard key ('qcfa', 'container', 'seconds_a4', 'seconds_general')
@@ -359,18 +381,41 @@ export async function fetchVolatileKpis(file, context) {
  * @returns {Promise<object>} Dashboard-scoped KPI results, camelCase keys
  */
 export async function fetchVolatileDashboard(file, dashboard, context) {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('dashboard', dashboard);
-  if (context) {
-    formData.append('context', context);
+  const key = buildVolatileKey(file, dashboard, context);
+
+  // In-flight deduplication: return existing promise if one is still pending
+  if (volatileInFlight.has(key)) {
+    return volatileInFlight.get(key);
   }
-  try {
-    const res = await axiosClient.post('/quality/kpis/volatile/', formData);
+
+  const promise = (async () => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('dashboard', dashboard);
+    if (context) {
+      formData.append('context', context);
+    }
+    let res;
+    try {
+      res = await axiosClient.post('/quality/kpis/volatile/', formData);
+    } catch (error) {
+      throw new Error(error.response?.data?.error || 'Failed to process Excel');
+    }
     return mapVolatileKpisDto(res.data);
-  } catch (error) {
-    throw new Error(error.response?.data?.error || 'Failed to process Excel');
-  }
+  })();
+
+  volatileInFlight.set(key, promise);
+
+  // Clean up the dedupe entry after settlement so subsequent calls are fresh.
+  // .catch(() => {}) suppresses the forwarded rejection on the finally()-returned promise.
+  // The actual rejection is handled by the caller's try/catch.
+  promise.finally(() => {
+    if (volatileInFlight.get(key) === promise) {
+      volatileInFlight.delete(key);
+    }
+  }).catch(() => {});
+
+  return promise;
 }
 
 // ─── Bulk fetch ───────────────────────────────────────────────────────────────

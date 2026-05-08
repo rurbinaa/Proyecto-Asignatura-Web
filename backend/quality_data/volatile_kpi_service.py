@@ -20,8 +20,10 @@ import pandas as pd
 
 from excel_importer.handler_service import (
     load_and_clean,
+    normalize_container_rows,
     normalize_qc_fa_customer_rows,
 )
+from quality_data.dashboard_contracts import ALL_CONTAINER_STATE_BUCKET_LABELS
 from excel_importer.sheet_configs import (
     CONTAINER_AMOUNT_DEFEACTS_FIELDS,
     CONTAINER_NUMERIC_COLUMNS,
@@ -162,6 +164,11 @@ class VolatileWorkbookService:
             normalized, _ = normalize_qc_fa_customer_rows(rows)
             return normalized, defect_fields
 
+        # Normalize Container rows at the import boundary (Slice 3)
+        if dashboard == "container":
+            normalized, _ = normalize_container_rows(rows)
+            return normalized, defect_fields
+
         return rows, defect_fields
 
 
@@ -236,20 +243,20 @@ def calc_container_state_distribution(rows):
     Buckets: < 80%, 80-90%, 90-95%, > 95%
     All four ranges always present, even with zero count.
     """
-    buckets = {"< 80%": 0, "80-90%": 0, "90-95%": 0, "> 95%": 0}
+    buckets = {label: 0 for label in ALL_CONTAINER_STATE_BUCKET_LABELS}
 
     for r in rows:
         pct = _normalize_container_percentage(r.get("percentage_pass", 0))
         if pct is None:
             continue
         if pct < 80:
-            buckets["< 80%"] += 1
+            buckets[ALL_CONTAINER_STATE_BUCKET_LABELS[0]] += 1
         elif pct < 90:
-            buckets["80-90%"] += 1
+            buckets[ALL_CONTAINER_STATE_BUCKET_LABELS[1]] += 1
         elif pct <= 95:
-            buckets["90-95%"] += 1
+            buckets[ALL_CONTAINER_STATE_BUCKET_LABELS[2]] += 1
         else:
-            buckets["> 95%"] += 1
+            buckets[ALL_CONTAINER_STATE_BUCKET_LABELS[3]] += 1
 
     return [{"name": k, "value": v} for k, v in buckets.items()]
 

@@ -9,6 +9,14 @@ import { fetchVolatileDashboard } from '../api/kpi';
 const volatileCache = new Map();
 
 /**
+ * Module-level pending-promises map for in-flight deduplication.
+ * When two hook instances mount simultaneously with the same key,
+ * they share a single in-flight promise instead of firing two requests.
+ * @type {Map<string, Promise<object>>}
+ */
+const volatilePending = new Map();
+
+/**
  * Build a stable cache key from file identity + dashboard + context.
  * @param {File|null} file
  * @param {string} dashboard
@@ -52,7 +60,24 @@ export default function useVolatileDashboardCache(file, dashboard, context) {
     setError(null);
 
     try {
-      const result = await fetchVolatileDashboard(file, dashboard, context);
+      // In-flight deduplication: reuse existing promise if another hook
+      // instance is already fetching the same key
+      let promise;
+      if (volatilePending.has(key)) {
+        promise = volatilePending.get(key);
+      } else {
+        promise = fetchVolatileDashboard(file, dashboard, context);
+        volatilePending.set(key, promise);
+        // .catch(() => {}) suppresses the forwarded rejection on the finally()-returned promise.
+        // The actual rejection is caught by the try/catch below.
+        promise.finally(() => {
+          if (volatilePending.get(key) === promise) {
+            volatilePending.delete(key);
+          }
+        }).catch(() => {});
+      }
+
+      const result = await promise;
       // Only commit if this request is still the active one
       if (requestId === activeRequestRef.current) {
         volatileCache.set(key, { data: result, error: null });
@@ -105,9 +130,10 @@ export default function useVolatileDashboardCache(file, dashboard, context) {
 }
 
 /**
- * Clear the volatile cache. Useful for tests or when the user explicitly
- * requests a fresh upload.
+ * Clear the volatile cache and pending-promises map.
+ * Useful for tests or when the user explicitly requests a fresh upload.
  */
 export function clearVolatileCache() {
   volatileCache.clear();
+  volatilePending.clear();
 }

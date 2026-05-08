@@ -2917,3 +2917,237 @@ class NormalizeSecondsGeneralRowsTest(TestCase):
 
         self.assertEqual(original[0]["team"], 60)
         self.assertEqual(original, original_copy)
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 3: Container Row Normalization (RED phase)
+# ─────────────────────────────────────────────────────────
+
+
+class NormalizeContainerRowsTest(TestCase):
+    """
+    Tests for normalize_container_rows — pure function at import boundary.
+
+    RED phase: function does not exist yet → import will fail until implemented.
+    """
+
+    # ── Happy path ───────────────────────────────────────
+
+    def test_clean_rows_pass_through_unchanged(self):
+        """Fully-populated clean rows are returned without modification."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [
+            {
+                "container_number": 1001,
+                "customer": "AlphaCorp",
+                "date": "2025-01-10",
+                "total_palette": 20,
+                "total_palette_pass": 18,
+                "total_palette_rejected": 2,
+                "percentage_pass": 90.0,
+                "percentage_reject": 10.0,
+                "transfer_of_container": 1,
+                "dirt_label": 5,
+                "total_defects": 5,
+            }
+        ]
+        normalized, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["container_number"], 1001)
+        self.assertEqual(normalized[0]["customer"], "AlphaCorp")
+        self.assertEqual(normalized[0]["percentage_pass"], 90.0)
+        self.assertEqual(warnings["rejected"], 0)
+
+    # ── NaN / None hardening ─────────────────────────────
+
+    def test_nan_percentage_pass_becomes_none(self):
+        """NaN in percentage_pass is coerced to None."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [{"container_number": 1002, "percentage_pass": float("nan"), "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertIsNone(normalized[0]["percentage_pass"])
+
+    def test_nan_total_palette_becomes_zero(self):
+        """NaN in total_palette (numeric count field) is coerced to 0."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [{"container_number": 1003, "total_palette": float("nan"), "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["total_palette"], 0)
+
+    def test_nan_defect_field_becomes_zero(self):
+        """NaN in a defect field is coerced to 0."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [{"container_number": 1004, "dirt_label": float("nan"), "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0].get("dirt_label", 0), 0)
+
+    def test_blank_customer_becomes_empty_string(self):
+        """Blank customer field is preserved as empty string (not None)."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1005, "customer": "", "percentage_pass": 85.0}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["customer"], "")
+
+    def test_none_customer_becomes_empty_string(self):
+        """None customer becomes empty string."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1006, "customer": None, "percentage_pass": 85.0}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["customer"], "")
+
+    # ── Date normalization ───────────────────────────────
+
+    def test_invalid_date_becomes_none(self):
+        """Invalid date string is coerced to None."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1007, "date": "NOT_A_DATE", "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertIsNone(normalized[0].get("date"))
+
+    def test_valid_date_string_unchanged(self):
+        """Valid ISO date string is preserved."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1008, "date": "2025-01-15", "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["date"], "2025-01-15")
+
+    # ── container_number validation ──────────────────────
+
+    def test_nan_container_number_drops_row_with_warning(self):
+        """Row with NaN container_number is dropped and counted in warnings."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [
+            {"container_number": float("nan"), "customer": "Dropped", "percentage_pass": 50.0},
+            {"container_number": 2001, "customer": "Kept", "percentage_pass": 90.0},
+        ]
+        normalized, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["container_number"], 2001)
+        self.assertEqual(warnings["rejected"], 1)
+        self.assertIn("rejected", warnings["message"])
+
+    def test_none_container_number_drops_row(self):
+        """Row with None container_number is dropped."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [
+            {"container_number": None, "customer": "Dropped", "percentage_pass": 50.0},
+            {"container_number": 2002, "customer": "Kept", "percentage_pass": 90.0},
+        ]
+        normalized, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(warnings["rejected"], 1)
+
+    # ── Mixed type handling ──────────────────────────────
+
+    def test_mixed_types_in_numeric_field_normalized(self):
+        """Strings and numbers in percentage_pass are normalized to numbers or None."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [
+            {"container_number": 3001, "percentage_pass": 95.0, "customer": "A"},
+            {"container_number": 3002, "percentage_pass": "85", "customer": "B"},
+            {"container_number": 3003, "percentage_pass": "not_a_number", "customer": "C"},
+            {"container_number": 3004, "percentage_pass": None, "customer": "D"},
+        ]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 4)
+        # Numeric stays numeric
+        self.assertEqual(normalized[0]["percentage_pass"], 95.0)
+        # Numeric string gets converted
+        self.assertEqual(normalized[1]["percentage_pass"], 85.0)
+        # Non-numeric string falls to None
+        self.assertIsNone(normalized[2]["percentage_pass"])
+        # None stays None
+        self.assertIsNone(normalized[3]["percentage_pass"])
+
+    def test_fractional_percentage_normalized(self):
+        """Fractional percentage (0-1 scale) is normalized to 0-100 scale."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 4001, "percentage_pass": 0.97, "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(normalized[0]["percentage_pass"], 97.0)
+
+    # ── Empty input ──────────────────────────────────────
+
+    def test_empty_rows_returns_empty(self):
+        """Empty input returns empty normalized rows with zero warnings."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        normalized, warnings = normalize_container_rows([])
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    # ── Fractional percentage_reject ─────────────────────
+
+    def test_fractional_percentage_reject_normalized(self):
+        """Fractional percentage_reject (0.05) is normalized to 5.0."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 5001, "percentage_reject": 0.05, "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(normalized[0]["percentage_reject"], 5.0)
+
+    # ── Warnings message format ──────────────────────────
+
+    def test_warning_message_format(self):
+        """Warning message format matches normalizer pattern."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [
+            {"container_number": float("nan"), "customer": "Dropped"},
+            {"container_number": 6001, "customer": "Kept"},
+        ]
+        _, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(warnings["rejected"], 1)
+        self.assertIn("rejected", warnings["message"])
+
+    def test_no_warnings_message_empty(self):
+        """When no rejects/corrections, warning message is empty."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 7001, "customer": "C", "percentage_pass": 95.0}]
+        _, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")

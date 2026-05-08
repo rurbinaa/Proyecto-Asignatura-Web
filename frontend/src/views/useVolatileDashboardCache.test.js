@@ -127,4 +127,67 @@ describe('useVolatileDashboardCache', () => {
     expect(result.current.data).toEqual(mockDataCustomer);
     expect(fetchVolatileDashboard).toHaveBeenCalledTimes(2);
   });
+
+  // ── In-flight deduplication (Slice 4 / Task 4.1) ────────────────
+
+  it('RED - two hook instances with same key share in-flight request (only one network call)', async () => {
+    const mockData = { executiveSummary: [] };
+    // Single mock (not mockResolvedValueOnce) — both callers share
+    fetchVolatileDashboard.mockResolvedValue(mockData);
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    const { result: r1 } = renderHook(() => useVolatileDashboardCache(file, 'container', 'plant'));
+    const { result: r2 } = renderHook(() => useVolatileDashboardCache(file, 'container', 'plant'));
+
+    await waitFor(() => {
+      expect(r1.current.loading).toBe(false);
+      expect(r2.current.loading).toBe(false);
+    });
+
+    // Only one network request across both instances
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+    expect(r1.current.data).toEqual(mockData);
+    expect(r2.current.data).toEqual(mockData);
+  });
+
+  it('RED - cache hit still works after in-flight deduplication resolves', async () => {
+    const mockData = { containersByState: [{ name: '< 80%', value: 3 }] };
+    fetchVolatileDashboard.mockResolvedValue(mockData);
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    // First pair — in-flight dedupe
+    const { result: r1 } = renderHook(() => useVolatileDashboardCache(file, 'container'));
+    const { result: r2 } = renderHook(() => useVolatileDashboardCache(file, 'container'));
+    await waitFor(() => {
+      expect(r1.current.loading).toBe(false);
+      expect(r2.current.loading).toBe(false);
+    });
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+
+    // Third instance mounts after cache is populated — cache hit, no network
+    const { result: r3 } = renderHook(() => useVolatileDashboardCache(file, 'container'));
+    expect(r3.current.loading).toBe(false);
+    expect(r3.current.data).toEqual(mockData);
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('RED - error is shared across deduped in-flight instances', async () => {
+    fetchVolatileDashboard.mockRejectedValue(new Error('Server timeout'));
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    const { result: r1 } = renderHook(() => useVolatileDashboardCache(file, 'container'));
+    const { result: r2 } = renderHook(() => useVolatileDashboardCache(file, 'container'));
+
+    await waitFor(() => {
+      expect(r1.current.loading).toBe(false);
+      expect(r2.current.loading).toBe(false);
+    });
+
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+    expect(r1.current.error).toBe('Server timeout');
+    expect(r2.current.error).toBe('Server timeout');
+  });
 });

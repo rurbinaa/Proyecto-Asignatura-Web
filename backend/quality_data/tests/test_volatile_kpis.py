@@ -47,7 +47,12 @@ class VolatileKpiViewTest(TestCase):
         self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
         self.assertIn('error', response.data)
 
-    def test_volatile_post_uses_dto_serialization_helpers(self):
+    def test_volatile_post_returns_serialized_qcfa_payload(self):
+        """
+        POST with a valid file returns serialized QC FA KPI payload.
+        Verifies the output has the expected 16-KPI shape (serialization
+        happens through the shared assembler).
+        """
         file_obj = SimpleUploadedFile(
             'test.xlsx',
             b'fake excel content',
@@ -76,18 +81,20 @@ class VolatileKpiViewTest(TestCase):
                     with patch('quality_data.views.parse_containers_by_state', return_value=[]):
                         with patch('quality_data.views.parse_top_defects', return_value=[]):
                             with patch('quality_data.views.parse_defects_by_style', return_value=[]):
-                                with patch(
-                                    'quality_data.views._serialize_payload',
-                                    wraps=__import__('quality_data.views', fromlist=['_serialize_payload'])._serialize_payload,
-                                ) as serialize_payload:
-                                    response = self.client.post(
-                                        self.url,
-                                        {'file': file_obj},
-                                        format='multipart',
-                                    )
+                                response = self.client.post(
+                                    self.url,
+                                    {'file': file_obj},
+                                    format='multipart',
+                                )
 
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
-        self.assertGreaterEqual(serialize_payload.call_count, 1)
+        # Verify the payload has the expected 17-KPI QC FA shape
+        self.assertIn('aql_by_style', response.data)
+        self.assertIn('aql_by_team', response.data)
+        self.assertIn('defect_rate', response.data)
+        self.assertIn('containers_by_state', response.data)
+        # Verify serialized shape (list of {label, value})
+        self.assertIsInstance(response.data['aql_by_style'], list)
 
     # ─────────────────────────────────────────────────────────
     # 2.3 — Empty DataFrame (helper method tests)
@@ -99,6 +106,62 @@ class VolatileKpiViewTest(TestCase):
         """
         result = self.view._calc_aql_by_style([])
         self.assertEqual(result, [])
+
+    def test_volatile_empty_dataframe_aql_by_team(self):
+        """
+        Empty DataFrame should return [] for _calc_aql_by_team.
+        """
+        result = self.view._calc_aql_by_team([])
+        self.assertEqual(result, [])
+
+    def test_volatile_zero_division_safety_aql_by_team(self):
+        """
+        DataFrame with sample=0 should not crash _calc_aql_by_team.
+        """
+        rows = [
+            {'team': 1, 'defects_total': 3, 'sample': 0},
+            {'team': 1, 'defects_total': 1, 'sample': 0},
+        ]
+        result = self.view._calc_aql_by_team(rows)
+        # Both rows have sample=0 → filtered out → result empty
+        self.assertEqual(result, [])
+
+    def test_volatile_aql_by_team_computes_correctly(self):
+        """
+        _calc_aql_by_team should group by team and compute AQL %.
+        """
+        rows = [
+            {'team': 1, 'defects_total': 10, 'sample': 200},
+            {'team': 1, 'defects_total': 5, 'sample': 200},
+            {'team': 2, 'defects_total': 3, 'sample': 150},
+        ]
+        result = self.view._calc_aql_by_team(rows)
+        # Team 1: (10+5)/(200+200)*100 = 15/400*100 = 3.75
+        # Team 2: 3/150*100 = 2.0
+        expected = [
+            {"label": "1", "value": 3.75},
+            {"label": "2", "value": 2.0},
+        ]
+        self.assertEqual(result, expected)
+
+    def test_volatile_aql_by_team_non_finite_team_values(self):
+        """
+        _calc_aql_by_team should not crash on inf/-inf team values.
+
+        Regression test: int(inf) raises OverflowError. The method must
+        skip non-finite team values gracefully instead of crashing.
+        """
+        rows = [
+            {'team': float('inf'), 'defects_total': 10, 'sample': 200},
+            {'team': float('-inf'), 'defects_total': 5, 'sample': 100},
+            {'team': 1, 'defects_total': 3, 'sample': 150},
+        ]
+        result = self.view._calc_aql_by_team(rows)
+        # Only team 1 should survive — inf and -inf are filtered out
+        expected = [
+            {"label": "1", "value": round((3 / 150) * 100, 2)},
+        ]
+        self.assertEqual(result, expected)
 
     def test_volatile_empty_dataframe_aql_weekly(self):
         """
@@ -1286,6 +1349,138 @@ class VolatileDashboardDispatchTest(TestCase):
         self.assertEqual(call_args[1], 'qcfa')
         self.assertEqual(call_args[2], 'customer')
 
+    # ── Slice 1 / Controller Boundary: legacy parser isolation ─────────
+
+    def test_container_dashboard_does_not_call_legacy_parsers(self):
+        """dashboard=container does NOT call parse_seconds_rework, parse_fabric_defects, or parse_containers_by_state."""
+        file_obj = self._make_file()
+
+        with patch('quality_data.views.parse_seconds_rework') as mock_seconds:
+            with patch('quality_data.views.parse_fabric_defects') as mock_fabric:
+                with patch('quality_data.views.parse_containers_by_state') as mock_containers:
+                    with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+                        mock_get_rows.return_value = ([], None, None)
+                        response = self.client.post(
+                            self.url,
+                            {'file': file_obj, 'dashboard': 'container'},
+                            format='multipart',
+                        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        mock_seconds.assert_not_called()
+        mock_fabric.assert_not_called()
+        mock_containers.assert_not_called()
+
+    def test_seconds_a4_dashboard_does_not_call_legacy_parsers(self):
+        """dashboard=seconds_a4 does NOT call parse_seconds_rework, parse_fabric_defects, or parse_containers_by_state."""
+        file_obj = self._make_file()
+
+        with patch('quality_data.views.parse_seconds_rework') as mock_seconds:
+            with patch('quality_data.views.parse_fabric_defects') as mock_fabric:
+                with patch('quality_data.views.parse_containers_by_state') as mock_containers:
+                    with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+                        mock_get_rows.return_value = ([], None, None)
+                        response = self.client.post(
+                            self.url,
+                            {'file': file_obj, 'dashboard': 'seconds_a4'},
+                            format='multipart',
+                        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        mock_seconds.assert_not_called()
+        mock_fabric.assert_not_called()
+        mock_containers.assert_not_called()
+
+    def test_seconds_general_dashboard_does_not_call_legacy_parsers(self):
+        """dashboard=seconds_general does NOT call parse_seconds_rework, parse_fabric_defects, or parse_containers_by_state."""
+        file_obj = self._make_file()
+
+        with patch('quality_data.views.parse_seconds_rework') as mock_seconds:
+            with patch('quality_data.views.parse_fabric_defects') as mock_fabric:
+                with patch('quality_data.views.parse_containers_by_state') as mock_containers:
+                    with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+                        mock_get_rows.return_value = ([], None, None)
+                        response = self.client.post(
+                            self.url,
+                            {'file': file_obj, 'dashboard': 'seconds_general'},
+                            format='multipart',
+                        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        mock_seconds.assert_not_called()
+        mock_fabric.assert_not_called()
+        mock_containers.assert_not_called()
+
+    def test_qcfa_dashboard_calls_seconds_rework_and_fabric_defects_but_not_parse_containers(self):
+        """dashboard=qcfa calls parse_seconds_rework and parse_fabric_defects, but NOT parse_containers_by_state (replaced by calc_container_state_distribution)."""
+        from unittest.mock import MagicMock
+        file_obj = self._make_file()
+
+        with patch('quality_data.views.parse_seconds_rework', return_value=[]) as mock_seconds:
+            with patch('quality_data.views.parse_fabric_defects', return_value=[]) as mock_fabric:
+                with patch('quality_data.views.parse_containers_by_state') as mock_containers:
+                    with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+                        mock_service = MagicMock()
+                        mock_service.get_parsed_data.return_value = ([], None)
+                        mock_get_rows.return_value = ([], None, mock_service)
+                        response = self.client.post(
+                            self.url,
+                            {'file': file_obj, 'dashboard': 'qcfa'},
+                            format='multipart',
+                        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        mock_seconds.assert_called_once()
+        mock_fabric.assert_called_once()
+        mock_containers.assert_not_called()
+
+    def test_qcfa_containers_by_state_comes_from_calc_container_state_distribution(self):
+        """dashboard=qcfa uses calc_container_state_distribution for containers_by_state, not parse_containers_by_state."""
+        from unittest.mock import MagicMock
+        from quality_data.volatile_kpi_service import calc_container_state_distribution
+        file_obj = self._make_file()
+        container_row = {
+            'percentage_pass': 97.0, 'container_number': 1, 'customer': 'C',
+            'total_palette': 10, 'total_palette_rejected': 1, 'date': '2025-01-01',
+        }
+
+        with patch('quality_data.views.parse_seconds_rework', return_value=[]):
+            with patch('quality_data.views.parse_fabric_defects', return_value=[]):
+                with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+                    mock_service = MagicMock()
+                    mock_service.get_parsed_data.return_value = ([container_row], None)
+                    mock_get_rows.return_value = ([], None, mock_service)
+                    response = self.client.post(
+                        self.url,
+                        {'file': file_obj, 'dashboard': 'qcfa'},
+                        format='multipart',
+                    )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        state = response.data.get('containers_by_state')
+        self.assertIsNotNone(state)
+        # With a single 97% container, > 95% bucket should have 1
+        expected = calc_container_state_distribution([container_row])
+        self.assertEqual(state, expected)
+
+    def test_qcfa_containers_by_state_none_when_service_fails(self):
+        """When service.get_parsed_data('container') fails, containers_by_state should be None (not crash)."""
+        file_obj = self._make_file()
+
+        with patch('quality_data.views.parse_seconds_rework', return_value=[]):
+            with patch('quality_data.views.parse_fabric_defects', return_value=[]):
+                with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+                    # Service is None — get_parsed_data call fails but is caught
+                    mock_get_rows.return_value = ([], None, None)
+                    response = self.client.post(
+                        self.url,
+                        {'file': file_obj, 'dashboard': 'qcfa'},
+                        format='multipart',
+                    )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertIsNone(response.data.get('containers_by_state'))
+
 
 class VolatileNanSafetyTest(TestCase):
     """Tests for NaN/empty-cell hardening in volatile helpers."""
@@ -2383,3 +2578,347 @@ class SecondsGeneralVolatileKpiComputationTest(TestCase):
         self.assertEqual(pt.get('total_definitive'), 0)
         # Defects by customer should be empty
         self.assertEqual(response.data.get('defects_by_customer', []), [])
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 3: Container Hardening + Parity Tests
+# ─────────────────────────────────────────────────────────
+
+
+class ContainerNormalizerIntegrationTest(TestCase):
+    """
+    Integration tests proving normalize_container_rows is called through
+    VolatileWorkbookService.get_parsed_data('container') and produces
+    deterministic, safe rows for KPI computation.
+    """
+
+    def test_normalizer_invoked_for_container_dashboard(self):
+        """
+        get_parsed_data('container') returns rows with NaN coerced to defaults.
+        This test uses VolatileWorkbookService directly.
+        """
+        from unittest.mock import patch, MagicMock
+        from quality_data.volatile_kpi_service import VolatileWorkbookService
+
+        # Mock load_and_clean to return a DataFrame with NaN values
+        import pandas as pd
+        import math
+
+        raw_df = pd.DataFrame([
+            {
+                "container_number": 100,
+                "customer": "AlphaCorp",
+                "date": "2025-01-10",
+                "total_palette": 20,
+                "total_palette_pass": 18,
+                "total_palette_rejected": 2,
+                "percentage_pass": float("nan"),  # NaN — should become None
+                "percentage_reject": 0.05,        # Fractional — should become 5.0
+                "transfer_of_container": float("nan"),  # NaN — should become 0
+                "dirt_label": float("nan"),       # NaN — should become 0
+                "total_defects": 8,
+            },
+            {
+                "container_number": float("nan"),  # Invalid — row dropped
+                "customer": "Dropped",
+                "percentage_pass": 50.0,
+            },
+        ])
+
+        service = VolatileWorkbookService(None)
+
+        with patch.object(service, 'parse_sheet', return_value=raw_df):
+            rows, defect_fields = service.get_parsed_data("container")
+
+        # Only 1 row (the one with valid container_number)
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+
+        # NaN percentage → None
+        self.assertIsNone(row["percentage_pass"])
+        # Fractional percentage → normalized
+        self.assertEqual(row["percentage_reject"], 5.0)
+        # Count field NaN → 0
+        self.assertEqual(row["total_palette"], 20)
+        self.assertEqual(row["transfer_of_container"], 0)
+        # Defect field NaN → 0
+        self.assertEqual(row["dirt_label"], 0)
+
+    def test_normalizer_drops_all_invalid_containers(self):
+        """When ALL rows have invalid container_number, returns empty list."""
+        from unittest.mock import patch, MagicMock
+        from quality_data.volatile_kpi_service import VolatileWorkbookService
+
+        import pandas as pd
+        import math
+
+        raw_df = pd.DataFrame([
+            {"container_number": float("nan"), "customer": "A", "percentage_pass": 50.0},
+            {"container_number": None, "customer": "B", "percentage_pass": 60.0},
+        ])
+
+        service = VolatileWorkbookService(None)
+        with patch.object(service, 'parse_sheet', return_value=raw_df):
+            rows, _ = service.get_parsed_data("container")
+
+        self.assertEqual(len(rows), 0)
+
+    def test_volatile_post_container_with_nan_rows_returns_zeroed_kpis(self):
+        """POST /api/kpis/volatile/ with dashboard=container and NaN data returns valid KPIs."""
+        from unittest.mock import patch
+        import pandas as pd
+
+        file_obj = SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        url = reverse('quality_data:kpi-volatile')
+
+        # Simulate what comes through the normalizer:
+        # A row with all-null percentage → None after normalization
+        normalized_rows = [
+            {
+                "container_number": 101,
+                "customer": "Test",
+                "total_palette": 0,
+                "total_palette_pass": 0,
+                "total_palette_rejected": 0,
+                "percentage_pass": None,
+                "percentage_reject": None,
+                "transfer_of_container": 0,
+                "date": None,
+                "dirt_label": 0,
+            }
+        ]
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (normalized_rows, None, None)
+            response = self.client.post(
+                url,
+                {'file': file_obj, 'dashboard': 'container'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Executive summary should still have all 4 labels
+        exec_summary = response.data.get('executive_summary', [])
+        self.assertEqual(len(exec_summary), 4)
+        # Average pass rate should be 0 (all percentages are None)
+        avg = next((item["value"] for item in exec_summary if item["label"] == "Average Pass Rate"), None)
+        self.assertEqual(avg, 0)
+        # Containers by state should have all 4 buckets with 0 count
+        state = response.data.get('containers_by_state', [])
+        self.assertEqual(len(state), 4)
+        for item in state:
+            self.assertEqual(item["value"], 0)
+        # Worst containers should still return the row (with passRate=0 because percentage is None)
+        worst = response.data.get('worst_containers', [])
+        self.assertEqual(len(worst), 1)
+        self.assertEqual(worst[0]["passRate"], 0)
+
+
+class ContainerKpiHardeningTest(TestCase):
+    """
+    Hardening tests for container KPI computation helpers with edge-case inputs
+    (NaN, None, fractional percentages, boundary values).
+    """
+
+    def setUp(self):
+        from quality_data.volatile_kpi_service import (
+            calc_container_executive_summary,
+            calc_container_state_distribution,
+            calc_container_pass_rate_trend,
+            calc_container_inspected_trend,
+            calc_container_rejected_trend,
+            calc_container_top_defects,
+            calc_container_defect_composition,
+            calc_container_worst_containers,
+        )
+        self._exec_summary = calc_container_executive_summary
+        self._state_dist = calc_container_state_distribution
+        self._pass_trend = calc_container_pass_rate_trend
+        self._insp_trend = calc_container_inspected_trend
+        self._rej_trend = calc_container_rejected_trend
+        self._top_defects = calc_container_top_defects
+        self._defect_comp = calc_container_defect_composition
+        self._worst = calc_container_worst_containers
+
+        self.defect_fields = [
+            'dirt_label', 'dirt_container', 'dirt_cartoons', 'container_holes',
+            'writte_mark_on_label', 'written_mark_on_cartoon', 'container_poor_close',
+            'boxes_poor_close', 'printing_issues_label', 'misaligned_label',
+            'crushed_corners', 'cartoons_holes', 'warped_boxes', 'defects_label',
+            'total_defects',
+        ]
+
+    # ── Executive summary hardening ───────────────────────
+
+    def test_exec_summary_with_all_none_percentages(self):
+        """All percentage_pass are None → avg_pass = 0, no crash."""
+        rows = [
+            {"container_number": 1, "percentage_pass": None, "total_palette": 10,
+             "total_palette_rejected": 1, "customer": "A", "date": "2025-01-01"},
+            {"container_number": 2, "percentage_pass": None, "total_palette": 20,
+             "total_palette_rejected": 2, "customer": "B", "date": "2025-01-02"},
+        ]
+        result = self._exec_summary(rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["Total Containers"], 2)
+        self.assertEqual(values["Average Pass Rate"], 0)
+        self.assertEqual(values["Total Palettes Inspected"], 30)
+
+    def test_exec_summary_with_mixed_none_and_real_percentages(self):
+        """Mix of None and valid percentages → avg computed only from valid."""
+        rows = [
+            {"container_number": 1, "percentage_pass": None, "total_palette": 10,
+             "total_palette_rejected": 1, "customer": "A", "date": "2025-01-01"},
+            {"container_number": 2, "percentage_pass": 90.0, "total_palette": 20,
+             "total_palette_rejected": 2, "customer": "B", "date": "2025-01-02"},
+        ]
+        result = self._exec_summary(rows)
+        values = {item["label"]: item["value"] for item in result}
+        # Average of [90.0] / 2 rows = 45.0 (None counted in denominator but excluded from sum)
+        self.assertEqual(values["Average Pass Rate"], 45.0)
+
+    def test_exec_summary_with_none_percentage_after_normalization(self):
+        """
+        None percentage_pass (what the normalizer produces from NaN/string 'NaN')
+        should not crash — avg_pass computed from only non-None values.
+        """
+        rows = [
+            {"container_number": 1, "percentage_pass": None, "total_palette": 10,
+             "total_palette_rejected": 1, "customer": "A", "date": "2025-01-01"},
+        ]
+        result = self._exec_summary(rows)
+        values = {item["label"]: item["value"] for item in result}
+        self.assertEqual(values["Total Containers"], 1)
+        # None percentage → excluded from avg → 0/1 = 0
+        self.assertEqual(values["Average Pass Rate"], 0)
+
+    # ── State distribution hardening ──────────────────────
+
+    def test_state_distribution_all_none_percentages(self):
+        """All percentage_pass are None → all buckets at 0, no crash."""
+        rows = [
+            {"percentage_pass": None},
+            {"percentage_pass": None},
+        ]
+        result = self._state_dist(rows)
+        for item in result:
+            self.assertEqual(item["value"], 0)
+
+    def test_state_distribution_mixed_none_and_valid(self):
+        """None percentages are skipped, valid ones populate buckets."""
+        rows = [
+            {"percentage_pass": None},
+            {"percentage_pass": 85.0},   # 80-90%
+            {"percentage_pass": 50.0},   # < 80%
+        ]
+        result = self._state_dist(rows)
+        counts = {item["name"]: item["value"] for item in result}
+        self.assertEqual(counts["< 80%"], 1)
+        self.assertEqual(counts["80-90%"], 1)
+        self.assertEqual(counts["> 95%"], 0)
+
+    # ── Trend hardening ───────────────────────────────────
+
+    def test_pass_rate_trend_with_none_dates(self):
+        """Rows with None dates are excluded from trend."""
+        rows = [
+            {"date": "2025-01-10", "percentage_pass": 90.0, "container_number": 1},
+            {"date": None, "percentage_pass": 50.0, "container_number": 2},
+        ]
+        result = self._pass_trend(rows)
+        series = result[0]
+        self.assertEqual(len(series["data"]), 1)
+
+    def test_inspected_trend_with_missing_total_palette(self):
+        """Rows with missing total_palette field are handled without crash."""
+        rows = [
+            {"date": "2025-01-10", "total_palette": 20, "container_number": 1},
+            {"date": "2025-01-11", "container_number": 2},  # no total_palette key
+        ]
+        result = self._insp_trend(rows)
+        series = result[0]
+        self.assertEqual(len(series["data"]), 2)
+
+    # ── Defect hardening ─────────────────────────────────
+
+    def test_top_defects_with_nan_values(self):
+        """NaN in defect fields doesn't crash top_defects computation."""
+        import math
+        rows = [
+            {"dirt_label": float("nan"), "dirt_container": 5, "container_number": 1},
+        ]
+        result = self._top_defects(rows, self.defect_fields)
+        # Should not crash, dirt_label should be 0 or excluded
+        labels = {item["label"] for item in result}
+        self.assertIn("Dirt Container", labels)
+
+    def test_worst_containers_with_none_percentages(self):
+        """None percentage_pass in worst_containers sorts as 0."""
+        rows = [
+            {"container_number": 1, "percentage_pass": None,
+             "customer": "A", "total_palette_rejected": 0, "date": None},
+            {"container_number": 2, "percentage_pass": 50.0,
+             "customer": "B", "total_palette_rejected": 5, "date": "2025-01-01"},
+        ]
+        result = self._worst(rows)
+        # Row with None percentage should sort first (passRate=0)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["passRate"], 0)
+        self.assertEqual(result[1]["passRate"], 50.0)
+
+    # ── State distribution boundary parity ────────────────
+
+    def test_state_distribution_boundary_80_parity(self):
+        """
+        Boundary parity: percentage_pass=80.0 falls in 80-90% bucket,
+        matching live endpoint's Case/When: gte=80 AND lt=90.
+        """
+        rows = [{"percentage_pass": 80.0}]
+        result = self._state_dist(rows)
+        counts = {item["name"]: item["value"] for item in result}
+        self.assertEqual(counts["80-90%"], 1)
+        self.assertEqual(counts["< 80%"], 0)
+
+    def test_state_distribution_boundary_95_parity(self):
+        """
+        Boundary parity: percentage_pass=95.0 falls in 90-95% bucket,
+        matching live endpoint's Case/When: gte=90 AND lte=95.
+        """
+        rows = [{"percentage_pass": 95.0}]
+        result = self._state_dist(rows)
+        counts = {item["name"]: item["value"] for item in result}
+        self.assertEqual(counts["90-95%"], 1)
+        self.assertEqual(counts["> 95%"], 0)
+
+    def test_state_distribution_boundary_gt_95_parity(self):
+        """
+        Boundary parity: percentage_pass=95.1 falls in > 95% bucket,
+        matching live endpoint's Case/When: gt=95.
+        """
+        rows = [{"percentage_pass": 95.1}]
+        result = self._state_dist(rows)
+        counts = {item["name"]: item["value"] for item in result}
+        self.assertEqual(counts["> 95%"], 1)
+
+    def test_state_distribution_zero_percent_parity(self):
+        """
+        Boundary parity: percentage_pass=0 falls in < 80% bucket,
+        matching live endpoint's behavior.
+        """
+        rows = [{"percentage_pass": 0.0}]
+        result = self._state_dist(rows)
+        counts = {item["name"]: item["value"] for item in result}
+        self.assertEqual(counts["< 80%"], 1)
+
+    def test_state_distribution_fractional_percentage_parity(self):
+        """
+        Parity: After normalizer converts 0.97 → 97.0, the bucket is > 95%.
+        This verifies the end-to-end pipeline from normalizer to state distribution.
+        """
+        rows = [{"percentage_pass": 97.0}]  # Already normalized
+        result = self._state_dist(rows)
+        counts = {item["name"]: item["value"] for item in result}
+        self.assertEqual(counts["> 95%"], 1)

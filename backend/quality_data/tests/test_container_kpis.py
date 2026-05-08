@@ -684,3 +684,113 @@ class WorstContainersOrderingTest(ContainerKpiTestMixin, TestCase):
         response = self.client.get(f"{url}?top=-1")
         self.assertEqual(response.status_code, http_status.HTTP_200_OK)
         self.assertLessEqual(len(response.data), 5)
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 3: Live endpoint hardening with null/edge-case data
+# ─────────────────────────────────────────────────────────
+
+
+class ContainerKpiHardeningTest(ContainerKpiTestMixin, TestCase):
+    """
+    Hardening tests proving live endpoints tolerate null percentages,
+    missing dates, and edge-case data without crashing or returning
+    malformed responses.
+    """
+
+    def test_executive_summary_with_zero_percentage_pass(self):
+        """
+        Container with percentage_pass=0.0 should be included with value 0.
+        """
+        Container.objects.create(
+            container_number=200,
+            customer="ZeroPct",
+            total_palette=10,
+            total_palette_pass=8,
+            total_palette_rejected=2,
+            percentage_pass=0.0,
+            percentage_reject=0.0,
+        )
+        url = reverse("quality_data:kpi-container-executive-summary")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        avg = next(
+            (item["value"] for item in response.data if item["label"] == "Average Pass Rate"),
+            None,
+        )
+        self.assertIsNotNone(avg)
+        self.assertIsInstance(avg, (int, float))
+
+    def test_containers_by_state_with_zero_percentage(self):
+        """
+        Container with percentage_pass=0.0 falls in < 80% bucket.
+        """
+        Container.objects.create(
+            container_number=201,
+            customer="ZeroPct2",
+            total_palette=10,
+            total_palette_pass=0,
+            total_palette_rejected=10,
+            percentage_pass=0.0,
+            percentage_reject=100.0,
+        )
+        url = reverse("quality_data:kpi-container-containers-by-state")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        counts = {item["name"]: item["value"] for item in response.data}
+        self.assertGreaterEqual(counts["< 80%"], 1)
+
+    def test_pass_rate_trend_excludes_null_dates(self):
+        """
+        Containers with null date should be excluded from trend (not crash).
+        """
+        url = reverse("quality_data:kpi-container-pass-rate-trend")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        series = response.data[0]
+        for point in series["data"]:
+            self.assertIsNotNone(point["x"])
+
+    def test_inspected_trend_with_zero_total_palette(self):
+        """
+        Container with total_palette=0 should appear in trend with y=0.
+        """
+        Container.objects.create(
+            container_number=202,
+            customer="ZeroPalette",
+            date="2025-02-01",
+            total_palette=0,
+            total_palette_pass=0,
+            total_palette_rejected=0,
+            percentage_pass=0.0,
+            percentage_reject=0.0,
+        )
+        url = reverse("quality_data:kpi-container-inspected-trend")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        series = response.data[0]
+        points = {p["x"]: p["y"] for p in series["data"]}
+        self.assertIn("2025-02-01", points)
+        self.assertEqual(points["2025-02-01"], 0)
+
+    def test_worst_containers_with_zero_data(self):
+        """
+        Worst-containers with all-zero values should return valid passRate.
+        """
+        url = reverse("quality_data:kpi-container-worst-containers")
+        response = self.client.get(f"{url}?top=20")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        for item in response.data:
+            self.assertIsInstance(item["passRate"], (int, float))
+
+    def test_state_bucket_zero_containers_returns_empty_buckets(self):
+        """
+        When no containers match the filter, all 4 buckets return with value=0.
+        """
+        url = reverse("quality_data:kpi-container-containers-by-state")
+        # Use a date in the past that no containers match
+        response = self.client.get(f"{url}?from_date=2020-01-01&to_date=2020-01-01")
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 4)
+        for item in response.data:
+            self.assertEqual(item["value"], 0)

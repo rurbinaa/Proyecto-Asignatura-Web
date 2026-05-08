@@ -25,6 +25,10 @@ from rest_framework import status as http_status
 from rest_framework import exceptions as rest_framework_exceptions
 
 from quality_data.models import Container, ContainerInspectionDefect
+from quality_data.dashboard_contracts import (
+    CONTAINER_STATE_BUCKET_LABELS,
+    ALL_CONTAINER_STATE_BUCKET_LABELS,
+)
 from quality_data.serializers import (
     KpiBarSerializer,
     KpiSeriesSerializer,
@@ -267,20 +271,15 @@ class ContainerKpiViewSet(ContainerFilterMixin, ViewSet):
             .annotate(count=Count("id"))
         )
 
-        range_labels = {
-            1: "< 80%",
-            2: "80-90%",
-            3: "90-95%",
-            4: "> 95%",
-        }
-
         result_dict = {
-            range_labels[item["range_bucket"]]: item["count"]
+            CONTAINER_STATE_BUCKET_LABELS[item["range_bucket"]]: item["count"]
             for item in aggregated
         }
 
-        all_ranges = ["< 80%", "80-90%", "90-95%", "> 95%"]
-        result = [{"name": r, "value": result_dict.get(r, 0)} for r in all_ranges]
+        result = [
+            {"name": r, "value": result_dict.get(r, 0)}
+            for r in ALL_CONTAINER_STATE_BUCKET_LABELS
+        ]
 
         serializer = KpiDonutSerializer(result, many=True)
         return Response(serializer.data, status=http_status.HTTP_200_OK)
