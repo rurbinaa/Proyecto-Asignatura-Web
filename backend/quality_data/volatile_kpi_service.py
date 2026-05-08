@@ -1,19 +1,24 @@
 """
 Volatile KPI Service — Shared workbook parsing and dashboard dispatch for Fast Mode.
-
+ 
 Opens the Excel file once (``pd.ExcelFile``) and parses sheets on demand
 via ``load_and_clean(..., excel_file=...)`` to avoid repeated I/O.
-
+ 
 Dashboard dispatch:
     - ``qcfa`` (+ ``context=plant|customer``) → QC FA Plant / Customer rows.
     - ``container`` → Container rows (named tuple ready for KPI compute).
     - ``seconds_a4`` → SecondsA4 rows.
     - ``seconds_general`` → Seconds General rows.
-
+ 
 Usage::
-
+ 
     service = VolatileWorkbookService(file_obj)
     rows, defect_fields = service.get_parsed_data("qcfa", context="customer")
+
+Filter support:
+    - ``VOLATILE_FILTER_ALLOWLISTS`` — per-dashboard allowlist of supported filter keys.
+    - ``extract_volatile_filters(request_data, dashboard)`` — parse ``filter_*`` fields.
+    - ``apply_volatile_filters(rows, dashboard, filters)`` — filter rows in memory.
 """
 
 import pandas as pd
@@ -43,6 +48,166 @@ from excel_importer.sheet_configs import (
     SECONDS_GENERAL_SEWING_DEFECTS,
     SHEET_NAMES,
 )
+
+# ─────────────────────────────────────────────────────────
+# Dashboard filter allowlists (aligned with frontend volatileFilters.js)
+# ─────────────────────────────────────────────────────────
+
+VOLATILE_FILTER_ALLOWLISTS = {
+    "qcfa": [
+        "week", "team", "style", "color", "customer", "batch",
+        "line_code", "include_dual_lines",
+    ],
+    "container": ["customer"],
+    "seconds_a4": ["year", "week", "line", "cut_num", "style", "color"],
+    "seconds_general": [
+        "week", "customer", "style", "color", "size", "team",
+        "line_code", "include_dual_lines",
+    ],
+}
+
+# Deferred filter keys (explicitly rejected in v1)
+DEFERRED_VOLATILE_FILTER_KEYS = {"date_range", "from_date", "to_date"}
+
+
+def extract_volatile_filters(request_data, dashboard):
+    """
+    Parse ``filter_*`` fields from POST form data and validate against the
+    dashboard's allowlist. Rejects deferred keys (``date_range``, etc.) and
+    unknown keys with a ``ValueError``.
+
+    Args:
+        request_data: DRF ``request.data`` (dict-like, QueryDict).
+        dashboard: One of the supported dashboard keys.
+
+    Returns:
+        dict: Filter key → value mapping (without the ``filter_`` prefix).
+
+    Raises:
+        ValueError: If any ``filter_*`` key is unknown or deferred.
+    """
+    allowlist = VOLATILE_FILTER_ALLOWLISTS.get(dashboard, [])
+    allowlist_set = set(allowlist)
+    filters = {}
+
+    for key, value in request_data.items():
+        if not key.startswith("filter_"):
+            continue
+        filter_name = key[len("filter_"):]  # Strip "filter_" prefix
+
+        # Reject deferred keys first
+        if filter_name in DEFERRED_VOLATILE_FILTER_KEYS:
+            raise ValueError(
+                f"Filter '{filter_name}' is not supported in this version. "
+                f"Deferred filter keys: {', '.join(sorted(DEFERRED_VOLATILE_FILTER_KEYS))}."
+            )
+
+        # Reject unknown keys
+        if filter_name not in allowlist_set:
+            raise ValueError(
+                f"Unknown filter '{filter_name}' for dashboard '{dashboard}'. "
+                f"Supported filters: {', '.join(sorted(allowlist))}."
+            )
+
+        filters[filter_name] = str(value)
+
+    return filters
+
+
+def apply_volatile_filters(rows, dashboard, filters):
+    """
+    Apply in-memory row filters (equality + dual-line semantics) to a list of dict rows.
+
+    Each filter key is compared as a string against the row value (also
+    converted to string) to avoid type-mismatch issues (e.g. int vs string).
+
+    Empty/None row values for a filter key cause that row to NOT match.
+
+    Dual-line semantics match the live DB-backed contract EXACTLY:
+      - When ``include_dual_lines`` is absent or NOT ``'true'`` AND no explicit
+        ``line_code`` is given, rows with a non-None ``line_code`` are EXCLUDED
+        (only non-dual rows shown).
+      - When ``include_dual_lines='true'``, all rows pass regardless of ``line_code``.
+      - When explicit ``line_code`` is given, only rows matching that value pass,
+        overriding the default exclusion.
+    The default exclusion applies even when NO filters are provided at all for
+    dashboards that support dual-line semantics (``qcfa``, ``seconds_general``).
+
+    Dashboards without dual-line support (``container``, ``seconds_a4``) are
+    unaffected — empty filters return all rows.
+
+    Args:
+        rows: List of dicts (parsed Excel rows).
+        dashboard: Dashboard key (used to look up the allowlist).
+        filters: Dict of filter_name → filter_value (from extract_volatile_filters).
+
+    Returns:
+        list: Filtered rows.
+    """
+    allowlist = set(VOLATILE_FILTER_ALLOWLISTS.get(dashboard, []))
+    supports_dual_line = "line_code" in allowlist
+
+    # Default dual-line exclusion: when no filters are sent AND the dashboard
+    # supports dual-line semantics, exclude rows with non-None line_code.
+    # This matches the live DB-backed contract where QualityQcFa defaults to
+    # ``line_code__isnull: True`` when neither ``include_dual_lines=true`` nor
+    # explicit ``line_code`` is provided.
+    if not filters:
+        if supports_dual_line:
+            return [
+                row for row in rows
+                if row.get("line_code") is None
+                or not str(row.get("line_code", "") or "").strip()
+            ]
+        return rows
+    result = []
+
+    # Dual-line special handling: non-mutating reads (avoid pop())
+    include_dual_lines = filters.get("include_dual_lines")
+    line_code_filter = filters.get("line_code")
+
+    # Build equality filter dict excluding dual-line keys (non-mutating)
+    equality_filters = {
+        k: v for k, v in filters.items()
+        if k not in ("include_dual_lines", "line_code")
+    }
+    has_any_equality_filter = bool(equality_filters)
+
+    for row in rows:
+        match = True
+
+        # Dual-line semantic: activates when at least one filter key is explicitly
+        # provided (either an equality filter OR explicit dual-line instruction).
+        # Default exclusion applies via the early-return guard above when filters
+        # is empty and the dashboard supports dual-line semantics.
+        if has_any_equality_filter or include_dual_lines is not None or line_code_filter is not None:
+            if line_code_filter is not None:
+                # Explicit line_code: only rows with matching line_code pass
+                row_lc = row.get("line_code")
+                if row_lc is None or str(row_lc) != line_code_filter:
+                    match = False
+            elif include_dual_lines != "true":
+                # No explicit line_code AND include_dual_lines is not 'true':
+                # exclude dual-line rows (non-None line_code)
+                row_lc = row.get("line_code")
+                if row_lc is not None and str(row_lc).strip():
+                    match = False
+
+        # Equality filters (all remaining after dual-line special casing)
+        if match:
+            for key, filter_value in equality_filters.items():
+                if key not in allowlist:
+                    continue
+                row_value = row.get(key)
+                if row_value is None or str(row_value) != filter_value:
+                    match = False
+                    break
+
+        if match:
+            result.append(row)
+
+    return result
+
 
 # ─────────────────────────────────────────────────────────
 # Dashboard → (sheet_index, remap, numeric_cols, defect_fields)

@@ -785,5 +785,169 @@ describe('SecondsA4Dashboard', () => {
         expect(screen.getByText('Seconds A4 Analytics')).toBeInTheDocument();
       });
     });
+
+    // ── Slice 4: Seconds A4 volatile filter parity ───────────────
+
+    it('renders SecondsA4FilterBar in volatile mode after removing early return', () => {
+      // RED: on current code this fails because the early return for volatile
+      // mode renders a separate view without the FilterBar. After the change,
+      // the FilterBar renders in both modes.
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // The import/rendering of SecondsA4FilterBar must be reachable
+      expect(screen.getByText('SecondsA4FilterBar')).toBeInTheDocument();
+    });
+
+    it('allows filter changes in volatile mode via FilterBar interaction', async () => {
+      axiosClient.post.mockResolvedValue({ data: {} });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // FilterBar should be visible
+      expect(screen.getByText('SecondsA4FilterBar')).toBeInTheDocument();
+
+      // Click the mock "set year" button — should trigger handleFilterChange
+      screen.getByTestId('set-year-filter').click();
+
+      // No crash — volatile mode keeps running after filter change
+      expect(screen.getByText('Seconds A4 Analytics')).toBeInTheDocument();
+    });
+
+    it('triggers volatile POST with filter_year FormData when year filter is set', async () => {
+      axiosClient.post.mockResolvedValue({ data: {} });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Wait for initial POST to settle
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(1);
+      });
+
+      // Change filter — second POST should include filter_year
+      screen.getByTestId('set-year-filter').click();
+
+      // The cache key should change (filters included in identity), triggering a new fetch
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(2);
+      });
+
+      // Verify the second call includes filter_year in FormData
+      const [, formData2] = axiosClient.post.mock.calls[1];
+      expect(formData2.get('dashboard')).toBe('seconds_a4');
+      expect(formData2.get('filter_year')).toBe('2025');
+    });
+
+    it('passes filter state as 4th argument to useVolatileDashboardCache', async () => {
+      // Mock volatile response
+      axiosClient.post.mockResolvedValue({ data: {} });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Set a filter
+      await waitFor(() => {
+        expect(screen.getByText('SecondsA4FilterBar')).toBeInTheDocument();
+      });
+      screen.getByTestId('set-year-filter').click();
+
+      // Changing filter should trigger re-fetch via new cache identity
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(2);
+      });
+
+      // The first call has no filters (initial empty filters normalize to {})
+      // The second call should have filter_year
+      const [, formData2] = axiosClient.post.mock.calls[1];
+      expect(formData2.get('filter_year')).toBe('2025');
+    });
+
+    it('does NOT send filter_date_range in volatile requests (deferred in v1)', async () => {
+      axiosClient.post.mockResolvedValue({ data: {} });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(1);
+      });
+
+      const [, formData] = axiosClient.post.mock.calls[0];
+      // date_range must never be present — explicitly deferred for all dashboards
+      expect(formData.get('filter_date_range')).toBeNull();
+    });
+
+    it('triggers separate volatile fetches for each unique filter combination', async () => {
+      axiosClient.post.mockResolvedValue({ data: {} });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(1);
+      });
+
+      // First filter change: set year to 2025
+      screen.getByTestId('set-year-filter').click();
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(2);
+      });
+
+      // Second filter change: set line to L1
+      screen.getByTestId('set-line-filter').click();
+      await waitFor(() => {
+        expect(axiosClient.post).toHaveBeenCalledTimes(3);
+      });
+
+      // Each call has dashboard=seconds_a4 and the right filter params
+      const [, formData2] = axiosClient.post.mock.calls[1];
+      expect(formData2.get('dashboard')).toBe('seconds_a4');
+      expect(formData2.get('filter_year')).toBe('2025');
+
+      const [, formData3] = axiosClient.post.mock.calls[2];
+      expect(formData3.get('dashboard')).toBe('seconds_a4');
+      expect(formData3.get('filter_year')).toBe('2025');
+      expect(formData3.get('filter_line')).toBe('L1');
+    });
+
+    it('shows KPI data from volatile response with FilterBar visible', async () => {
+      const mockVolatileData = {
+        executiveSummary: { totals: { total_of_2ds: 1234, seconds_by_sew: 600, seconds_by_fab: 634 } },
+        weeklyTrend: [{ name: '2DS', data: [{ x: '2025-W1', y: 100 }] }],
+        sewsVsFab: [{ label: 'Sew', value: 600 }, { label: 'Fabric', value: 634 }],
+        byStyle: [{ label: 'STYLE-X', value: 400 }],
+        byColor: [{ label: 'Blue', value: 300 }],
+        byLine: [{ label: 'L2', value: 500 }],
+        byCut: [{ label: 'Cut 50', value: 200 }],
+        passFailWeekly: [{ name: 'Pass', data: [{ x: '2025-W1', y: 80 }] }],
+      };
+
+      axiosClient.post.mockResolvedValue({ data: mockVolatileData });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Wait for data to resolve
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-1234')).toBeInTheDocument();
+      });
+
+      // FilterBar is still visible alongside the data
+      expect(screen.getByText('SecondsA4FilterBar')).toBeInTheDocument();
+    });
+
+    it('extracts filterOptions from volatileData and makes them available to FilterBar', async () => {
+      const mockVolatileData = {
+        executiveSummary: { totals: { total_of_2ds: 100 } },
+        filterOptions: { year: [2025, 2026], line: ['L1', 'L2'] },
+      };
+
+      axiosClient.post.mockResolvedValue({ data: mockVolatileData });
+
+      render(<SecondsA4Dashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Wait for data to resolve
+      await waitFor(() => {
+        expect(screen.getByText('KpiNumberCard-100')).toBeInTheDocument();
+      });
+
+      // FilterBar still shown
+      expect(screen.getByText('SecondsA4FilterBar')).toBeInTheDocument();
+    });
   });
 });

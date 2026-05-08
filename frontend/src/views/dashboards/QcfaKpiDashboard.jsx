@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchAllKpis, getFilterOptions } from '../../api/kpi';
 import useVolatileDashboardCache from '../useVolatileDashboardCache';
 import {
@@ -502,13 +502,28 @@ function QcfaKpiDashboard({ volatileFile, context }) {
     fetchOptions();
   }, [volatileFile, context, filters.includeDualLines]);
 
+  // ── Convert camelCase filter state to snake_case volatile keys ─────────
+  const volatileFilters = useMemo(() => {
+    const vf = {};
+    if (filters.week) vf.week = filters.week;
+    if (filters.team) vf.team = filters.team;
+    if (filters.style) vf.style = filters.style;
+    if (filters.color) vf.color = filters.color;
+    if (filters.customer) vf.customer = filters.customer;
+    if (filters.batch) vf.batch = filters.batch;
+    // Dual-line keys: map camelCase to snake_case
+    if (filters.includeDualLines) vf.include_dual_lines = 'true';
+    if (filters.lineCode) vf.line_code = filters.lineCode;
+    return vf;
+  }, [filters]);
+
   // Volatile dashboard cache hook — prevents re-upload on tab switch.
-  // Uses module-level cache keyed by file identity + dashboard + context.
+  // Uses module-level cache keyed by file identity + dashboard + context + filters.
   const {
     data: volatileData,
     loading: volatileLoading,
     error: volatileError,
-  } = useVolatileDashboardCache(volatileFile || null, 'qcfa', context);
+  } = useVolatileDashboardCache(volatileFile || null, 'qcfa', context, volatileFilters);
 
   // Sync volatile cache result into shared component state
   useEffect(() => {
@@ -527,7 +542,10 @@ function QcfaKpiDashboard({ volatileFile, context }) {
   }, [volatileFile, volatileData, volatileLoading, volatileError]);
 
   const handleFilterChange = useCallback((newFilters) => {
-    setFilters(newFilters);
+    setFilters({
+      ...newFilters,
+      lineCode: newFilters.includeDualLines ? newFilters.lineCode : '',
+    });
   }, []);
 
   const handleReset = useCallback(() => {
@@ -651,20 +669,18 @@ function QcfaKpiDashboard({ volatileFile, context }) {
         </button>
       </div>
 
-      {isLiveMode && (
-        <FilterBar
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onReset={handleReset}
-          filterOptions={filterOptions}
-          context={context}
-        />
-      )}
+      <FilterBar
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onReset={handleReset}
+        filterOptions={filterOptions}
+        context={context}
+        hideDateRange={!isLiveMode}
+      />
 
       {!isLiveMode && (
         <div className="volatile-helper" role="status" aria-live="polite">
-          <strong>Fast mode:</strong> does not apply live filters and some KPIs may not be
-          available as they depend on database tables.
+          <strong>Fast mode:</strong> browsing uploaded data — filters apply to the loaded file.
         </div>
       )}
 

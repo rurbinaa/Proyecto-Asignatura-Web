@@ -13,7 +13,7 @@ import './FilterBar.css';
  * primitives, consistent with the per-sheet specialized filter
  * architecture.
  */
-export default function ContainerFilterBar({ filters, onFilterChange, onReset, customerOptions = [] }) {
+export default function ContainerFilterBar({ filters, onFilterChange, onReset, customerOptions = [], hideDateRange }) {
   const handleChange = (field, value) => {
     onFilterChange({ ...filters, [field]: value });
   };
@@ -43,28 +43,40 @@ export default function ContainerFilterBar({ filters, onFilterChange, onReset, c
   return (
     <div className="filter-bar">
       <div className="filter-row">
-        <div className="filter-group date-range-group">
-          <label className="filter-label">Date</label>
-          <DateRangePicker
-            startDate={filters.date_range?.[0] || filters.from_date || ''}
-            endDate={filters.date_range?.[1] || filters.to_date || ''}
-            onChange={handleDateRangeChange}
-            size="small"
-          />
-        </div>
+        {!hideDateRange && (
+          <div className="filter-group date-range-group">
+            <label className="filter-label">Date</label>
+            <DateRangePicker
+              startDate={filters.date_range?.[0] || filters.from_date || ''}
+              endDate={filters.date_range?.[1] || filters.to_date || ''}
+              onChange={handleDateRangeChange}
+              size="small"
+            />
+          </div>
+        )}
 
         <div className="filter-group">
           <label className="filter-label">Customer</label>
-          <select
-            className="filter-input"
-            value={filters.customer || ''}
-            onChange={(e) => handleChange('customer', e.target.value)}
-          >
-            <option value="">Select Customer</option>
-            {customerOptions.map((customer) => (
-              <option key={customer} value={customer}>{customer}</option>
-            ))}
-          </select>
+          {customerOptions.length > 0 ? (
+            <select
+              className="filter-input"
+              value={filters.customer || ''}
+              onChange={(e) => handleChange('customer', e.target.value)}
+            >
+              <option value="">Select Customer</option>
+              {customerOptions.map((customer) => (
+                <option key={customer} value={customer}>{customer}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              className="filter-input"
+              value={filters.customer || ''}
+              onChange={(e) => handleChange('customer', e.target.value)}
+              placeholder="Select Customer"
+            />
+          )}
         </div>
 
         <div className="filter-group filter-group-actions">

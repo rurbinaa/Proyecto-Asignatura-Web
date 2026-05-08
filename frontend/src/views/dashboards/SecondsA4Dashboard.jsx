@@ -66,7 +66,9 @@ export default function SecondsA4Dashboard({ volatileFile }) {
   const [error, setError] = useState(null);
 
   // ── Volatile (fast) mode: use shared cache hook ─────────
-  const { data: volatileData, loading: volatileLoading, error: volatileError } = useVolatileDashboardCache(volatileFile, 'seconds_a4');
+  const { data: volatileData, loading: volatileLoading, error: volatileError } = useVolatileDashboardCache(
+    volatileFile, 'seconds_a4', null, filters,
+  );
 
   // ── Volatile data sync (guarded internally) ──
   useEffect(() => {
@@ -81,6 +83,9 @@ export default function SecondsA4Dashboard({ volatileFile }) {
       setByLine(volatileData.byLine || null);
       setByCut(volatileData.byCut || null);
       setPassFailWeekly(volatileData.passFailWeekly || null);
+      if (volatileData.filterOptions) {
+        setFilterOptions(volatileData.filterOptions);
+      }
     }
     setLoading(volatileLoading);
     setError(volatileError);
@@ -224,107 +229,6 @@ export default function SecondsA4Dashboard({ volatileFile }) {
       : []),
     [sewVsFab],
   );
-
-  // ── Volatile mode render (early return — ALL hooks are above) ──
-  if (volatileFile) {
-    return (
-      <div className="dashboard-view">
-        <div className="dashboard-header">
-          <h1 className="dashboard-title">Seconds A4 Analytics</h1>
-        </div>
-
-        {volatileLoading && <div className="loading-spinner">Loading...</div>}
-        {volatileError && <div className="error-message">{volatileError}</div>}
-
-        {volatileData && (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-              <KpiCard title="Total of 2DS" loading={volatileLoading} error={volatileError} bodyMinHeight={CARD_BODY_HEIGHTS.summary}>
-                {volatileData.executiveSummary?.totals ? (
-                  <KpiNumberCard title="" value={volatileData.executiveSummary.totals.total_of_2ds} decimals={0} />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Sew vs Fabric" loading={volatileLoading} error={volatileError} bodyMinHeight={CARD_BODY_HEIGHTS.summary}>
-                {volatileData.executiveSummary?.totals ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '16px' }}>
-                    <KpiNumberCard title="Sew" value={volatileData.executiveSummary.totals.seconds_by_sew} decimals={0} />
-                    <KpiNumberCard title="Fabric" value={volatileData.executiveSummary.totals.seconds_by_fab} decimals={0} />
-                  </div>
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-            </div>
-
-            <Masonry breakpointCols={{ default: 3, 768: 1 }} className="dashboard-masonry" columnClassName="dashboard-masonry-column">
-              <KpiCard title="Seconds by Week" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.weeklyTrend && volatileData.weeklyTrend.length > 0 ? (
-                  <LineChartKpi series={volatileData.weeklyTrend} xAxisLabel="Week" yAxisLabel="Total of 2DS" />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Sew vs Fabric Mix" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.sewVsFab && volatileData.sewVsFab.length > 0 ? (
-                  <DonutChartKpi data={volatileData.sewVsFab.map(i => ({ name: i.label, value: i.value }))} showSliceLabels minLabelPercent={0} />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Seconds by Style" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.byStyle && volatileData.byStyle.length > 0 ? (
-                  <BarChartKpi data={volatileData.byStyle} horizontal color="#8b5cf6" xAxisLabel="Total of 2DS" yAxisLabel="Style" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Seconds by Color" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.byColor && volatileData.byColor.length > 0 ? (
-                  <BarChartKpi data={volatileData.byColor} color="#06b6d4" xAxisLabel="Color" yAxisLabel="Total of 2DS" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Seconds by Line" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.byLine && volatileData.byLine.length > 0 ? (
-                  <BarChartKpi data={volatileData.byLine} horizontal color="#f97316" xAxisLabel="Total of 2DS" yAxisLabel="Lines" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Seconds by Cut #" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.byCut && volatileData.byCut.length > 0 ? (
-                  <BarChartKpi data={volatileData.byCut} horizontal color="#14b8a6" xAxisLabel="Total of 2DS" yAxisLabel="Cut #" tooltipFormatter={(value) => [value.toString(), 'Total of 2DS']} />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-
-              <KpiCard title="Pass vs Fail by Week" loading={volatileLoading} bodyMinHeight={CARD_BODY_HEIGHTS.chart} error={volatileError}>
-                {volatileData.passFailWeekly && volatileData.passFailWeekly.length > 0 ? (
-                  <LineChartKpi series={volatileData.passFailWeekly} yAxisLabel="Units" forceCategoricalXAxis />
-                ) : (
-                  <div className="null-message">{volatileLoading ? 'Loading...' : 'No data available'}</div>
-                )}
-              </KpiCard>
-            </Masonry>
-          </>
-        )}
-
-        {!volatileData && !volatileLoading && !volatileError && (
-          <div className="null-message">No data available</div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="dashboard-view">

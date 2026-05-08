@@ -49,6 +49,9 @@ from quality_data.volatile_kpi_service import (
     calc_seconds_general_defects_by_color,
     calc_seconds_general_defects_by_size,
     calc_seconds_general_defects_by_line,
+    # Volatile filter helpers
+    extract_volatile_filters,
+    apply_volatile_filters,
 )
 from excel_importer.handler_service import (
     load_and_clean,
@@ -1688,11 +1691,22 @@ class VolatileKpiView(APIView):
 
         dashboard = str(request.data.get('dashboard', '') or '').strip().lower() or None
         context = str(request.data.get('context', '') or '').strip().lower() or None
+        resolved_dashboard = dashboard or 'qcfa'
+
+        # Extract and validate filter_* fields against the dashboard allowlist.
+        # Rejects unknown keys and deferred keys (date_range, etc.) with 400.
+        try:
+            filters = extract_volatile_filters(request.data, resolved_dashboard)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
 
         try:
             rows, defect_fields, service = self._get_volatile_rows(
-                file_obj, dashboard or 'qcfa', context or 'plant',
+                file_obj, resolved_dashboard, context or 'plant',
             )
+
+            # Apply filters to in-memory rows before KPI computation
+            rows = apply_volatile_filters(rows, resolved_dashboard, filters)
 
             # Dispatch by dashboard FIRST — legacy pivot parsers only for QC FA
             from quality_data.dashboard_assemblers import (

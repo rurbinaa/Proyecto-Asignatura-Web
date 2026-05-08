@@ -62,7 +62,7 @@ function ContainerDashboard({ volatileFile, context }) {
     data: volatileData,
     loading: volatileLoading,
     error: volatileError,
-  } = useVolatileDashboardCache(volatileFile, 'container', context);
+  } = useVolatileDashboardCache(volatileFile, 'container', context, filters);
 
   // ── Volatile data sync ──
   useEffect(() => {
@@ -111,10 +111,10 @@ function ContainerDashboard({ volatileFile, context }) {
       customer: '',
     };
     setFilters(resetFilters);
-    if (isLiveMode) {
+    if (!volatileFile) {
       loadData(resetFilters);
     }
-  }, [isLiveMode, loadData]);
+  }, [volatileFile, loadData]);
 
   const handleRefresh = useCallback(() => {
     loadData(filters);
@@ -203,14 +203,13 @@ function ContainerDashboard({ volatileFile, context }) {
         </button>
       </div>
 
-      {isLiveMode && (
-        <ContainerFilterBar
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onReset={handleReset}
-          customerOptions={customerOptions}
-        />
-      )}
+      <ContainerFilterBar
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onReset={handleReset}
+        customerOptions={customerOptions}
+        hideDateRange={!isLiveMode}
+      />
 
       <div className="container-dashboard-layout">
 

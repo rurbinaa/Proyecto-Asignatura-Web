@@ -1831,3 +1831,121 @@ describe('kpi.js - fetchAllContainerKpis uses fetchVolatileDashboard', () => {
     expect(result.topDefects).toEqual(expect.objectContaining({ status: 'unavailable' }));
   });
 });
+
+// ─── Slice 1: fetchVolatileDashboard filter support ─────────────────────────
+describe('kpi.js - fetchVolatileDashboard filter forwarding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('appends filter_* FormData fields when filters are provided', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(
+      new File(['test'], 'test.xlsx', { lastModified: 1000 }),
+      'qcfa',
+      'plant',
+      { week: '5', team: '3' },
+    );
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('filter_week')).toBe('5');
+    expect(formData.get('filter_team')).toBe('3');
+    expect(formData.get('dashboard')).toBe('qcfa');
+    expect(formData.get('context')).toBe('plant');
+  });
+
+  it('does NOT append filter_* fields when no filters are provided (backward compat)', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(
+      new File(['test'], 'test.xlsx', { lastModified: 1000 }),
+      'container',
+    );
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('dashboard')).toBe('container');
+    // No filter_* fields should be present
+    const formDataKeys = [];
+    for (const key of formData.keys()) {
+      formDataKeys.push(key);
+    }
+    expect(formDataKeys.filter(k => k.startsWith('filter_'))).toHaveLength(0);
+  });
+
+  it('deduplicates identical file+dashboard+context+filters', async () => {
+    axiosClient.post.mockResolvedValue({ data: {} });
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    await Promise.all([
+      fetchVolatileDashboard(file, 'qcfa', 'plant', { week: '5' }),
+      fetchVolatileDashboard(file, 'qcfa', 'plant', { week: '5' }),
+    ]);
+
+    // Only one actual POST call
+    expect(axiosClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('different filters produce different dedup keys (separate calls)', async () => {
+    axiosClient.post.mockResolvedValue({ data: {} });
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    await Promise.all([
+      fetchVolatileDashboard(file, 'qcfa', 'plant', { week: '5' }),
+      fetchVolatileDashboard(file, 'qcfa', 'plant', { week: '6' }),
+    ]);
+
+    // Different filter values → two network calls
+    expect(axiosClient.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('date_range in filters is stripped before request (fail-closed for v1)', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    await fetchVolatileDashboard(
+      new File(['test'], 'test.xlsx', { lastModified: 1000 }),
+      'qcfa',
+      'plant',
+      { week: '5', date_range: '2025-01-01,2025-02-01' },
+    );
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    // date_range should NOT be forwarded as filter_date_range
+    expect(formData.get('filter_date_range')).toBeNull();
+    // But week should still work
+    expect(formData.get('filter_week')).toBe('5');
+  });
+
+  it('normalizes filters through volatileFilters before appending FormData', async () => {
+    axiosClient.post.mockResolvedValueOnce({ data: {} });
+
+    // container only supports 'customer' — style should be stripped
+    await fetchVolatileDashboard(
+      new File(['test'], 'test.xlsx', { lastModified: 1000 }),
+      'container',
+      null,
+      { customer: 'AlphaCorp', style: 'N3165' },
+    );
+
+    const [, formData] = axiosClient.post.mock.calls[0];
+    expect(formData.get('filter_customer')).toBe('AlphaCorp');
+    // style is NOT in container allowlist → should not be forwarded
+    expect(formData.get('filter_style')).toBeNull();
+  });
+
+  it('existing backward-compat tests still pass with new signature', async () => {
+    // This test verifies that calling fetchVolatileDashboard without filters
+    // works exactly as before
+    axiosClient.post.mockResolvedValueOnce({ data: { containers_by_state: [] } });
+
+    const result = await fetchVolatileDashboard(
+      new File(['test'], 'test.xlsx', { lastModified: 1000 }),
+      'container',
+    );
+
+    expect(result).toHaveProperty('containersByState');
+    expect(result.containersByState).toEqual([]);
+  });
+});

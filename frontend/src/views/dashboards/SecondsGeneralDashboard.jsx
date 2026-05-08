@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axiosClient from '../../api/axiosClient';
 import KpiCard from '../../Components/kpi/KpiCard';
 import BarChartKpi from '../../Components/kpi/BarChartKpi';
@@ -66,14 +66,29 @@ function buildFilterParams(filters) {
  * Global filters are applied to all endpoints via SecondsGeneralFilterMixin on the backend.
  */
 export default function SecondsGeneralDashboard({ volatileFile }) {
-  // ── Volatile (fast) mode ─────────────────────────────────────────────
-  const { data: volatileData, loading: volatileLoading, error: volatileError } =
-    useVolatileDashboardCache(volatileFile, 'seconds_general');
-
-  // ── Live mode state ──────────────────────────────────────────────────
+  // ── Shared state (declared before hooks that consume it) ──────────────
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [filterOptions, setFilterOptions] = useState(null);
 
+  // ── Convert camelCase filter state to snake_case volatile keys ─────────
+  const volatileFilters = useMemo(() => {
+    const vf = {};
+    if (filters.week) vf.week = filters.week;
+    if (filters.customer) vf.customer = filters.customer;
+    if (filters.style) vf.style = filters.style;
+    if (filters.color) vf.color = filters.color;
+    if (filters.team) vf.team = filters.team;
+    // Dual-line keys: map camelCase to snake_case
+    if (filters.includeDualLines) vf.include_dual_lines = 'true';
+    if (filters.lineCode) vf.line_code = filters.lineCode;
+    return vf;
+  }, [filters]);
+
+  // ── Volatile (fast) mode ─────────────────────────────────────────────
+  const { data: volatileData, loading: volatileLoading, error: volatileError } =
+    useVolatileDashboardCache(volatileFile, 'seconds_general', null, volatileFilters);
+
+  // ── Live mode state ──────────────────────────────────────────────────
   const [defectsByCustomer, setDefectsByCustomer] = useState(null);
   const [defectsByStyle, setDefectsByStyle] = useState(null);
   const [weeklyTrend, setWeeklyTrend] = useState(null);
@@ -125,6 +140,16 @@ export default function SecondsGeneralDashboard({ volatileFile }) {
 
   const activeLoading = isVolatile ? volatileLoading : loading;
   const activeError = isVolatile ? volatileError : error;
+
+  // ── Volatile data sync (guarded internally) ──
+  useEffect(() => {
+    if (!volatileFile) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (volatileData?.filterOptions) {
+      setFilterOptions(volatileData.filterOptions);
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [volatileFile, volatileData]);
 
   // ── Live mode: fetch filter options on mount ─────────────────────────
   useEffect(() => {
@@ -244,15 +269,14 @@ export default function SecondsGeneralDashboard({ volatileFile }) {
         </button>
       </div>
 
-      {!isVolatile && (
-        <FilterBar
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onReset={handleReset}
-          filterOptions={filterOptions}
-          context="customer"
-        />
-      )}
+      <FilterBar
+        filters={filters}
+        onFilterChange={handleFilterChange}
+        onReset={handleReset}
+        filterOptions={filterOptions}
+        context="customer"
+        hideDateRange={isVolatile}
+      />
 
       <div
         style={{

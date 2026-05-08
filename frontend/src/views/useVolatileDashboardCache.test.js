@@ -190,4 +190,74 @@ describe('useVolatileDashboardCache', () => {
     expect(r1.current.error).toBe('Server timeout');
     expect(r2.current.error).toBe('Server timeout');
   });
+
+  // ── Slice 1: filter parameter support ────────────────────────────
+
+  it('RED - passes filters to fetchVolatileDashboard', async () => {
+    const mockData = { aqlByStyle: [] };
+    fetchVolatileDashboard.mockResolvedValueOnce(mockData);
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+    renderHook(() =>
+      useVolatileDashboardCache(file, 'qcfa', 'plant', { week: '5', team: '3' }),
+    );
+
+    await waitFor(() => {
+      expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+    });
+
+    // fetchVolatileDashboard should be called with filters as 4th arg
+    const [fileArg, dashboardArg, contextArg, filtersArg] = fetchVolatileDashboard.mock.calls[0];
+    expect(filtersArg).toEqual({ week: '5', team: '3' });
+  });
+
+  it('RED - different filters produce different cache keys (separate fetches)', async () => {
+    fetchVolatileDashboard.mockResolvedValue({});
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    renderHook(() =>
+      useVolatileDashboardCache(file, 'qcfa', 'plant', { week: '5' }),
+    );
+    renderHook(() =>
+      useVolatileDashboardCache(file, 'qcfa', 'plant', { week: '6' }),
+    );
+
+    await waitFor(() => {
+      expect(fetchVolatileDashboard).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('RED - same filters reuse cache entry (no re-fetch)', async () => {
+    const mockData = { aqlByStyle: [{ label: 'A', value: 1.5 }] };
+    fetchVolatileDashboard.mockResolvedValueOnce(mockData);
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+
+    const { result, rerender } = renderHook(() =>
+      useVolatileDashboardCache(file, 'qcfa', 'plant', { week: '5' }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toEqual(mockData);
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+
+    // Rerender with same filters — cache hit
+    rerender();
+    expect(result.current.data).toEqual(mockData);
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('RED - backward compat: calling without filters works as before', async () => {
+    const mockData = { aqlByStyle: [] };
+    fetchVolatileDashboard.mockResolvedValueOnce(mockData);
+
+    const file = new File(['test'], 'test.xlsx', { lastModified: 1000 });
+    const { result } = renderHook(() =>
+      useVolatileDashboardCache(file, 'qcfa', 'plant'),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toEqual(mockData);
+    expect(fetchVolatileDashboard).toHaveBeenCalledTimes(1);
+  });
 });

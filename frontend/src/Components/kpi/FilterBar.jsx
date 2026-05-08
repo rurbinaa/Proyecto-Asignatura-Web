@@ -1,7 +1,7 @@
 import DateRangePicker from '../DateRangePicker';
 import './FilterBar.css';
 
-export default function FilterBar({ filters, onFilterChange, onReset, filterOptions, context }) {
+export default function FilterBar({ filters, onFilterChange, onReset, filterOptions, context, hideDateRange }) {
   const handleChange = (field, value) => {
     onFilterChange({ ...filters, [field]: value });
   };
@@ -46,15 +46,17 @@ export default function FilterBar({ filters, onFilterChange, onReset, filterOpti
   return (
     <div className="filter-bar">
       <div className="filter-row">
-        <div className="filter-group date-range-group">
-          <label className="filter-label">Date</label>
-          <DateRangePicker
-            startDate={filters.date_range?.[0] || ''}
-            endDate={filters.date_range?.[1] || ''}
-            onChange={handleDateRangeChange}
-            size="small"
-          />
-        </div>
+        {!hideDateRange && (
+          <div className="filter-group date-range-group">
+            <label className="filter-label">Date</label>
+            <DateRangePicker
+              startDate={filters.date_range?.[0] || ''}
+              endDate={filters.date_range?.[1] || ''}
+              onChange={handleDateRangeChange}
+              size="small"
+            />
+          </div>
+        )}
 
         <div className="filter-group">
           <label className="filter-label">Week</label>

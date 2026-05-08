@@ -2922,3 +2922,543 @@ class ContainerKpiHardeningTest(TestCase):
         result = self._state_dist(rows)
         counts = {item["name"]: item["value"] for item in result}
         self.assertEqual(counts["> 95%"], 1)
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 1: Volatile filter extraction + row filtering
+# ─────────────────────────────────────────────────────────
+
+class VolatileFilterExtractionTest(TestCase):
+    """Tests for extract_volatile_filters — parsing/validation of filter_* fields."""
+
+    def setUp(self):
+        from quality_data.volatile_kpi_service import (
+            extract_volatile_filters,
+            VOLATILE_FILTER_ALLOWLISTS,
+        )
+        self.extract = extract_volatile_filters
+        self.allowlists = VOLATILE_FILTER_ALLOWLISTS
+
+    def test_parses_filter_week_and_filter_team_for_qcfa(self):
+        """filter_week=5&filter_team=3 → {'week': '5', 'team': '3'} for qcfa."""
+        data = {'filter_week': '5', 'filter_team': '3'}
+        result = self.extract(data, 'qcfa')
+        self.assertEqual(result, {'week': '5', 'team': '3'})
+
+    def test_parses_filter_customer_for_container(self):
+        """filter_customer=Alpha → {'customer': 'Alpha'} for container."""
+        data = {'filter_customer': 'Alpha'}
+        result = self.extract(data, 'container')
+        self.assertEqual(result, {'customer': 'Alpha'})
+
+    def test_rejects_filter_date_range_with_400(self):
+        """filter_date_range MUST be rejected for v1 (fail-closed)."""
+        data = {'filter_date_range': '2025-01-01,2025-02-01'}
+        with self.assertRaises(ValueError) as ctx:
+            self.extract(data, 'qcfa')
+        self.assertIn('date_range', str(ctx.exception))
+
+    def test_rejects_filter_from_date_and_to_date(self):
+        """filter_from_date and filter_to_date are also deferred."""
+        data = {'filter_from_date': '2025-01-01', 'filter_to_date': '2025-02-01'}
+        with self.assertRaises(ValueError):
+            self.extract(data, 'qcfa')
+
+    def test_rejects_unknown_filter_key(self):
+        """filter_nonexistent=xyz → rejected with clear error."""
+        data = {'filter_nonexistent': 'xyz'}
+        with self.assertRaises(ValueError) as ctx:
+            self.extract(data, 'qcfa')
+        self.assertIn('nonexistent', str(ctx.exception))
+
+    def test_unknown_key_rejected_while_valid_keys_accepted(self):
+        """Rejects unknown but still returns valid keys (atomic validation)."""
+        data = {'filter_week': '5', 'filter_nonexistent': 'xyz'}
+        with self.assertRaises(ValueError):
+            self.extract(data, 'qcfa')
+
+    def test_empty_filters_returns_empty_dict(self):
+        """No filter_* fields → returns {}."""
+        result = self.extract({'dashboard': 'qcfa', 'file': 'x'}, 'qcfa')
+        self.assertEqual(result, {})
+
+    def test_seconds_a4_allowlist_accepted(self):
+        """seconds_a4 filters pass validation."""
+        data = {
+            'filter_year': '2025',
+            'filter_week': '3',
+            'filter_line': 'L1',
+            'filter_cut_num': '101',
+            'filter_style': 'STYLE-A',
+            'filter_color': 'Red',
+        }
+        result = self.extract(data, 'seconds_a4')
+        self.assertEqual(result, {
+            'year': '2025', 'week': '3', 'line': 'L1',
+            'cut_num': '101', 'style': 'STYLE-A', 'color': 'Red',
+        })
+
+    def test_seconds_general_with_dual_line_keys(self):
+        """seconds_general passes line_code and include_dual_lines."""
+        data = {
+            'filter_customer': 'CUST_A',
+            'filter_line_code': '35-36',
+            'filter_include_dual_lines': 'true',
+        }
+        result = self.extract(data, 'seconds_general')
+        self.assertEqual(result, {
+            'customer': 'CUST_A',
+            'line_code': '35-36',
+            'include_dual_lines': 'true',
+        })
+
+
+class VolatileRowFilterTest(TestCase):
+    """Tests for apply_volatile_filters — in-memory row filtering."""
+
+    def setUp(self):
+        from quality_data.volatile_kpi_service import apply_volatile_filters
+        self.apply = apply_volatile_filters
+
+    def test_filters_rows_by_single_field_equality(self):
+        """filter customer=Alpha → only Alpha rows."""
+        rows = [
+            {'customer': 'Alpha', 'week': 1, 'team': 5},
+            {'customer': 'Beta', 'week': 1, 'team': 6},
+            {'customer': 'Alpha', 'week': 2, 'team': 5},
+        ]
+        result = self.apply(rows, 'container', {'customer': 'Alpha'})
+        self.assertEqual(len(result), 2)
+        for r in result:
+            self.assertEqual(r['customer'], 'Alpha')
+
+    def test_filters_by_multiple_fields_and_condition(self):
+        """filter week=1 AND team=5 → only matching rows."""
+        rows = [
+            {'customer': 'A', 'week': 1, 'team': 5},
+            {'customer': 'B', 'week': 1, 'team': 6},
+            {'customer': 'C', 'week': 2, 'team': 5},
+        ]
+        result = self.apply(rows, 'qcfa', {'week': '1', 'team': '5'})
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['customer'], 'A')
+
+    def test_no_matching_rows_returns_empty_list(self):
+        """When no rows match, returns empty list."""
+        rows = [
+            {'customer': 'Alpha', 'week': 1},
+            {'customer': 'Beta', 'week': 2},
+        ]
+        result = self.apply(rows, 'container', {'customer': 'NonExistent'})
+        self.assertEqual(result, [])
+
+    def test_empty_rows_returns_empty(self):
+        """Empty rows → []."""
+        result = self.apply([], 'qcfa', {'week': '1'})
+        self.assertEqual(result, [])
+
+    def test_empty_filters_on_non_dual_dashboard_returns_all_rows(self):
+        """No filters on dashboard without dual-line → all rows unchanged."""
+        rows = [{'customer': 'A'}, {'customer': 'B'}]
+        result = self.apply(rows, 'container', {})
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result, rows)
+
+    def test_empty_filters_on_dual_dashboard_excludes_dual_rows(self):
+        """No filters on seconds_general → dual-line rows excluded by default."""
+        rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1},
+            {'customer': 'A', 'line_code': '', 'week': 1},
+        ]
+        result = self.apply(rows, 'seconds_general', {})
+        self.assertEqual(len(result), 2)
+        labels = {r['line_code'] for r in result}
+        self.assertEqual(labels, {None, ''})
+
+    def test_empty_filters_on_qcfa_excludes_dual_rows(self):
+        """No filters on qcfa → dual-line rows excluded by default (matches live contract)."""
+        rows = [
+            {'style': 'A', 'line_code': None, 'week': 1},
+            {'style': 'A', 'line_code': 'L1-DUAL', 'week': 1},
+        ]
+        result = self.apply(rows, 'qcfa', {})
+        self.assertEqual(len(result), 1)
+        self.assertIsNone(result[0]['line_code'])
+
+    def test_filter_value_is_compared_as_string_for_safety(self):
+        """Filter values are compared as strings to avoid type mismatch."""
+        rows = [
+            {'team': 5, 'customer': 'A'},
+            {'team': 6, 'customer': 'B'},
+        ]
+        # filter_team comes in as string '5', row has int 5
+        result = self.apply(rows, 'qcfa', {'team': '5'})
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['customer'], 'A')
+
+    def test_seconds_a4_filters_year_as_int_and_string(self):
+        """seconds_a4 year filter works with int and string values."""
+        rows = [
+            {'year': 2025, 'style': 'ST-A', 'total_of_2ds': 10},
+            {'year': 2026, 'style': 'ST-B', 'total_of_2ds': 15},
+        ]
+        result = self.apply(rows, 'seconds_a4', {'year': '2025'})
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['style'], 'ST-A')
+
+    def test_filter_is_case_sensitive(self):
+        """Filter comparison is case-sensitive (matching live __exact semantics)."""
+        rows = [
+            {'customer': 'Alpha', 'week': 1},
+            {'customer': 'alpha', 'week': 1},
+            {'customer': 'ALPHA', 'week': 1},
+        ]
+        result = self.apply(rows, 'container', {'customer': 'Alpha'})
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['customer'], 'Alpha')
+
+    def test_line_code_filter_is_case_sensitive(self):
+        """line_code filter comparison is case-sensitive."""
+        rows = [
+            {'customer': 'A', 'line_code': '35-36', 'week': 1},
+            {'customer': 'A', 'line_code': '35-36-DUP', 'week': 1},
+        ]
+        result = self.apply(
+            rows, 'seconds_general',
+            {'line_code': '35-36'},
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['line_code'], '35-36')
+
+    # ── Dual-line semantics (Slice 5) ────────────────────────────────
+
+    def test_dual_lines_excluded_by_default(self):
+        """Without include_dual_lines, rows with non-None line_code are excluded."""
+        rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1},
+            {'customer': 'A', 'line_code': '', 'week': 1},
+        ]
+        result = self.apply(rows, 'seconds_general', {'customer': 'A'})
+        self.assertEqual(len(result), 2)
+        labels = {r['line_code'] for r in result}
+        self.assertEqual(labels, {None, ''})
+
+    def test_dual_lines_included_when_flag_is_true(self):
+        """include_dual_lines=true includes all rows regardless of line_code."""
+        rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1},
+            {'customer': 'A', 'line_code': 'L2', 'week': 1},
+        ]
+        result = self.apply(
+            rows, 'seconds_general',
+            {'customer': 'A', 'include_dual_lines': 'true'},
+        )
+        self.assertEqual(len(result), 3)
+
+    def test_line_code_filter_without_flag(self):
+        """Explicit line_code filters to matching rows, no dual-line exclusion."""
+        rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1},
+            {'customer': 'B', 'line_code': 'L2', 'week': 1},
+        ]
+        result = self.apply(
+            rows, 'seconds_general',
+            {'line_code': '35-36'},
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['line_code'], '35-36')
+
+    def test_dual_lines_included_when_line_code_is_set_even_without_flag(self):
+        """When explicit line_code is given, include_dual_lines=true is not needed."""
+        rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1},
+            {'customer': 'A', 'line_code': 'L1', 'week': 1},
+            {'customer': 'A', 'line_code': 'L2', 'week': 1},
+        ]
+        result = self.apply(
+            rows, 'seconds_general',
+            {'line_code': 'L1'},
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['line_code'], 'L1')
+
+    def test_dual_lines_filters_stacked_with_regular_filter(self):
+        """line_code and customer filters combine correctly."""
+        rows = [
+            {'customer': 'A', 'line_code': 'L1', 'week': 1},
+            {'customer': 'A', 'line_code': 'L2', 'week': 1},
+            {'customer': 'B', 'line_code': 'L1', 'week': 1},
+        ]
+        result = self.apply(
+            rows, 'seconds_general',
+            {'customer': 'A', 'line_code': 'L1'},
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['customer'], 'A')
+        self.assertEqual(result[0]['line_code'], 'L1')
+
+
+class VolatileFilterIntegrationTest(TestCase):
+    """End-to-end tests: filter_* fields in POST reach row filtering."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('quality_data:kpi-volatile')
+
+    def _make_file(self):
+        return SimpleUploadedFile(
+            'test.xlsx', b'fake',
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+    def test_post_with_filters_applies_to_container_rows(self):
+        """POST with filter_customer=Alpha reduces rows → different KPI totals."""
+        from unittest.mock import patch
+
+        sample_rows = [
+            {'customer': 'Alpha', 'container_number': 1, 'percentage_pass': 90.0,
+             'total_palette': 20, 'total_palette_rejected': 2, 'date': '2025-01-10'},
+            {'customer': 'Beta', 'container_number': 2, 'percentage_pass': 50.0,
+             'total_palette': 30, 'total_palette_rejected': 15, 'date': '2025-01-11'},
+        ]
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (sample_rows, None, None)
+            response = self.client.post(
+                self.url,
+                {
+                    'file': self._make_file(),
+                    'dashboard': 'container',
+                    'filter_customer': 'Alpha',
+                },
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Total containers should be 1 (only Alpha)
+        exec_summary = response.data.get('executive_summary', [])
+        values = {item['label']: item['value'] for item in exec_summary}
+        self.assertEqual(values['Total Containers'], 1, 'Only Alpha rows should survive filtering')
+        # Without filters would be 2. With filters, only Alpha (1 container).
+        self.assertEqual(values['Total Palettes Inspected'], 20)
+
+    def test_post_with_filter_date_range_returns_400(self):
+        """filter_date_range is rejected with 400 for v1."""
+        response = self.client.post(
+            self.url,
+            {
+                'file': self._make_file(),
+                'dashboard': 'qcfa',
+                'filter_date_range': '2025-01-01,2025-02-01',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn('date_range', str(response.data.get('error', '')).lower())
+
+    def test_post_with_unknown_filter_returns_400(self):
+        """Unknown filter_xxx returns 400."""
+        response = self.client.post(
+            self.url,
+            {
+                'file': self._make_file(),
+                'dashboard': 'qcfa',
+                'filter_nonexistent': 'xyz',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, http_status.HTTP_400_BAD_REQUEST)
+        self.assertIn('nonexistent', str(response.data.get('error', '')))
+
+    def test_post_without_filters_still_works_and_returns_all_rows(self):
+        """No filter_* fields → all rows processed (backward compat)."""
+        from unittest.mock import patch
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = ([], None, None)
+            response = self.client.post(
+                self.url,
+                {'file': self._make_file(), 'dashboard': 'container'},
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # Should still have all container KPI keys
+        self.assertIn('containers_by_state', response.data)
+        self.assertIn('executive_summary', response.data)
+
+    # ── Dual-line semantic integration (Slice 5) ─────────────────
+
+    def test_post_seconds_general_excludes_dual_lines_without_flag(self):
+        """POST seconds_general with filter but without include_dual_lines excludes dual-line rows."""
+        from unittest.mock import patch
+
+        sample_rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1, 'produced': 100,
+             'fixed': 50, 'definitive': 30,
+             'picado_aguja': 5, 'manchas_sucio': 3},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1, 'produced': 200,
+             'fixed': 100, 'definitive': 60,
+             'picado_aguja': 0, 'manchas_sucio': 0},
+        ]
+        # Fill all defect fields to avoid KeyError
+        all_defect_fields = {
+            'picado_aguja': 0, 'manchas_sucio': 0, 'grasa': 0,
+            'tono_tela': 0, 'fuera_medidas': 0, 'enganche': 0,
+            'costura_torcida_insegura': 0, 'hoyos_costura': 0,
+            'heat_transfer': 0, 'mal_corte': 0, 'trapo': 0,
+            'corrido': 0, 'otros': 0, 'desgarre_def_tela': 0,
+            'contamination': 0, 'linea_de_tela': 0, 'mill_flaw': 0,
+            'hoyos': 0, 'manchas_tela': 0, 'corrido_2': 0,
+            'barre': 0, 'otros_3': 0, 'degradacion': 0, 'bordados': 0,
+        }
+        full_rows = [{**r, **{k: v for k, v in all_defect_fields.items() if k not in r}} for r in sample_rows]
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (full_rows, None, None)
+            response = self.client.post(
+                self.url,
+                {
+                    'file': self._make_file(),
+                    'dashboard': 'seconds_general',
+                    'filter_customer': 'A',
+                    # No filter_include_dual_lines → dual lines excluded by default
+                },
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # filter_customer=A is present but include_dual_lines is not,
+        # so only the non-dual row survives
+        pt = response.data.get('production_totals', {})
+        self.assertEqual(pt.get('total_produced'), 100)
+
+    def test_post_seconds_general_no_filters_excludes_dual_lines_by_default(self):
+        """POST without ANY filter_* params on seconds_general excludes dual-line rows (live contract parity)."""
+        from unittest.mock import patch
+
+        sample_rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1, 'produced': 100,
+             'fixed': 50, 'definitive': 30,
+             'picado_aguja': 5, 'manchas_sucio': 3},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1, 'produced': 200,
+             'fixed': 100, 'definitive': 60,
+             'picado_aguja': 0, 'manchas_sucio': 0},
+        ]
+        all_defect_fields = {
+            'picado_aguja': 0, 'manchas_sucio': 0, 'grasa': 0,
+            'tono_tela': 0, 'fuera_medidas': 0, 'enganche': 0,
+            'costura_torcida_insegura': 0, 'hoyos_costura': 0,
+            'heat_transfer': 0, 'mal_corte': 0, 'trapo': 0,
+            'corrido': 0, 'otros': 0, 'desgarre_def_tela': 0,
+            'contamination': 0, 'linea_de_tela': 0, 'mill_flaw': 0,
+            'hoyos': 0, 'manchas_tela': 0, 'corrido_2': 0,
+            'barre': 0, 'otros_3': 0, 'degradacion': 0, 'bordados': 0,
+        }
+        full_rows = [{**r, **{k: v for k, v in all_defect_fields.items() if k not in r}} for r in sample_rows]
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (full_rows, None, None)
+            response = self.client.post(
+                self.url,
+                {
+                    'file': self._make_file(),
+                    'dashboard': 'seconds_general',
+                    # No filter_* params at all
+                },
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # No filters and seconds_general supports dual-line → only non-dual row survives
+        # This matches the live DB-backed contract where QualityQcFa defaults to
+        # line_code__isnull: True when no include_dual_lines and no line_code are given.
+        pt = response.data.get('production_totals', {})
+        self.assertEqual(pt.get('total_produced'), 100)
+
+    def test_post_seconds_general_with_include_dual_lines_true_includes_all(self):
+        """POST seconds_general with include_dual_lines=true includes dual-line rows."""
+        from unittest.mock import patch
+
+        sample_rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1, 'produced': 100,
+             'fixed': 50, 'definitive': 30,
+             'picado_aguja': 5, 'manchas_sucio': 3},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1, 'produced': 200,
+             'fixed': 100, 'definitive': 60,
+             'picado_aguja': 0, 'manchas_sucio': 0},
+        ]
+        all_defect_fields = {
+            'picado_aguja': 0, 'manchas_sucio': 0, 'grasa': 0,
+            'tono_tela': 0, 'fuera_medidas': 0, 'enganche': 0,
+            'costura_torcida_insegura': 0, 'hoyos_costura': 0,
+            'heat_transfer': 0, 'mal_corte': 0, 'trapo': 0,
+            'corrido': 0, 'otros': 0, 'desgarre_def_tela': 0,
+            'contamination': 0, 'linea_de_tela': 0, 'mill_flaw': 0,
+            'hoyos': 0, 'manchas_tela': 0, 'corrido_2': 0,
+            'barre': 0, 'otros_3': 0, 'degradacion': 0, 'bordados': 0,
+        }
+        full_rows = [{**r, **{k: v for k, v in all_defect_fields.items() if k not in r}} for r in sample_rows]
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (full_rows, None, None)
+            response = self.client.post(
+                self.url,
+                {
+                    'file': self._make_file(),
+                    'dashboard': 'seconds_general',
+                    'filter_include_dual_lines': 'true',
+                },
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        # With include_dual_lines=true, both rows included
+        pt = response.data.get('production_totals', {})
+        self.assertEqual(pt.get('total_produced'), 300)
+
+    def test_post_seconds_general_with_line_code_filters_exact(self):
+        """POST seconds_general with filter_line_code restricts to matching line."""
+        from unittest.mock import patch
+
+        sample_rows = [
+            {'customer': 'A', 'line_code': None, 'week': 1, 'produced': 100,
+             'fixed': 50, 'definitive': 30,
+             'picado_aguja': 5, 'manchas_sucio': 3},
+            {'customer': 'A', 'line_code': '35-36', 'week': 1, 'produced': 200,
+             'fixed': 100, 'definitive': 60,
+             'picado_aguja': 0, 'manchas_sucio': 0},
+        ]
+        all_defect_fields = {
+            'picado_aguja': 0, 'manchas_sucio': 0, 'grasa': 0,
+            'tono_tela': 0, 'fuera_medidas': 0, 'enganche': 0,
+            'costura_torcida_insegura': 0, 'hoyos_costura': 0,
+            'heat_transfer': 0, 'mal_corte': 0, 'trapo': 0,
+            'corrido': 0, 'otros': 0, 'desgarre_def_tela': 0,
+            'contamination': 0, 'linea_de_tela': 0, 'mill_flaw': 0,
+            'hoyos': 0, 'manchas_tela': 0, 'corrido_2': 0,
+            'barre': 0, 'otros_3': 0, 'degradacion': 0, 'bordados': 0,
+        }
+        full_rows = [{**r, **{k: v for k, v in all_defect_fields.items() if k not in r}} for r in sample_rows]
+
+        with patch.object(VolatileKpiView, '_get_volatile_rows') as mock_get_rows:
+            mock_get_rows.return_value = (full_rows, None, None)
+            response = self.client.post(
+                self.url,
+                {
+                    'file': self._make_file(),
+                    'dashboard': 'seconds_general',
+                    'filter_line_code': '35-36',
+                },
+                format='multipart',
+            )
+
+        self.assertEqual(response.status_code, http_status.HTTP_200_OK)
+        pt = response.data.get('production_totals', {})
+        self.assertEqual(pt.get('total_produced'), 200)

@@ -1,4 +1,5 @@
 import axiosClient from './axiosClient';
+import { normalizeVolatileFilters, buildVolatileIdentity } from '../utils/volatileFilters';
 
 function unavailableKpi(reason) {
   return {
@@ -354,13 +355,16 @@ const volatileInFlight = new Map();
 
 /**
  * Build a stable deduplication key from volatile request parameters.
+ * Includes normalized filter identity so different filter combinations
+ * do NOT share in-flight promises or cache entries.
  * @param {File} file
  * @param {string} dashboard
  * @param {string|null} [context]
+ * @param {object} [filters={}] - Raw dashboard filter state
  * @returns {string}
  */
-function buildVolatileKey(file, dashboard, context) {
-  return `${file.name}:${file.size}:${file.lastModified}:${dashboard}:${context || ''}`;
+function buildVolatileKey(file, dashboard, context, filters = {}) {
+  return buildVolatileIdentity(file, dashboard, context, filters);
 }
 
 /**
@@ -368,20 +372,23 @@ function buildVolatileKey(file, dashboard, context) {
  *
  * Sends the optional ``dashboard`` parameter so the backend can dispatch
  * to the correct sheet and return only the relevant KPIs for that dashboard.
+ * Accepts an optional ``filters`` object that is normalized through
+ * ``normalizeVolatileFilters`` and appended as ``filter_*`` FormData fields.
  *
  * The response is also camelCase-mapped via ``mapVolatileKpisDto``.
  *
- * Concurrent calls with the same file+dashboard+context share a single
- * in-flight promise. The promise is removed from the dedupe map after
- * settlement so subsequent calls always get a fresh request.
+ * Concurrent calls with the same file+dashboard+context+filters share a
+ * single in-flight promise. The promise is removed from the dedupe map
+ * after settlement so subsequent calls always get a fresh request.
  *
  * @param {File} file - The Excel file to process
  * @param {string} dashboard - Dashboard key ('qcfa', 'container', 'seconds_a4', 'seconds_general')
  * @param {string} [context] - Optional context ('plant', 'customer')
+ * @param {object} [filters={}] - Raw dashboard filter state (normalized internally)
  * @returns {Promise<object>} Dashboard-scoped KPI results, camelCase keys
  */
-export async function fetchVolatileDashboard(file, dashboard, context) {
-  const key = buildVolatileKey(file, dashboard, context);
+export async function fetchVolatileDashboard(file, dashboard, context, filters = {}) {
+  const key = buildVolatileKey(file, dashboard, context, filters);
 
   // In-flight deduplication: return existing promise if one is still pending
   if (volatileInFlight.has(key)) {
@@ -394,6 +401,11 @@ export async function fetchVolatileDashboard(file, dashboard, context) {
     formData.append('dashboard', dashboard);
     if (context) {
       formData.append('context', context);
+    }
+    // Normalize and append filter_* fields from the filter state
+    const normalized = normalizeVolatileFilters(dashboard, filters);
+    for (const [key, value] of Object.entries(normalized)) {
+      formData.append(`filter_${key}`, String(value));
     }
     let res;
     try {

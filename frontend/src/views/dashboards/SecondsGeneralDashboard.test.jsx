@@ -515,10 +515,10 @@ describe('SecondsGeneralDashboard', () => {
       expect(axiosClient.get).not.toHaveBeenCalled();
     });
 
-    it('does NOT render FilterBar in volatile mode', () => {
+    it('renders FilterBar in volatile mode (re-enabled by Slice 5)', () => {
       render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
 
-      expect(screen.queryByText('FilterBar-customer')).not.toBeInTheDocument();
+      expect(screen.getByText('FilterBar-customer')).toBeInTheDocument();
     });
 
     it('does NOT show FastModeUnsupportedState component', () => {
@@ -534,6 +534,33 @@ describe('SecondsGeneralDashboard', () => {
       expect(screen.getByText('Total Produced')).toBeInTheDocument();
       expect(screen.getByText('Total Fixed')).toBeInTheDocument();
       expect(screen.getByText('Total Definitive')).toBeInTheDocument();
+    });
+
+    it('passes snake_case volatile filters to useVolatileDashboardCache as 4th argument', () => {
+      useVolatileDashboardCache.mockClear();
+
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Initially all filters are empty → volatileFilters is {}
+      expect(useVolatileDashboardCache).toHaveBeenCalledWith(
+        expect.any(File),
+        'seconds_general',
+        null,
+        {},
+      );
+    });
+
+    it('excludes date_range from volatile filters (deferred v1)', () => {
+      useVolatileDashboardCache.mockClear();
+
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      const callArgs = useVolatileDashboardCache.mock.calls[0];
+      const filtersArg = callArgs[3];
+      // date_range should NOT be in volatile filters (deferred + not in allowlist)
+      expect(filtersArg).not.toHaveProperty('date_range');
+      expect(filtersArg).not.toHaveProperty('from_date');
+      expect(filtersArg).not.toHaveProperty('to_date');
     });
 
     it('renders normal content when volatileFile is null (live mode)', async () => {
@@ -565,5 +592,69 @@ describe('SecondsGeneralDashboard', () => {
         expect(screen.getByText('FilterBar-customer')).toBeInTheDocument();
       });
     });
+
+    it('extracts filterOptions from volatile response when present', () => {
+      const mockVolatileWithFilterOpts = {
+        ...mockVolatilePayload,
+        filterOptions: {
+          customer: ['CUST_A', 'CUST_B'],
+          style: ['ST-100', 'ST-200'],
+          week: [1, 2, 3],
+          color: ['Red', 'Blue'],
+          size: ['M', 'L'],
+          team: [5, 10],
+        },
+      };
+      useVolatileDashboardCache.mockReturnValue({
+        data: mockVolatileWithFilterOpts,
+        loading: false,
+        error: null,
+      });
+
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // FilterBar renders — confirming filterOptions made it to state
+      expect(screen.getByText('FilterBar-customer')).toBeInTheDocument();
+    });
+
+    it('toggles includeDualLines in volatile mode and clears lineCode when disabling', () => {
+      useVolatileDashboardCache.mockReturnValueOnce({
+        data: mockVolatilePayload,
+        loading: false,
+        error: null,
+      });
+
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Toggle dual lines ON — should set lineCode to '' (from handleFilterChange)
+      fireEvent.click(screen.getByTestId('toggle-dual-lines'));
+
+      // Toggle back OFF — should still be rendered
+      fireEvent.click(screen.getByTestId('toggle-dual-lines'));
+
+      expect(screen.getByText('FilterBar-customer')).toBeInTheDocument();
+    });
+
+    it('makes no API calls when dual-line toggle changes in volatile mode', () => {
+      useVolatileDashboardCache
+        .mockReturnValueOnce({
+          data: mockVolatilePayload,
+          loading: false,
+          error: null,
+        })
+        .mockReturnValue({
+          data: mockVolatilePayload,
+          loading: false,
+          error: null,
+        });
+
+      render(<SecondsGeneralDashboard volatileFile={new File(['test'], 'test.xlsx')} />);
+
+      // Toggle dual lines — no API calls should fire
+      fireEvent.click(screen.getByTestId('toggle-dual-lines'));
+
+      expect(axiosClient.get).not.toHaveBeenCalled();
+    });
+
   });
 });

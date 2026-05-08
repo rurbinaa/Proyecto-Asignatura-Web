@@ -225,6 +225,110 @@ describe('FilterBar', () => {
     });
   });
 
+  describe('Date range visibility (hideDateRange prop)', () => {
+    it('renders DateRangePicker when hideDateRange is not set (default)', () => {
+      render(
+        <FilterBar
+          filters={defaultFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+        />
+      );
+      expect(document.querySelector('.date-range-picker')).toBeInTheDocument();
+      expect(screen.getByText('Date')).toBeInTheDocument();
+    });
+
+    it('renders DateRangePicker when hideDateRange is false', () => {
+      render(
+        <FilterBar
+          filters={defaultFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+          hideDateRange={false}
+        />
+      );
+      expect(document.querySelector('.date-range-picker')).toBeInTheDocument();
+      expect(screen.getByText('Date')).toBeInTheDocument();
+    });
+
+    it('hides Date label and DateRangePicker when hideDateRange is true', () => {
+      render(
+        <FilterBar
+          filters={defaultFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+          hideDateRange
+        />
+      );
+      expect(screen.queryByText('Date')).not.toBeInTheDocument();
+      expect(document.querySelector('.date-range-picker')).not.toBeInTheDocument();
+    });
+
+    it('still renders other filter inputs when hideDateRange is true', () => {
+      render(
+        <FilterBar
+          filters={defaultFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+          hideDateRange
+        />
+      );
+      // Non-date filters must still render
+      expect(screen.getByText('Week')).toBeInTheDocument();
+      expect(screen.getByText('Team')).toBeInTheDocument();
+      expect(screen.getByText('Style')).toBeInTheDocument();
+      expect(screen.getByText('Color')).toBeInTheDocument();
+      expect(screen.getByText('Customer')).toBeInTheDocument();
+      expect(screen.getByText('Batch')).toBeInTheDocument();
+      // Clear button still works
+      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
+    });
+
+    it('hideDateRange does not affect dual-line toggle when context=customer', () => {
+      const customerFilters = {
+        ...defaultFilters,
+        includeDualLines: false,
+        lineCode: '',
+      };
+      render(
+        <FilterBar
+          filters={customerFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+          context="customer"
+          filterOptions={{ line_code: ['35-36', '10-12'] }}
+          hideDateRange
+        />
+      );
+      // Date is hidden
+      expect(document.querySelector('.date-range-picker')).not.toBeInTheDocument();
+      // But dual lines checkbox is still shown
+      expect(screen.getByLabelText(/dual lines/i)).toBeInTheDocument();
+    });
+
+    it('hideDateRange does not affect line_code selector when dual lines enabled', () => {
+      const customerFilters = {
+        ...defaultFilters,
+        includeDualLines: true,
+        lineCode: '',
+      };
+      render(
+        <FilterBar
+          filters={customerFilters}
+          onFilterChange={vi.fn()}
+          onReset={vi.fn()}
+          context="customer"
+          filterOptions={{ line_code: ['35-36', '10-12'] }}
+          hideDateRange
+        />
+      );
+      // Date hidden
+      expect(screen.queryByText('Date')).not.toBeInTheDocument();
+      // Line code selector still visible
+      expect(screen.getByLabelText(/line code/i)).toBeInTheDocument();
+    });
+  });
+
   describe('Interactions', () => {
     it('calls onFilterChange when input changes', () => {
       const onFilterChange = vi.fn();

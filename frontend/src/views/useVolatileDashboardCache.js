@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchVolatileDashboard } from '../api/kpi';
+import { buildVolatileIdentity } from '../utils/volatileFilters';
 
 /**
  * Module-level cache shared across all hook instances.
@@ -17,42 +18,45 @@ const volatileCache = new Map();
 const volatilePending = new Map();
 
 /**
- * Build a stable cache key from file identity + dashboard + context.
+ * Build a stable cache key from file identity + dashboard + context + filters.
+ * Uses the same identity function as kpi.js for alignment.
  * @param {File|null} file
  * @param {string} dashboard
  * @param {string|null} [context]
+ * @param {object} [filters={}]
  * @returns {string|null} Cache key or null if file is null.
  */
-function buildCacheKey(file, dashboard, context) {
+function buildCacheKey(file, dashboard, context, filters = {}) {
   if (!file) return null;
-  return `${file.name}:${file.size}:${file.lastModified}:${dashboard}:${context || ''}`;
+  return buildVolatileIdentity(file, dashboard, context, filters);
 }
 
 /**
  * useVolatileDashboardCache — In-memory cache for volatile (fast mode) KPI payloads.
  *
  * Prevents re-uploading the same Excel file when switching dashboard tabs.
- * The cache is keyed by ``file.name:file.size:file.lastModified + dashboard + context``
- * so the same file uploaded twice (different file object) is treated as distinct.
+ * The cache is keyed by ``file.name:file.size:file.lastModified + dashboard + context + filters``
+ * so different filter combinations never share a cache entry.
  *
  * Usage in a dashboard component:
  * ```js
- * const { data, loading, error } = useVolatileDashboardCache(volatileFile, 'qcfa', 'plant');
+ * const { data, loading, error } = useVolatileDashboardCache(volatileFile, 'qcfa', 'plant', { week: '5' });
  * ```
  *
  * @param {File|null} file — The volatile Excel file, or null for live mode.
  * @param {string} dashboard — Dashboard key (``'qcfa'``, ``'container'``, etc.).
  * @param {string|null} [context] — Optional context (``'plant'`` or ``'customer'``).
+ * @param {object} [filters={}] — Raw dashboard filter state (normalized internally).
  * @returns {{ data: object|null, loading: boolean, error: string|null }}
  */
-export default function useVolatileDashboardCache(file, dashboard, context) {
+export default function useVolatileDashboardCache(file, dashboard, context, filters = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const keyRef = useRef(null);
   const activeRequestRef = useRef(0);
 
-  const cacheKey = buildCacheKey(file, dashboard, context);
+  const cacheKey = buildCacheKey(file, dashboard, context, filters);
 
   const fetchData = useCallback(async (key) => {
     const requestId = ++activeRequestRef.current;
@@ -66,7 +70,7 @@ export default function useVolatileDashboardCache(file, dashboard, context) {
       if (volatilePending.has(key)) {
         promise = volatilePending.get(key);
       } else {
-        promise = fetchVolatileDashboard(file, dashboard, context);
+        promise = fetchVolatileDashboard(file, dashboard, context, filters);
         volatilePending.set(key, promise);
         // .catch(() => {}) suppresses the forwarded rejection on the finally()-returned promise.
         // The actual rejection is caught by the try/catch below.
@@ -94,7 +98,7 @@ export default function useVolatileDashboardCache(file, dashboard, context) {
         setLoading(false);
       }
     }
-  }, [file, dashboard, context]);
+  }, [file, dashboard, context, filters]);
 
   useEffect(() => {
     // No file → live mode, clear state
