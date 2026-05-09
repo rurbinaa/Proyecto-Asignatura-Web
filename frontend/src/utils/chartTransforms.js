@@ -400,7 +400,7 @@ export const formatWeekLabel = (value) => `Semana ${value}`;
  * @param {number} value - The numeric value to format
  * @returns {string} Formatted string (e.g., "95.00 idx")
  */
-export const formatAcceptanceIndex = (value) => `${Number(value).toFixed(2)}%`;
+export const formatAcceptanceIndex = (value) => `${Number(value).toFixed(2)} idx`;
 
 /**
  * Truncate category labels longer than 18 characters.
@@ -494,13 +494,13 @@ export function transformContainerWorstContainers(data) {
     const arr = Array.isArray(d) ? d : d.result || d;
     if (!Array.isArray(arr) || arr.length === 0) return [];
 
-    return arr.map((row) => ({
+    return arr.map((row, index) => ({
       containerNumber: row.containerNumber,
       customer: row.customer,
       passRate: typeof row.passRate === 'number' ? row.passRate : Number(row.passRate) || 0,
       rejectedPalettes: typeof row.rejectedPalettes === 'number' ? row.rejectedPalettes : Number(row.rejectedPalettes) || 0,
       inspectionDate: row.inspectionDate || '',
-      key: row.containerNumber || `row-${Math.random()}`,
+      key: `${row.containerNumber || `row-${index}`}`,
     }));
   });
 }

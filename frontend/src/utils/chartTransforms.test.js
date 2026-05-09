@@ -1380,4 +1380,17 @@ describe('transformContainerWorstContainers', () => {
     expect(result.data[0].passRate).toBe(50.0);
     expect(result.data[0].key).toBe('CONT-001');
   });
+
+  it('RED - uses deterministic fallback keys when containerNumber is missing', () => {
+    const input = [
+      { customer: 'Customer A', passRate: 72.5, rejectedPalettes: 5, inspectionDate: '2025-01-10' },
+      { customer: 'Customer B', passRate: 85.0, rejectedPalettes: 2, inspectionDate: '2025-01-11' },
+    ];
+
+    const result = transformContainerWorstContainers(input);
+
+    expect(result.status).toBe('ready');
+    expect(result.data[0].key).toBe('row-0');
+    expect(result.data[1].key).toBe('row-1');
+  });
 });
