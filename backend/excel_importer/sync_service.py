@@ -28,9 +28,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────
-# Color Resolution (batched — avoids N+1 get_or_create per row)
-# ─────────────────────────────────────────────────────────
+
 
 def _resolve_colors_batch(color_names):
     """
@@ -76,9 +74,7 @@ def _collect_sheet_colors(rows, color_field="color"):
     return colors
 
 
-# ─────────────────────────────────────────────────────────
-# Natural Key Builders
-# ─────────────────────────────────────────────────────────
+
 
 def build_seconds_a4_key(row):
     """
@@ -147,9 +143,7 @@ def build_seconds_general_key(row):
     return (date, int(week) if week else 0, style, color)
 
 
-# ─────────────────────────────────────────────────────────
-# Extract Unique Dates from DataFrame rows
-# ─────────────────────────────────────────────────────────
+
 
 def extract_dates(rows, date_field):
     """Extract unique normalized dates from a list of row dicts."""
@@ -161,9 +155,7 @@ def extract_dates(rows, date_field):
     return dates
 
 
-# ─────────────────────────────────────────────────────────
-# Preview Computation
-# ─────────────────────────────────────────────────────────
+
 
 def compute_preview_upsert(excel_rows, db_queryset, key_builder, date_field):
     """
@@ -291,9 +283,7 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
     }
 
 
-# ─────────────────────────────────────────────────────────
-# Apply Logic
-# ─────────────────────────────────────────────────────────
+
 
 def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
                  numeric_columns, defect_fields=None, color_map=None):
@@ -524,9 +514,6 @@ def apply_session(session):
         delete_preview_data(session.pk)
 
 
-# ─────────────────────────────────────────────────────────
-# Session Management
-# ─────────────────────────────────────────────────────────
 
 def create_session_from_dataframes(dataframes):
     """
@@ -707,9 +694,6 @@ def _hydrate_session_from_redis(session):
         setattr(session, field_name, rows)
 
 
-# ─────────────────────────────────────────────────────────
-# Private Helpers
-# ─────────────────────────────────────────────────────────
 
 def _get_key_field_names(key_builder):
     """

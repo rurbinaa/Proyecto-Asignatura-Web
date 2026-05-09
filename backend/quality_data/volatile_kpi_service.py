@@ -49,9 +49,7 @@ from excel_importer.sheet_configs import (
     SHEET_NAMES,
 )
 
-# ─────────────────────────────────────────────────────────
-# Dashboard filter allowlists (aligned with frontend volatileFilters.js)
-# ─────────────────────────────────────────────────────────
+
 
 VOLATILE_FILTER_ALLOWLISTS = {
     "qcfa": [
@@ -209,9 +207,6 @@ def apply_volatile_filters(rows, dashboard, filters):
     return result
 
 
-# ─────────────────────────────────────────────────────────
-# Dashboard → (sheet_index, remap, numeric_cols, defect_fields)
-# ─────────────────────────────────────────────────────────
 
 DASHBOARD_SHEET_MAP = {
     "qcfa": {
@@ -337,9 +332,6 @@ class VolatileWorkbookService:
         return rows, defect_fields
 
 
-# ─────────────────────────────────────────────────────────
-# Container KPI computation helpers (volatile / fast mode)
-# ─────────────────────────────────────────────────────────
 
 
 def _normalize_container_percentage(value):
@@ -592,9 +584,6 @@ def calc_container_worst_containers(rows, top=5):
     return result
 
 
-# ─────────────────────────────────────────────────────────
-# Seconds A4 KPI computation helpers (volatile / fast mode)
-# ─────────────────────────────────────────────────────────
 
 
 _SECONDS_A4_SUM_FIELDS = [
@@ -846,9 +835,6 @@ def calc_seconds_a4_filter_options(rows):
     }
 
 
-# ─────────────────────────────────────────────────────────
-# Seconds General KPI computation helpers (volatile / fast mode)
-# ─────────────────────────────────────────────────────────
 
 _SG_PRODUCTION_FIELDS = ["produced", "fixed", "definitive"]
 

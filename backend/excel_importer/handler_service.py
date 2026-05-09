@@ -219,7 +219,7 @@ def parse_qfc_line(raw_value):
         if left_val == right_val:
             return None, None
 
-        # ✅ Valid dual label — normalize to canonical form (no extra spaces)
+        # Valid dual label — normalize to canonical form (no extra spaces)
         canonical_label = f"{left_val}-{right_val}"
         return left_val, canonical_label
 
@@ -825,10 +825,6 @@ def _resolve_container_date(raw_date, existing_date):
         return normalized
     return existing_date
 
-
-# ─────────────────────────────────────────────────────────
-# Container row normalization (Slice 3 — import boundary)
-# ─────────────────────────────────────────────────────────
 
 _CONTAINER_NUMERIC_COUNT_FIELDS = {
     "total_palette",

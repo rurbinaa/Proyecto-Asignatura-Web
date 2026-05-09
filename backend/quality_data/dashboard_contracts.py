@@ -11,15 +11,11 @@ Live and volatile paths both reference these constants so the output contract
 never diverges between ORM-aggregated and row-computed KPIs.
 
 """
-# ─────────────────────────────────────────────────────────
-# Supported dashboards
-# ─────────────────────────────────────────────────────────
+
 
 SUPPORTED_DASHBOARDS = {"qcfa", "container", "seconds_a4", "seconds_general"}
 
-# ─────────────────────────────────────────────────────────
-# Container domain
-# ─────────────────────────────────────────────────────────
+
 
 # Container state bucket definitions for Case/When (live) and python (volatile).
 # Bucket ids: 1 = "< 80%", 2 = "80-90%", 3 = "90-95%", 4 = "> 95%"
@@ -63,9 +59,7 @@ CONTAINER_KPI_REGISTRY = [
     ("worst_containers", "quality_data.serializers.WorstContainerSerializer", True),
 ]
 
-# ─────────────────────────────────────────────────────────
-# Seconds A4 domain
-# ─────────────────────────────────────────────────────────
+
 
 SECONDS_A4_KPI_KEYS = {
     "filter_options",
@@ -102,9 +96,6 @@ SECONDS_A4_SUM_FIELDS = [
     "rejected",
 ]
 
-# ─────────────────────────────────────────────────────────
-# Seconds General domain
-# ─────────────────────────────────────────────────────────
 
 SECONDS_GENERAL_KPI_KEYS = {
     "filter_options",
@@ -138,10 +129,6 @@ SECONDS_GENERAL_KPI_REGISTRY = [
 
 # Seconds General production fields
 SG_PRODUCTION_FIELDS = ["produced", "fixed", "definitive"]
-
-# ─────────────────────────────────────────────────────────
-# QC FA domain
-# ─────────────────────────────────────────────────────────
 
 QCFA_KPI_KEYS = {
     "aql_by_style",

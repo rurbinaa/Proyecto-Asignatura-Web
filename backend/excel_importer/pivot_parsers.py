@@ -192,9 +192,6 @@ def parse_fabric_defects(file_obj):
         return None
 
 
-# ─────────────────────────────────────────────────────────
-# QC FA Plant based parsers (use pre-parsed rows, no Excel read)
-# ─────────────────────────────────────────────────────────
 
 DEFECT_LABEL_MAP = {
     'uneven': 'Uneven', 'broken_stitch': 'Broken Stitch', 'open_seam': 'Open Seam',
