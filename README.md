@@ -1,325 +1,295 @@
-• # Rift Analytics (Proyecto Asignatura Web)
+# Rift Analytics (Proyecto Asignatura Web)
 
-  ![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react&logoColor=black)
-  ![Django](https://img.shields.io/badge/Backend-Django_REST-092E20?logo=django&logoColor=white)
-  ![Docker](https://img.shields.io/badge/Container-Docker-2496ED?logo=docker&logoColor=white)
+![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react&logoColor=black)
+![Django](https://img.shields.io/badge/Backend-Django_REST-092E20?logo=django&logoColor=white)
+![Docker](https://img.shields.io/badge/Container-Docker-2496ED?logo=docker&logoColor=white)
 
-  Rift Analytics es una plataforma web integral diseñada para la digitalización, captura y análisis de calidad (QA) en
-  plantas de manufactura. Permite registrar y analizar datos de inspección, cargar archivos Excel, consultar indicadores
-  de calidad y visualizar dashboards interactivos para apoyar la toma de decisiones gerenciales.
+Rift Analytics es una plataforma web integral diseñada para la digitalización, captura y análisis de calidad (QA) en plantas de manufactura. Permite registrar y analizar datos de inspección, cargar archivos Excel, consultar indicadores de calidad y visualizar dashboards interactivos para apoyar la toma de decisiones gerenciales.
 
-  ---
+## Características principales
 
-  ## Características Principales
+- **Dashboard interactivo de calidad**: KPIs en tiempo real como AQL, tasa de defectos, rendimiento por línea/cliente, defectos principales, distribución de aprobación/rechazo y tendencias.
+- **Importación masiva desde Excel**: permite cargar archivos `.xlsx` con datos de calidad para procesarlos, previsualizarlos y confirmarlos en la base de datos.
+- **Fast Mode / Modo Volátil**: genera dashboards directamente desde un archivo Excel sin guardar los datos permanentemente.
+- **Autenticación con JWT**: inicio de sesión con usuarios tipo `manager` y manejo de sesión mediante tokens.
+- **Trazabilidad y auditoría**: estructura preparada para analizar inspecciones de calidad relacionadas con tela, costura, empaque y contenedores.
+- **Reportes**: generación de reportes corporativos en formato Excel.
 
-  - **Dashboard Interactivo de Calidad**: KPIs en tiempo real como AQL, tasa de defectos, rendimiento por línea/cliente,
-  defectos principales, distribución de aprobación/rechazo y tendencias.
-  - **Importación Masiva desde Excel**: permite cargar archivos `.xlsx` con datos de calidad para procesarlos,
-  previsualizarlos y confirmarlos en la base de datos.
-  - **Fast Mode / Modo Volátil**: permite generar dashboards directamente desde un archivo Excel sin guardar los datos
-  permanentemente en la base de datos.
-  - **Autenticación con JWT**: inicio de sesión con usuarios tipo `manager` y manejo de sesión mediante tokens.
-  - **Trazabilidad y Auditoría**: estructura preparada para analizar inspecciones de calidad relacionadas con tela,
-  costura, empaque y contenedores.
-  - **Reportes**: generación de reportes corporativos en formato Excel.
+## Documentación adicional
 
-  Para más detalles operativos, consulta la documentación en `/docs`:
+- [Glosario de Métricas de Calidad](./docs/glosario-metricas-calidad.md)
+- [Manual del Dashboard para Gerencia](./docs/manual-dashboard-gerencia.md)
+- [Estructura de Archivos Excel](./docs/excel_structure.md)
+- [Endpoints de API](./docs/api/endpoints.md)
 
-  - [Glosario de Métricas de Calidad](./docs/glosario-metricas-calidad.md)
-  - [Manual del Dashboard para Gerencia](./docs/manual-dashboard-gerencia.md)
-  - [Estructura de Archivos Excel](./docs/excel_structure.md)
-  - [Endpoints de API](./docs/api/endpoints.md)
+## Tecnologías utilizadas
 
-  ---
+- **Frontend**: React + Vite
+- **Backend**: Django + Django REST Framework
+- **Autenticación**: JWT con `djangorestframework-simplejwt`
+- **Base de datos**: PostgreSQL
+- **Cache / servicios auxiliares**: Redis
+- **Servidor ASGI**: Daphne
+- **Contenedores**: Docker y Docker Compose
+- **Procesamiento Excel**: Pandas, OpenPyXL y XlsxWriter
 
-  ## Tecnologías Utilizadas
+## Estructura general del proyecto
 
-  - **Frontend**: React + Vite
-  - **Backend**: Django + Django REST Framework
-  - **Autenticación**: JWT con `djangorestframework-simplejwt`
-  - **Base de datos**: PostgreSQL
-  - **Cache / servicios auxiliares**: Redis
-  - **Servidor ASGI**: Daphne
-  - **Contenedores**: Docker y Docker Compose
-  - **Procesamiento Excel**: Pandas, OpenPyXL y XlsxWriter
+```text
+Proyecto-Asignatura-Web/
+├── backend/              # API Django REST
+├── frontend/             # Aplicación React/Vite
+├── docs/                 # Documentación técnica y funcional
+├── docker-compose.yml    # Orquestación de servicios Docker
+├── README.md
+└── .gitignore
+```
 
-  ---
+## Guía de instalación con Docker
 
-  ## Estructura General del Proyecto
+El proyecto está dockerizado para que todos los desarrolladores puedan ejecutar el mismo entorno de forma consistente.
 
-  ```text
-  Proyecto-Asignatura-Web/
-  ├── backend/              # API Django REST
-  ├── frontend/             # Aplicación React/Vite
-  ├── docs/                 # Documentación técnica y funcional
-  ├── docker-compose.yml    # Orquestación de servicios Docker
-  ├── README.md
-  └── .gitignore
+### Requisitos previos
 
-  ———
+1. Git
+2. Docker Desktop
+3. Docker Compose (normalmente incluido en Docker Desktop)
 
-  ## Guía de Instalación con Docker
+### Paso 1: Clonar el repositorio
 
-  El proyecto está dockerizado para que todos los desarrolladores puedan ejecutar el mismo entorno de forma consistente.
+```bash
+git clone https://github.com/rurbinaa/Proyecto-Asignatura-Web.git
+cd Proyecto-Asignatura-Web
+```
 
-  ### Requisitos Previos
+### Paso 2: Configurar variables de entorno
 
-  1. Git: para clonar el repositorio.
-  2. Docker Desktop: para ejecutar los contenedores.
-  3. Docker Compose: normalmente incluido con Docker Desktop.
+Crea el archivo `.env` dentro de la carpeta `backend`:
 
-  ———
+```bash
+cp backend/.env.example backend/.env
+```
 
-  ### Paso 1: Clonar el Repositorio
+Valores mínimos recomendados para desarrollo local:
 
-  git clone https://github.com/rurbinaa/Proyecto-Asignatura-Web.git
-  cd Proyecto-Asignatura-Web
+```env
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=appdb
+DJANGO_DEBUG=True
+DJANGO_SECRET_KEY=your-secret-key-here
+```
 
-  ———
+> Nota: el archivo `.env` no se sube a GitHub por seguridad.
 
-  ### Paso 2: Configurar Variables de Entorno
+### Paso 3: Levantar los servicios
 
-  El archivo .env debe crearse dentro de la carpeta backend.
+Desde la raíz del proyecto ejecuta:
 
-  cp backend/.env.example backend/.env
+```bash
+docker compose up --build
+```
 
-  Valores mínimos recomendados para desarrollo local:
+La primera vez puede tardar varios minutos porque Docker debe descargar imágenes e instalar dependencias.
 
-  POSTGRES_USER=postgres
-  POSTGRES_PASSWORD=postgres
-  POSTGRES_DB=appdb
-  DJANGO_DEBUG=True
-  DJANGO_SECRET_KEY=your-secret-key-here
+El `docker-compose.yml` levanta los siguientes servicios:
 
-  > Nota: el archivo .env no se sube a GitHub por seguridad.
+- PostgreSQL en el puerto `5432`
+- Redis en el puerto `6379`
+- Backend Django/Daphne en el puerto `8000`
+- Frontend React/Vite en el puerto `5173`
 
-  ———
+Durante el arranque, el backend ejecuta automáticamente:
 
-  ### Paso 3: Levantar los Servicios
+```bash
+python manage.py makemigrations
+python manage.py migrate
+python manage.py bootstrap_auth_users
+```
 
-  Desde la raíz del proyecto ejecuta:
+Esto crea las tablas necesarias, carga datos base y genera usuarios iniciales de desarrollo.
 
-  docker compose up --build
+### Paso 4: Acceder a la plataforma
 
-  La primera vez puede tardar varios minutos porque Docker debe descargar imágenes e instalar dependencias.
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- API Auth: http://localhost:8000/api/auth/
+- API Calidad: http://localhost:8000/quality/
 
-  El docker-compose.yml levanta los siguientes servicios:
+## Acceso inicial
 
-  - PostgreSQL en el puerto 5432
-  - Redis en el puerto 6379
-  - Backend Django/Daphne en el puerto 8000
-  - Frontend React/Vite en el puerto 5173
+Al iniciar el proyecto con Docker, se crean usuarios de prueba automáticamente.
 
-  Durante el arranque, el backend ejecuta automáticamente:
+**Credenciales principales:**
 
-  python manage.py makemigrations
-  python manage.py migrate
-  python manage.py bootstrap_auth_users
+- Email: `gerente@uniwell.com`
+- Password: `password123`
+- Rol: `manager`
 
-  Esto crea las tablas necesarias, carga datos base y genera usuarios iniciales de desarrollo.
+**Otros usuarios disponibles:**
 
-  ———
+- `gerencia@uniwell.com`
+- `manager@uniwell.com`
+- `admin@uniwell.com`
+- `GERENCIA@uniwell.com`
 
-  ### Paso 4: Acceder a la Plataforma
+> Nota: el rol `operator` ya no está habilitado para iniciar sesión. El sistema actualmente trabaja con usuarios tipo `manager`.
 
-  Una vez que los servicios estén corriendo:
+## Flujo básico de uso
 
-  - Frontend: http://localhost:5173
-  - Backend API: http://localhost:8000
-  - API Auth: http://localhost:8000/api/auth/
-  - API Calidad: http://localhost:8000/quality/
+1. Abrir http://localhost:5173
+2. Iniciar sesión con un usuario `manager`
+3. Ir al módulo de importación de Excel
+4. Subir un archivo `.xlsx` compatible
+5. Revisar la previsualización de datos
+6. Confirmar la importación para guardar en base de datos o usar Fast Mode para análisis temporal
+7. Consultar los dashboards de calidad
+8. Aplicar filtros por línea, cliente, estilo, color u otros criterios disponibles
+9. Exportar reportes si aplica
 
-  ———
+Para conocer el formato requerido del archivo Excel, revisar: `docs/excel_structure.md`
 
-  ## Acceso Inicial
+## Modos de importación Excel
 
-  Al iniciar el proyecto con Docker, se crean usuarios de prueba automáticamente.
+### Live DB / Persistente
 
-  Credenciales principales:
+Procesa el archivo Excel, permite previsualizar los datos y luego confirmarlos para guardarlos en la base de datos PostgreSQL.
 
-  Email: gerente@uniwell.com
-  Password: password123
-  Rol: manager
+Flujo general:
 
-  Otros usuarios disponibles:
+`Subir Excel -> Previsualizar -> Confirmar -> Guardar en base de datos -> Consultar dashboards`
 
-  gerencia@uniwell.com
-  manager@uniwell.com
-  admin@uniwell.com
-  GERENCIA@uniwell.com
+### Fast Mode / Volátil
 
-  Todos usan la contraseña:
+Procesa el archivo Excel en memoria sin guardar los datos de forma permanente.
 
-  password123
+Flujo general:
 
-  > Nota: el rol operator ya no está habilitado para iniciar sesión. El sistema actualmente trabaja con usuarios tipo
-  > manager.
+`Subir Excel -> Procesar en memoria -> Ver dashboards -> Descartar datos al finalizar`
 
-  ———
+## Endpoints principales
 
-  ## Flujo Básico de Uso
+La documentación completa de endpoints está disponible en `docs/api/endpoints.md`
 
-  1. Entrar a http://localhost:5173
-  2. Iniciar sesión con un usuario manager.
-  3. Ir al módulo de importación de Excel.
-  4. Subir un archivo .xlsx compatible.
-  5. Revisar la previsualización de datos.
-  6. Confirmar la importación para guardar en base de datos o usar Fast Mode para análisis temporal.
-  7. Consultar los dashboards de calidad.
-  8. Aplicar filtros por línea, cliente, estilo, color u otros criterios disponibles.
-  9. Exportar reportes si aplica.
+**Endpoints destacados:**
 
-  Para conocer el formato requerido del archivo Excel, revisar:
+```text
+POST   /api/auth/login/
+GET    /api/auth/me/
+POST   /api/auth/logout/
+POST   /api/auth/token/refresh/
 
-  docs/excel_structure.md
+POST   /quality/excel/preview/<filename>/
+POST   /quality/excel/confirm/<session_id>/
+DELETE /quality/excel/reject/<session_id>/
 
-  ———
+GET    /quality/kpis/filter-options/
+POST   /quality/kpis/volatile/
+GET    /quality/reports/corporate-xlsx/
+```
 
-  ## Modos de Importación Excel
+## Detener los servicios
 
-  ### Live DB / Persistente
+Para detener los contenedores sin eliminar los datos persistidos:
 
-  Procesa el archivo Excel, permite previsualizar los datos y luego confirmarlos para guardarlos en la base de datos
-  PostgreSQL.
+```bash
+docker compose down
+```
 
-  Flujo general:
+Para detener los contenedores y eliminar los volúmenes, incluyendo la base de datos local:
 
-  Subir Excel -> Previsualizar -> Confirmar -> Guardar en base de datos -> Consultar dashboards
+```bash
+docker compose down -v
+```
 
-  ### Fast Mode / Volátil
+> Usa `docker compose down -v` solo si quieres reiniciar la base de datos desde cero.
 
-  Procesa el archivo Excel en memoria sin guardar los datos de forma permanente.
+## Pruebas
 
-  Este modo es útil para análisis rápidos, pruebas o revisión inmediata de información.
+El proyecto cuenta con pruebas para backend y frontend.
 
-  Flujo general:
+### Backend
 
-  Subir Excel -> Procesar en memoria -> Ver dashboards -> Descartar datos al finalizar
+```bash
+cd backend
+pip install -r requirements.txt
+pytest
+```
 
-  ———
+### Frontend
 
-  ## Endpoints Principales
+```bash
+cd frontend
+npm install
+npm run test:run
+```
 
-  La documentación completa de endpoints está disponible en:
+También puedes ejecutar:
 
-  docs/api/endpoints.md
+```bash
+npm run test
+npm run test:coverage
+npm run lint
+```
 
-  Endpoints destacados:
+## Ejecución manual sin Docker
 
-  POST /api/auth/login/
-  GET  /api/auth/me/
-  POST /api/auth/logout/
-  POST /api/auth/token/refresh/
+La forma recomendada es usar Docker. Sin embargo, también se puede ejecutar manualmente.
 
-  POST   /quality/excel/preview/<filename>/
-  POST   /quality/excel/confirm/<session_id>/
-  DELETE /quality/excel/reject/<session_id>/
+### Backend
 
-  GET  /quality/kpis/filter-options/
-  POST /quality/kpis/volatile/
-  GET  /quality/reports/corporate-xlsx/
+```bash
+cd backend
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py bootstrap_auth_users
+python manage.py runserver 0.0.0.0:8000
+```
 
-  ———
+### Frontend
 
-  ## Detener los Servicios
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-  Para detener los contenedores sin eliminar los datos persistidos:
+El frontend consume el backend en `http://localhost:8000`
 
-  docker compose down
+Esta URL está configurada en `frontend/src/api/axiosClient.js`
 
-  Para detener los contenedores y eliminar los volúmenes, incluyendo la base de datos local:
+## Archivos que no se suben a GitHub
 
-  docker compose down -v
+Por seguridad y buenas prácticas, no se versionan:
 
-  > Usa docker compose down -v solo si quieres reiniciar la base de datos desde cero.
+- `node_modules/`
+- `.env`
+- `*.env`
+- `db.sqlite3`
+- `*.xlsx`
+- `dist/`
+- `coverage/`
+- `.cache/`
 
-  ———
+Esto significa que cada desarrollador debe instalar dependencias y crear su propio archivo `.env`.
 
-  ## Pruebas
+## Notas para entrega o transferencia
 
-  El proyecto cuenta con pruebas para backend y frontend.
+Si se entrega este proyecto a otra persona o empresa, se recomienda enviar el repositorio de GitHub y no una carpeta completa con dependencias locales.
 
-  ### Backend
+No incluir:
 
-  cd backend
-  pip install -r requirements.txt
-  pytest
+- `node_modules`
+- `.env`
+- `db.sqlite3` con datos reales
+- Archivos Excel privados
+- Carpetas de build o cobertura
 
-  ### Frontend
+Para ponerlo en marcha:
 
-  cd frontend
-  npm install
-  npm run test:run
-
-  También puedes ejecutar:
-
-  npm run test
-  npm run test:coverage
-  npm run lint
-
-  ———
-
-  ## Ejecución Manual sin Docker
-
-  La forma recomendada es usar Docker. Sin embargo, también se puede ejecutar manualmente.
-
-  ### Backend
-
-  cd backend
-  pip install -r requirements.txt
-  python manage.py migrate
-  python manage.py bootstrap_auth_users
-  python manage.py runserver 0.0.0.0:8000
-
-  ### Frontend
-
-  cd frontend
-  npm install
-  npm run dev
-
-  El frontend consume el backend en:
-
-  http://localhost:8000
-
-  Esta URL está configurada en:
-
-  frontend/src/api/axiosClient.js
-
-  ———
-
-  ## Archivos que No se Suben a GitHub
-
-  Por seguridad y buenas prácticas, no se versionan:
-
-  node_modules/
-  .env
-  *.env
-  db.sqlite3
-  *.xlsx
-  dist/
-  coverage/
-  .cache/
-
-  Esto significa que cada desarrollador debe instalar dependencias y crear su propio archivo .env.
-
-  ———
-
-  ## Notas para Entrega o Transferencia
-
-  Si se entrega este proyecto a otra persona o empresa, se recomienda enviar el repositorio de GitHub y no una carpeta
-  completa con dependencias locales.
-
-  No incluir:
-
-  - node_modules
-  - .env
-  - db.sqlite3 con datos reales
-  - Archivos Excel privados
-  - Carpetas de build o cobertura
-
-  La empresa o desarrollador receptor debe ejecutar:
-
-  git clone https://github.com/rurbinaa/Proyecto-Asignatura-Web.git
-  cd Proyecto-Asignatura-Web
-  cp backend/.env.example backend/.env
-  docker compose up --build
+```bash
+git clone https://github.com/rurbinaa/Proyecto-Asignatura-Web.git
+cd Proyecto-Asignatura-Web
+cp backend/.env.example backend/.env
+docker compose up --build
+```
