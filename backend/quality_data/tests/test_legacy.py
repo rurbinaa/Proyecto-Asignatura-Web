@@ -152,7 +152,8 @@ class SecondsGeneralModelTest(TestCase):
         seconds_general = SecondsGeneral.objects.create(
             date="2024-01-01",
             week=1,
-            line="11-12",
+            team=11,
+            line_code="12",
             customer="ACME",
             style="ST-001",
             produced=100,

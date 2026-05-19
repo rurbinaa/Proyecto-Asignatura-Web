@@ -31,6 +31,7 @@ class QualityQcFa(models.Model):
     week = models.IntegerField(db_index=True)
     customer = models.CharField(max_length=50, db_index=True)
     team = models.IntegerField(db_index=True)
+    line_code = models.CharField(max_length=20, null=True, blank=True, db_index=True)
     coord = models.CharField(max_length=50)
     date_2 = models.CharField(max_length=20, blank=True, default="")
     po = models.IntegerField()
@@ -50,7 +51,7 @@ class QualityQcFa(models.Model):
         indexes = [
             models.Index(fields=['week', 'team'], name='idx_qcfa_team_pof'),
             models.Index(
-                fields=['table_type', 'date_1', 'po', 'style', 'team', 'color'],
+                fields=['table_type', 'date_1', 'po', 'style', 'team', 'color', 'line_code'],
                 name='idx_qcfa_natural_lookup',
             ),
         ]
@@ -115,7 +116,8 @@ class SecondsGeneralDefectType(models.Model):
 class SecondsGeneral(models.Model):
     date = models.CharField(max_length=20, db_index=True)
     week = models.IntegerField(db_index=True)
-    line = models.CharField(max_length=50, blank=True, default="")
+    team = models.IntegerField(db_index=True, null=True, blank=True)
+    line_code = models.CharField(max_length=20, null=True, blank=True, db_index=True)
     customer = models.CharField(max_length=100, blank=True, default="")
     style = models.CharField(max_length=50, blank=True, default="")
     artcode = models.CharField(max_length=50, blank=True, default="")

@@ -2,7 +2,7 @@
   padding: 24px;
   background-color: var(--white);
   border-radius: 12px;
-  min-height: 100vh;
+  min-height: 100%;
   box-sizing: border-box;
   margin: 16px;
 }
@@ -59,6 +59,67 @@
   background-attachment: local;
 }
 
+.dashboard-section__title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #374151;
+  margin: 32px 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+/* ── QFA/QFC semantic grid sections ── */
+
+.dashboard-section--qfa-qfc {
+  margin-bottom: 32px;
+}
+
+.dashboard-section--qfa-qfc .dashboard-section__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="metric"],
+.dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="standard"] {
+  grid-column: span 1;
+}
+
+.dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="wide"],
+.dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="composed"] {
+  grid-column: span 2;
+}
+
+.dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="full"] {
+  grid-column: 1 / -1;
+}
+
+/* Tablet: 2-column grid (769px–1100px) */
+@media (max-width: 1100px) {
+  .dashboard-section--qfa-qfc .dashboard-section__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="wide"],
+  .dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="composed"],
+  .dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="full"] {
+    grid-column: span 2;
+  }
+}
+
+/* Mobile: single column stack (≤768px) */
+@media (max-width: 768px) {
+  .dashboard-section--qfa-qfc .dashboard-section__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="wide"],
+  .dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="composed"],
+  .dashboard-section--qfa-qfc .dashboard-section__item[data-layout-role="full"] {
+    grid-column: span 1;
+  }
+}
+
 /* Vertical spacing between cards inside each masonry column */
 .dashboard-masonry-column > * {
   margin-bottom: 16px;
@@ -77,6 +138,20 @@
 .line-chart-kpi > div,
 .donut-chart-kpi > div {
   overflow: visible;
+}
+
+/* ── Loading spinner ── */
+@keyframes kpi-spin {
+  to { transform: rotate(360deg); }
+}
+
+.kpi-loader {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e5e7eb;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: kpi-spin 1s linear infinite;
 }
 
 .null-message {
@@ -102,6 +177,24 @@
   line-height: 1.4;
 }
 
+.volume-card-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.volume-subcard {
+  min-width: 0;
+}
+
+.volume-subcard strong {
+  display: block;
+  margin-bottom: 12px;
+  color: #1f2937;
+  font-size: 15px;
+}
+
 /* Responsive: single column on mobile */
 @media (max-width: 768px) {
   .dashboard-view {
@@ -122,8 +215,83 @@
     grid-template-columns: 1fr;
   }
 
+  .volume-card-body {
+    grid-template-columns: 1fr;
+  }
+
   /* Ensure horizontal bar charts don't overflow in mobile */
   .bar-chart-kpi [class*="recharts-responsive-container"] {
     overflow-x: auto !important;
+  }
+}
+
+/* ── Container Dashboard 3-Column Layout ───────────────────────── */
+
+/* Top-level grid: 3 equal columns */
+.container-dashboard-layout {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* Span helpers */
+.container-dashboard-layout > .layout-full {
+  grid-column: 1 / -1;
+}
+
+.container-dashboard-layout > .layout-wide {
+  grid-column: span 2;
+}
+
+.container-dashboard-layout > .layout-left {
+  grid-column: 1;
+}
+
+.container-dashboard-layout > .layout-right-wide {
+  grid-column: 2 / 4;
+}
+
+.container-dashboard-layout > .layout-right-start {
+  grid-column: 2 / 4;
+}
+
+.container-dashboard-layout > .layout-tall {
+  grid-row: span 2;
+  align-self: stretch;
+}
+
+/* Summary sub-grid: 4 equal number cards */
+.container-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* Vertical gap between layout rows */
+.container-dashboard-layout > * {
+  margin-bottom: 8px;
+}
+
+/* Responsive: single column on mobile */
+@media (max-width: 768px) {
+  .container-dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .container-dashboard-layout > .layout-wide {
+    grid-column: span 1;
+  }
+
+  .container-dashboard-layout > .layout-left,
+  .container-dashboard-layout > .layout-right-wide,
+  .container-dashboard-layout > .layout-right-start,
+  .container-dashboard-layout > .layout-tall {
+    grid-column: span 1;
+    grid-row: span 1;
+  }
+
+  .container-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }

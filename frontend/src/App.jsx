@@ -4,7 +4,8 @@ import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
-import DashboardView from './views/DashboardView.jsx';
+import DashboardShell from './views/DashboardShell.jsx';
+import QualityReportsView from './views/QualityReportsView.jsx';
 import faviconUrl from './assets/RA-ICON_embed.svg?url';
 
 import { AuthProvider } from './contexts/AuthContext.jsx'; 
@@ -16,13 +17,12 @@ function AppContent() {
   const [activeView, setActiveView] = useState(() => {
     try {
       const stored = localStorage.getItem('rift-activeView');
-      return stored === 'excel' || stored === 'dashboard' ? stored : '';
+      return stored === 'excel' || stored === 'dashboard' || stored === 'reports' ? stored : '';
     } catch {
       return '';
     }
   });
   
-  const [volatileData, setVolatileData] = useState(null);
   const [volatileFile, setVolatileFile] = useState(null);
   const defaultView = 'excel';
   const resolvedActiveView = activeView || (isAuthenticated && user ? defaultView : '');
@@ -65,7 +65,7 @@ function AppContent() {
             setActiveView(view);
             localStorage.setItem('rift-activeView', view);
           }} 
-        setVolatileData={setVolatileData}
+        setVolatileFile={setVolatileFile}
         onLogout={handleLogout} 
       />
 
@@ -85,7 +85,11 @@ function AppContent() {
           )}
 
           {resolvedActiveView === 'dashboard' && (
-            <DashboardView volatileData={volatileData} volatileFile={volatileFile} />
+            <DashboardShell volatileFile={volatileFile} />
+          )}
+
+          {resolvedActiveView === 'reports' && (
+            <QualityReportsView />
           )}
 
         </main>

@@ -40,6 +40,12 @@ vi.mock('./Components/Sidebar.jsx', () => ({
       >
         Dashboard
       </button>
+      <button
+        data-testid="btn-view-reports"
+        onClick={() => setActiveView('reports')}
+      >
+        Reports
+      </button>
       <button data-testid="btn-logout" onClick={onLogout}>
         Logout
       </button>
@@ -72,9 +78,14 @@ vi.mock('./Components/ExcelUploader.jsx', () => ({
   ),
 }));
 
-vi.mock('./views/DashboardView.jsx', () => ({
-  default: () => <div data-testid="dashboard-view">DashboardView</div>,
+vi.mock('./views/QualityReportsView.jsx', () => ({
+  default: () => <div data-testid="quality-reports-view">QualityReportsView</div>,
 }));
+
+vi.mock('./views/DashboardShell.jsx', () => ({
+  default: () => <div data-testid="dashboard-shell">DashboardShell</div>,
+}));
+
 
 vi.mock('./assets/RA-ICON_embed.svg?url', () => ({
   default: '/mock-favicon.svg',
@@ -193,6 +204,41 @@ describe('App', () => {
         expect(localStorage.getItem('rift-activeView')).toBe('excel');
       });
     });
+
+    it('should switch to QualityReportsView when "reports" view is set', () => {
+      mockAuthState({
+        user: { id: 2, email: 'mgr@test.com', role: 'manager' },
+        isAuthenticated: true,
+      });
+
+      render(<App />);
+
+      expect(screen.queryByTestId('quality-reports-view')).not.toBeInTheDocument();
+
+      act(() => {
+        screen.getByTestId('btn-view-reports').click();
+      });
+
+      expect(screen.getByTestId('quality-reports-view')).toBeInTheDocument();
+    });
+
+    it('should hide ExcelUploader and DashboardShell when switching to reports view', () => {
+      mockAuthState({
+        user: { id: 2, email: 'mgr@test.com', role: 'manager' },
+        isAuthenticated: true,
+      });
+
+      render(<App />);
+
+      expect(screen.getByTestId('excel-uploader')).toBeInTheDocument();
+
+      act(() => {
+        screen.getByTestId('btn-view-reports').click();
+      });
+
+      expect(screen.getByTestId('quality-reports-view')).toBeInTheDocument();
+      expect(screen.queryByTestId('excel-uploader')).not.toBeInTheDocument();
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -243,7 +289,7 @@ describe('App', () => {
   // Volatile (fast-mode) dashboard
   // -----------------------------------------------------------------------
   describe('volatile dashboard flow', () => {
-    it('should switch from ExcelUploader to DashboardView when fast-mode is triggered', () => {
+    it('should switch from ExcelUploader to DashboardShell when fast-mode is triggered', () => {
       mockAuthState({
         user: { id: 2, email: 'mgr@test.com', role: 'manager' },
         isAuthenticated: true,
@@ -257,7 +303,7 @@ describe('App', () => {
         screen.getByTestId('btn-dashboard-fast').click();
       });
 
-      expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-shell')).toBeInTheDocument();
       expect(screen.queryByTestId('excel-uploader')).not.toBeInTheDocument();
     });
   });

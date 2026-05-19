@@ -12,7 +12,12 @@ from quality_data.models import (
     SecondsGeneralDefectType,
     SecondsGeneralDefect,
 )
-from excel_importer.date_utils import normalize_container_date, parse_date
+from excel_importer.date_utils import (
+    normalize_container_date,
+    parse_date,
+    canonicalize_qc_fa_date,
+    build_qc_fa_key,
+)
 
 
 def _normalize_defects_fields(defeacts_fields):
@@ -118,9 +123,270 @@ def load_and_clean(file_obj, remap_columns, numeric_columns, defeacts_fields, sh
         df.loc[normalized_pass_or_fail == "FAIL", "pass_or_fail"] = "REJECT"
 
     text_cols = df.select_dtypes(include=['object']).columns
-    df[text_cols] = df[text_cols].fillna("UNKNOWN")
+    df[text_cols] = df[text_cols].fillna("")
     
     return df
+
+QC_FA_CUSTOMER_VALID_TEAM_RANGE = range(1, 37)
+
+
+def parse_qfc_line(raw_value):
+    """
+    Parse a QFC Line value into a ``(team, line_code)`` tuple.
+
+    Business rules (mandatory by design):
+    - Simple numeric-only line (for example ``"35"``) → ``(35, None)``
+    - Valid dual label (for example ``"35-36"``) → ``(35, "35-36")``
+    - **Unspported composite**: any value that is not a simple line or
+      a well-formed dual label → ``(None, None)``
+
+    Composite requirements for dual labels:
+    - Exactly two segments separated by a single dash
+    - Both segments must be integers in 1..36
+    - Segments MUST be different
+
+    Edge cases handled:
+    - Integer input → treated as simple line
+    - Leading/trailing whitespace → stripped
+    - Trailing dash (``"35-"``) → invalid
+    - More than one dash (``"1-2-3"``) → invalid
+    - Non-numeric segments (``"X-36"``) → invalid
+    - Zero (``"0"``) → invalid
+    - 60 is valid as a simple line; downstream 60→6 sanitization
+      runs separately after this parser
+
+    Returns:
+        tuple: ``(team_int, line_code_str_or_None)``.
+        Returns ``(None, None)`` when the value cannot be parsed as a
+        valid line identity.
+    """
+    # ── Handle integer (or float-as-int) input directly ──
+    if isinstance(raw_value, (int, float)):
+        try:
+            team_val = int(raw_value)
+        except (ValueError, TypeError):
+            return None, None
+        if team_val in QC_FA_CUSTOMER_VALID_TEAM_RANGE or team_val == 60:
+            return team_val, None
+        return None, None
+
+    # ── Handle string input ──
+    if not isinstance(raw_value, str):
+        return None, None
+
+    stripped = raw_value.strip()
+
+    # Empty string → invalid
+    if not stripped:
+        return None, None
+
+    # Count dashes to detect composite
+    dash_count = stripped.count("-")
+
+    if dash_count == 0:
+        # Simple numeric line
+        try:
+            team_val = int(stripped)
+        except ValueError:
+            return None, None
+        if team_val in QC_FA_CUSTOMER_VALID_TEAM_RANGE or team_val == 60:
+            return team_val, None
+        return None, None
+
+    if dash_count == 1:
+        # Dual-label candidate
+        parts = stripped.split("-", 1)
+
+        # Reject trailing/leading dash: empty segment
+        left = parts[0].strip()
+        right = parts[1].strip()
+        if not left or not right:
+            return None, None
+
+        try:
+            left_val = int(left)
+            right_val = int(right)
+        except ValueError:
+            return None, None
+
+        # Both segments must be in valid range (1..36) — NOT 60
+        if left_val not in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            return None, None
+        if right_val not in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            return None, None
+
+        # Segments must differ (reject "35-35")
+        if left_val == right_val:
+            return None, None
+
+        # Valid dual label — normalize to canonical form (no extra spaces)
+        canonical_label = f"{left_val}-{right_val}"
+        return left_val, canonical_label
+
+    # More than one dash → invalid
+    return None, None
+
+
+def normalize_qc_fa_customer_rows(rows):
+    """
+    Normalize QC FA Customer ``Line → team + line_code`` at the import boundary.
+
+    Uses :func:`parse_qfc_line` to split the raw ``Line`` value into
+    ``(team, line_code)``. After parsing, the classic 60→6 sanitization
+    is applied to the ``team`` portion.
+
+    Business rules:
+    - Simple numeric line (``"35"``) → ``team=35, line_code=None``
+    - Dual label (``"35-36"``) → ``team=35, line_code="35-36"``
+    - Valid ranges: ``1..36`` (and ``60`` which gets corrected to ``6``)
+    - Invalid (non-numeric, 0, composite with non-numeric segment, etc.) → rejected
+
+    The function does NOT mutate the input rows — it creates copies.
+
+    Returns:
+        tuple: (normalized_rows, warnings_dict)
+            warnings_dict has keys:
+                corrected (int): number of rows with 60→6 fix
+                rejected (int): number of rows removed as invalid
+                message (str): human-readable summary (empty if no events)
+    """
+    if not rows:
+        return [], {"corrected": 0, "rejected": 0, "message": ""}
+
+    normalized_rows = []
+    corrected_count = 0
+    rejected_count = 0
+
+    for row in rows:
+        normalized_row = dict(row)
+        raw_team = normalized_row.get("team", None)
+
+        # Parse the raw line value using the new dual-line-aware parser
+        parsed_team, parsed_line_code = parse_qfc_line(raw_team)
+
+        # Reject rows where parsing failed
+        if parsed_team is None:
+            rejected_count += 1
+            continue
+
+        # Classic 60→6 sanitization (applied AFTER parsing)
+        if parsed_team == 60:
+            normalized_row["team"] = 6
+            corrected_count += 1
+        elif parsed_team in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            normalized_row["team"] = parsed_team
+        else:
+            # Out of range after parsing (shouldn't happen with the parser validations)
+            rejected_count += 1
+            continue
+
+        # Set line_code from parsed value (None for simple lines, label for dual)
+        normalized_row["line_code"] = parsed_line_code
+
+        normalized_rows.append(normalized_row)
+
+    # Build human-readable message
+    parts = []
+    if corrected_count:
+        s = "s" if corrected_count != 1 else ""
+        parts.append(f"corrected {corrected_count} line value{s} (60→6)")
+    if rejected_count:
+        s = "s" if rejected_count != 1 else ""
+        parts.append(f"rejected {rejected_count} invalid row{s} (0/out of range/invalid composite)")
+
+    message = ""
+    if parts:
+        message = f"QC FA Customer: {' and '.join(parts)}."
+
+    warnings = {
+        "corrected": corrected_count,
+        "rejected": rejected_count,
+        "message": message,
+    }
+
+    return normalized_rows, warnings
+
+
+def normalize_seconds_general_rows(rows):
+    """
+    Normalize Seconds General raw rows, parsing ``team`` and ``line_code``
+    at the import boundary.
+
+    Uses :func:`parse_qfc_line` to split the raw team value into
+    ``(team, line_code)``. After parsing, the classic 60→6 sanitization
+    is applied to the ``team`` portion.
+
+    Business rules:
+    - Simple numeric line (``"35"``) → ``team=35, line_code=None``
+    - Dual label (``"35-36"``) → ``team=35, line_code="35-36"``
+    - Valid ranges: ``1..36`` (and ``60`` which gets corrected to ``6``)
+    - Invalid (non-numeric, 0, composite with non-numeric segment, etc.) → rejected
+
+    The function does NOT mutate the input rows — it creates copies.
+
+    Returns:
+        tuple: (normalized_rows, warnings_dict)
+            warnings_dict has keys:
+                corrected (int): number of rows with 60→6 fix
+                rejected (int): number of rows removed as invalid
+                message (str): human-readable summary (empty if no events)
+    """
+    if not rows:
+        return [], {"corrected": 0, "rejected": 0, "message": ""}
+
+    normalized_rows = []
+    corrected_count = 0
+    rejected_count = 0
+
+    for row in rows:
+        normalized_row = dict(row)
+        raw_team = normalized_row.get("team", None)
+
+        # Parse the raw line value using the existing dual-line-aware parser
+        parsed_team, parsed_line_code = parse_qfc_line(raw_team)
+
+        # Reject rows where parsing failed
+        if parsed_team is None:
+            rejected_count += 1
+            continue
+
+        # Classic 60→6 sanitization (applied AFTER parsing)
+        if parsed_team == 60:
+            normalized_row["team"] = 6
+            corrected_count += 1
+        elif parsed_team in QC_FA_CUSTOMER_VALID_TEAM_RANGE:
+            normalized_row["team"] = parsed_team
+        else:
+            # Out of range after parsing (shouldn't happen with the parser validations)
+            rejected_count += 1
+            continue
+
+        # Set line_code from parsed value (None for simple lines, label for dual)
+        normalized_row["line_code"] = parsed_line_code
+
+        normalized_rows.append(normalized_row)
+
+    # Build human-readable message
+    parts = []
+    if corrected_count:
+        s = "s" if corrected_count != 1 else ""
+        parts.append(f"corrected {corrected_count} line value{s} (60→6)")
+    if rejected_count:
+        s = "s" if rejected_count != 1 else ""
+        parts.append(f"rejected {rejected_count} invalid row{s} (0/out of range/invalid composite)")
+
+    message = ""
+    if parts:
+        message = f"Seconds General: {' and '.join(parts)}."
+
+    warnings = {
+        "corrected": corrected_count,
+        "rejected": rejected_count,
+        "message": message,
+    }
+
+    return normalized_rows, warnings
+
 
 def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table_type,
                 defects_only=False, color_map=None):
@@ -141,8 +407,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     # For defects_only mode, query existing parents instead of creating new ones
     if defects_only:
-        _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=color_map)
-        return
+        return _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=color_map)
 
     quality_instances = []
 
@@ -157,7 +422,7 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
             color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
 
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
         production_data['table_type'] = table_type
         production_data['color'] = color_obj
         production_data = _truncate_charfields(QualityQcFa, production_data)
@@ -174,7 +439,12 @@ def bulk_insert(df, numeric_columns, not_numeric_columns, defeacts_fields, table
 
     for (_, row), quality_instance in zip(df.iterrows(), created_quality_instances):
         for defect_field in defeacts_fields:
-            amount = int(row.get(defect_field, 0) or 0)
+            raw = row.get(defect_field, 0)
+            amount = 0
+            try:
+                amount = int(raw) if pd.notna(raw) else 0
+            except (ValueError, TypeError):
+                amount = 0
 
             if amount <= 0:
                 continue
@@ -200,78 +470,117 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     Create only InspectionDefect records, querying existing QualityQcFa parents.
 
     Used when QualityQcFa records were already created by apply_timewindow.
-    Parents are loaded in a single batch query by date range and table_type,
-    indexed in memory by natural key, eliminating N+1 per-row DB queries.
+    Parents are loaded in a single batch query by table_type, indexed in memory
+    by the shared QC FA natural key via :func:`build_qc_fa_key`, eliminating
+    N+1 per-row DB queries.
+
+    Returns a stats dict with:
+        created_defects, matched_parents, unmatched_defect_rows,
+        invalid_date_rows, missing_color_rows.
 
     Args:
         color_map: Optional dict mapping color name → Color instance. When provided,
             avoids N+1 Color.objects.filter() queries per row.
     """
-    if df.empty:
-        return
+    stats = {
+        "created_defects": 0,
+        "matched_parents": 0,
+        "unmatched_defect_rows": 0,
+        "unmatched_row_details": [],  # list of {"key": tuple}
+        "invalid_date_rows": 0,
+        "missing_color_rows": 0,
+    }
 
+    if df.empty:
+        return stats
+
+    # ── Resolve DefectType records, auto-creating any that are missing ──
+    # Without this, the sync silently skips defects when DefectType records
+    # haven't been pre-seeded (e.g. fresh database, first-time import).
     defect_types = DefectType.objects.filter(name__in=defeacts_fields)
+    existing_names = set(defect_types.values_list('name', flat=True))
+    missing_names = [n for n in defeacts_fields if n not in existing_names]
+    if missing_names:
+        DefectType.objects.bulk_create(
+            [DefectType(name=n, is_active=True) for n in missing_names],
+            ignore_conflicts=True,
+        )
+        # Re-fetch to get PKs for the newly created DefectType records
+        defect_types = DefectType.objects.filter(name__in=defeacts_fields)
     defect_type_map = {defect.name: defect for defect in defect_types}
 
-    # ── Batch-load ALL matching QualityQcFa parents in 1 query ──
-    # Extract unique dates from the DataFrame to scope the batch load.
-    unique_dates = set()
-    for _, row in df.iterrows():
-        d = parse_date(row.get('date_1', ''))
-        if d:
-            unique_dates.add(d)
-
-    if not unique_dates:
-        return
-
-    # Load all parents for this table_type and date range in a single query.
-    # select_related('color') avoids N+1 when building the in-memory index.
+    # ── Batch-load ALL QualityQcFa parents for this table_type ──
+    # Loading all parents (scoped by table_type) ensures we match legacy rows
+    # with non-ISO dates that would be missed by an exact date_1__in filter.
     parents = QualityQcFa.objects.filter(
         table_type=table_type,
-        date_1__in=unique_dates,
     ).select_related('color')
 
-    # Build in-memory index by natural key: (date, po, style, team, color_name)
+    # Build in-memory index using the shared QC FA natural-key builder.
+    # This ensures the same canonical-date logic is used for both parent
+    # creation (sync_service) and defect matching (handler_service).
     parent_index = {}
     for parent in parents:
-        color_name = parent.color.name if parent.color_id else ""
-        key = (
-            parse_date(parent.date_1),
-            parent.po,
-            parent.style.strip() if parent.style else "",
-            parent.team,
-            color_name,
-        )
+        parent_row = {
+            'date_1': parent.date_1,
+            'po': parent.po,
+            'style': parent.style or "",
+            'team': parent.team,
+            'color': parent.color.name if parent.color_id else "",
+            'table_type': parent.table_type,
+            'line_code': parent.line_code,
+        }
+        key = build_qc_fa_key(parent_row, table_type=table_type)
         parent_index[key] = parent
 
     inspection_defects = []
+    matched_parent_ids = set()
 
     for _, row in df.iterrows():
-        # Resolve color — use batch map if available, otherwise skip
+        # ── Skip rows without any positive defect amount ──
+        raw_fields = {}
+        for f in defeacts_fields:
+            raw_val = row.get(f, 0)
+            if pd.notna(raw_val):
+                try:
+                    raw_fields[f] = int(raw_val)
+                except (ValueError, TypeError):
+                    raw_fields[f] = 0
+            else:
+                raw_fields[f] = 0
+
+        has_defects = any(v > 0 for v in raw_fields.values())
+        if not has_defects:
+            continue
+
+        # ── Resolve color ──
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
             color_obj = color_map.get(color_name)
         else:
             color_obj = Color.objects.filter(name=color_name).first()
         if color_obj is None:
+            stats["missing_color_rows"] += 1
             continue
 
-        # Build natural key tuple for in-memory lookup
-        date_val = parse_date(row.get('date_1', ''))
-        po_val = int(row.get('po', 0)) if row.get('po') else 0
-        style_val = str(row.get('style', '')).strip()
-        team_val = int(row.get('team', 0)) if row.get('team') else 0
-
-        if not date_val or not style_val:
+        # ── Validate canonical date ──
+        canonical_date = canonicalize_qc_fa_date(row.get('date_1', ''))
+        if canonical_date is None:
+            stats["invalid_date_rows"] += 1
             continue
 
-        key = (date_val, po_val, style_val, team_val, color_obj.name)
+        # ── Match parent via shared QC FA natural key ──
+        key = build_qc_fa_key(row, table_type=table_type)
         quality_instance = parent_index.get(key)
         if quality_instance is None:
+            stats["unmatched_defect_rows"] += 1
+            stats["unmatched_row_details"].append({"key": key})
             continue
 
+        matched_parent_ids.add(quality_instance.id)
+
         for defect_field in defeacts_fields:
-            amount = int(row.get(defect_field, 0) or 0)
+            amount = raw_fields.get(defect_field, 0)
             if amount <= 0:
                 continue
 
@@ -290,6 +599,11 @@ def _bulk_insert_defects_only(df, defeacts_fields, table_type, color_map=None):
     if inspection_defects:
         InspectionDefect.objects.bulk_create(inspection_defects, batch_size=2000, ignore_conflicts=True)
 
+    stats["created_defects"] = len(inspection_defects)
+    stats["matched_parents"] = len(matched_parent_ids)
+
+    return stats
+
 
 def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):
     if df.empty:
@@ -302,13 +616,28 @@ def bulk_insert_seconds_a4(df, numeric_columns, not_numeric_columns):
         color_obj, _ = Color.objects.get_or_create(name=color_name, defaults={"is_active": True})
 
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
         production_data['color'] = color_obj
         production_data = _truncate_charfields(SecondsA4, production_data)
 
         instances.append(SecondsA4(**production_data))
 
     SecondsA4.objects.bulk_create(instances, batch_size=1000)
+
+
+def _normalize_nullable_fields(production_data):
+    """
+    Coerce NaN/blank values in nullable dual-line fields to None.
+    
+    DataFrame conversion can reintroduce NaN for missing cells. These
+    must be normalized back to None before model construction to prevent
+    Django from storing "nan"/"NaN" strings or crashing on IntegerField.
+    """
+    for field in ("team", "line_code"):
+        val = production_data.get(field)
+        if val is None or pd.isna(val) or val == "":
+            production_data[field] = None
+    return production_data
 
 
 def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
@@ -320,7 +649,8 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
     instances = []
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
+        production_data = _normalize_nullable_fields(production_data)
         production_data = _truncate_charfields(SecondsGeneral, production_data)
         instances.append(SecondsGeneral(**production_data))
 
@@ -338,13 +668,21 @@ def bulk_insert_seconds_general(df, numeric_columns, not_numeric_columns):
         week__in=[w for _, w in date_week_pairs],
     ).order_by('pk')
 
+    def _sg_safe_int(val):
+        if pd.notna(val):
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return 0
+        return 0
+
     defects_to_create = []
     for idx, (_, row) in enumerate(df.iterrows()):
         if idx >= len(created_records):
             break
         sg = created_records[idx]
         for defect_field in defect_type_names:
-            amount = int(row.get(defect_field, 0) or 0)
+            amount = _sg_safe_int(row.get(defect_field))
             if amount <= 0:
                 continue
             defect_type = defect_type_map.get(defect_field)
@@ -382,7 +720,11 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
 
     for _, row in df.iterrows():
         production_data = {field: row.get(field, 0) for field in numeric_columns}
-        production_data.update({field: row.get(field, "UNKNOWN") for field in not_numeric_columns})
+        production_data.update({field: row.get(field, "") for field in not_numeric_columns})
+        # Normalize percentage values that Excel stored as fractions
+        for pct_field in ('percentage_pass', 'percentage_reject'):
+            if pct_field in production_data:
+                production_data[pct_field] = _normalize_percentage(production_data[pct_field])
         container_number = row.get('container_number')
         if pd.notna(container_number):
             container_number = int(container_number)
@@ -428,7 +770,13 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
             continue
 
         for defect_field in defeacts_fields:
-            amount = int(row.get(defect_field, 0) or 0)
+            raw = row.get(defect_field, 0)
+            amount = 0
+            if pd.notna(raw):
+                try:
+                    amount = int(raw)
+                except (ValueError, TypeError):
+                    amount = 0
 
             if amount <= 0:
                 continue
@@ -453,9 +801,182 @@ def bulk_insert_container(df, numeric_columns, not_numeric_columns, defeacts_fie
         )
 
 
+def _normalize_percentage(value):
+    """
+    Convert a percentage value from fractional (0-1) to 0-100 scale if stored
+    as a decimal by Excel (e.g. 97% stored as 0.97). Values already on the
+    0-100 scale (value > 1) or unsupported types are returned unchanged.
+
+    Args:
+        value: The raw percentage value (int, float, or None).
+
+    Returns:
+        The normalized value on 0-100 scale, or None unchanged.
+    """
+    if value is not None and isinstance(value, (int, float)) and 0 < value <= 1:
+        return round(value * 100, 2)
+    return value
+
+
 def _resolve_container_date(raw_date, existing_date):
     """Preserve existing non-null date when import date is empty/invalid."""
     normalized = normalize_container_date(raw_date)
     if normalized is not None:
         return normalized
     return existing_date
+
+
+_CONTAINER_NUMERIC_COUNT_FIELDS = {
+    "total_palette",
+    "total_palette_pass",
+    "total_palette_rejected",
+    "transfer_of_container",
+}
+
+_CONTAINER_PERCENTAGE_FIELDS = {"percentage_pass", "percentage_reject"}
+
+_CONTAINER_DEFECT_FIELDS = {
+    "dirt_label", "dirt_container", "dirt_cartoons", "container_holes",
+    "writte_mark_on_label", "written_mark_on_cartoon", "container_poor_close",
+    "boxes_poor_close", "printing_issues_label", "misaligned_label",
+    "crushed_corners", "cartoons_holes", "warped_boxes", "defects_label",
+    "total_defects",
+}
+
+
+def _coerce_numeric(value):
+    """
+    Convert a value to float, returning None for non-convertible inputs.
+    Handles NaN, None, strings, and numeric types.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        if pd.isna(value):
+            return None
+        return float(value)
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def normalize_container_rows(rows):
+    """
+    Normalize container rows at the import boundary before KPI computation.
+
+    Enforces the container contract:
+    - ``percentage_pass`` / ``percentage_reject``: NaN → None, fractional → 0-100 scale
+    - ``total_palette``, ``total_palette_pass``, ``total_palette_rejected``,
+      ``transfer_of_container``: NaN/None → 0
+    - Defect fields: NaN/None → 0
+    - ``container_number``: NaN/None/invalid → row dropped with warning
+    - ``customer``: None → empty string
+    - ``date``: invalid → None, valid ISO dates preserved
+    - Other fields pass through unchanged
+
+    The function does NOT mutate input rows — it creates copies.
+
+    Returns:
+        tuple: (normalized_rows, warnings_dict)
+            warnings_dict has keys:
+                corrected (int): number of percentage values rescaled (fractional→0-100)
+                rejected (int): number of rows removed as invalid
+                message (str): human-readable summary (empty if no events)
+    """
+    if not rows:
+        return [], {"corrected": 0, "rejected": 0, "message": ""}
+
+    normalized_rows = []
+    corrected_count = 0
+    rejected_count = 0
+
+    for row in rows:
+        normalized_row = dict(row)
+
+        # ── Validate container_number — drop if invalid ──
+        raw_cn = normalized_row.get("container_number")
+        cn_numeric = _coerce_numeric(raw_cn)
+        if cn_numeric is None:
+            rejected_count += 1
+            continue
+        try:
+            normalized_row["container_number"] = int(cn_numeric)
+        except (ValueError, TypeError):
+            rejected_count += 1
+            continue
+
+        # ── Count fields: NaN/None → 0 ──
+        for field in _CONTAINER_NUMERIC_COUNT_FIELDS:
+            raw = normalized_row.get(field)
+            coerced = _coerce_numeric(raw)
+            if coerced is None:
+                normalized_row[field] = 0
+            else:
+                normalized_row[field] = int(coerced)
+
+        # ── Percentage fields: NaN → None, fractional → 0-100 ──
+        for field in _CONTAINER_PERCENTAGE_FIELDS:
+            raw = normalized_row.get(field)
+            coerced = _coerce_numeric(raw)
+            if coerced is None:
+                normalized_row[field] = None
+            else:
+                # Normalize fractional (0-1) to 0-100 scale
+                if 0 < coerced <= 1:
+                    normalized_row[field] = round(coerced * 100, 2)
+                    corrected_count += 1
+                else:
+                    normalized_row[field] = round(coerced, 2)
+
+        # ── Defect fields: NaN/None → 0 ──
+        for field in _CONTAINER_DEFECT_FIELDS:
+            raw = normalized_row.get(field)
+            coerced = _coerce_numeric(raw)
+            if coerced is None:
+                normalized_row[field] = 0
+            else:
+                normalized_row[field] = int(coerced)
+
+        # ── Customer: None → empty string ──
+        customer = normalized_row.get("customer")
+        if customer is None or (isinstance(customer, float) and pd.isna(customer)):
+            normalized_row["customer"] = ""
+
+        # ── Date: invalid → None ──
+        raw_date = normalized_row.get("date")
+        if raw_date is not None:
+            parsed = normalize_container_date(raw_date)
+            if parsed is None:
+                normalized_row["date"] = None
+            else:
+                # Convert back to ISO string for volatile service
+                normalized_row["date"] = parsed.isoformat()
+
+        normalized_rows.append(normalized_row)
+
+    # Build human-readable message
+    parts = []
+    if corrected_count:
+        s = "s" if corrected_count != 1 else ""
+        parts.append(f"corrected {corrected_count} percentage value{s} (fraction→scale)")
+    if rejected_count:
+        s = "s" if rejected_count != 1 else ""
+        parts.append(f"rejected {rejected_count} invalid row{s} (bad container_number)")
+
+    message = ""
+    if parts:
+        message = f"Container: {' and '.join(parts)}."
+
+    warnings = {
+        "corrected": corrected_count,
+        "rejected": rejected_count,
+        "message": message,
+    }
+
+    return normalized_rows, warnings

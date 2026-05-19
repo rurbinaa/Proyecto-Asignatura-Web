@@ -1,5 +1,7 @@
-export default function KpiNumberCard({ label, value, unit = '', title }) {
-  const displayValue = typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '—';
+export default function KpiNumberCard({ label, value, unit = '', title, decimals = 2 }) {
+  const displayValue = typeof value === 'number' && Number.isFinite(value)
+    ? value.toFixed(decimals)
+    : '—';
 
   return (
     <div style={{

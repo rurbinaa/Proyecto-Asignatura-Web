@@ -75,7 +75,8 @@ describe('DonutChartKpi', () => {
       const formatter = tooltipCalls[0].formatter;
       expect(formatter).toBeDefined();
       const result = formatter(10, 'ignored', { payload: { name: 'TestName' } });
-      expect(result).toEqual([10, 'TestName']);
+      // Default formatter includes percentage: "value · percentage"
+      expect(result).toEqual(['10 · 100.0%', 'TestName']);
     });
 
     it('uses custom tooltipFormatter when provided', () => {
@@ -122,7 +123,8 @@ describe('DonutChartKpi', () => {
       const legendFormatter = legendCalls[0].formatter;
       const result = legendFormatter('A', { payload: { value: 42 } });
       expect(valueFormatter).toHaveBeenCalledWith(42);
-      expect(result).toBe('A (42%)');
+      // Legend includes percentage: "name (value · percentage)"
+      expect(result).toBe('A (42% · 100.0%)');
     });
   });
 
@@ -202,12 +204,12 @@ describe('DonutChartKpi', () => {
       expect(labelFn({ name: 'B', percent: 0.05 })).toBe('');
     });
 
-    it('returns empty label in monosegment even when showSliceLabels is true', () => {
+    it('shows label in monosegment when showSliceLabels is true', () => {
       const data = [{ name: 'A', value: 100 }];
       render(<DonutChartKpi data={data} showSliceLabels />);
       expect(pieCalls.length).toBeGreaterThan(0);
       const labelFn = pieCalls[0].label;
-      expect(labelFn({ name: 'A', percent: 1.0 })).toBe('');
+      expect(labelFn({ name: 'A', percent: 1.0 })).toBe('A: 100.0%');
     });
   });
 
@@ -223,11 +225,57 @@ describe('DonutChartKpi', () => {
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
     });
 
-    it('handles items with missing value gracefully', () => {
+    it('filters out items with missing or zero value', () => {
       render(<DonutChartKpi data={[{ name: 'A' }, { name: 'B', value: 10 }]} />);
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
       const cells = screen.getByTestId('pie').querySelectorAll('[data-testid="cell"]');
-      // Both entries generate cells
+      // Entry with no value is filtered out, only entry with value=10 remains
+      expect(cells.length).toBe(1);
+    });
+  });
+
+  describe('Other slice grouping', () => {
+    it('RED - shows Other slice name and value in legend', () => {
+      const data = [
+        { name: 'Cat-A', value: 100 },
+        { name: 'Other', value: 85, groupedItems: [{ name: 'Cat-G', value: 40 }, { name: 'Cat-H', value: 45 }] },
+      ];
+      render(<DonutChartKpi data={data} valueFormatter={(v) => `${v} pcs`} />);
+      // Legend should show "Other (85 pcs)"
+      expect(legendCalls.length).toBeGreaterThan(0);
+      const legendFormatter = legendCalls[legendCalls.length - 1].formatter;
+      const result = legendFormatter('Other', { payload: { name: 'Other', value: 85, groupedItems: data[1].groupedItems } });
+      // Legend includes percentage: "name (value · percentage)"
+      // 85 / (100 + 85) = 45.9%
+      expect(result).toBe('Other (85 pcs · 45.9%)');
+    });
+
+    it('RED - Other slice tooltip shows grouped member details', () => {
+      const data = [
+        { name: 'Cat-A', value: 100 },
+        { name: 'Other', value: 60, groupedItems: [{ name: 'Cat-B', value: 35 }, { name: 'Cat-C', value: 25 }] },
+      ];
+      render(<DonutChartKpi data={data} valueFormatter={(v) => `${v} total`} />);
+      expect(tooltipCalls.length).toBeGreaterThan(0);
+      const formatter = tooltipCalls[tooltipCalls.length - 1].formatter;
+      // Default tooltip formatter uses valueFormatter and includes percentage
+      const otherPayload = { name: 'Other', value: 60, groupedItems: data[1].groupedItems };
+      const result = formatter(60, 'Other', { payload: otherPayload });
+      // Should show value, percentage, and name
+      // 60 / (100 + 60) = 37.5%
+      expect(result[0]).toBe('60 total · 37.5%');
+      expect(result[1]).toBe('Other');
+    });
+
+    it('RED - renders correct number of cells for data with Other slice', () => {
+      const data = [
+        { name: 'A', value: 100 },
+        { name: 'B', value: 80 },
+        { name: 'Other', value: 30, groupedItems: [{ name: 'C', value: 30 }] },
+      ];
+      const { container } = render(<DonutChartKpi data={data} />);
+      const cells = container.querySelectorAll('[data-testid="cell"]');
+      expect(cells.length).toBe(3);
     });
   });
 });

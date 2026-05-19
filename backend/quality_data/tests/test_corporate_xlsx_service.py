@@ -174,7 +174,8 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         seconds_general = SecondsGeneral.objects.create(
             date="2025-02-20",
             week=8,
-            line="11-12",
+            team=11,
+            line_code="11-12",
             customer="ACME",
             style="ST-001",
         )
@@ -193,18 +194,19 @@ class CorporateXlsxQcFaExportContractTest(TestCase):
         )
         row = self.service._queryset_to_rows(SecondsGeneral.objects.filter(pk=seconds_general.pk), dataset_config)[0]
 
-        self.assertEqual(len(row), 38)
+        self.assertEqual(len(row), 39)
         self.assertEqual(row[0], "2025-02-20")
         self.assertEqual(row[1], 8)
-        self.assertEqual(row[2], "11-12")
-        self.assertEqual(row[3], "ACME")
-        self.assertEqual(row[4], "ST-001")
-        self.assertEqual(row[32], 4)
-        self.assertEqual(row[33], 2)
-        self.assertEqual(row[34], 1)
-        self.assertEqual(row[35], 3)
-        self.assertEqual(row[36], 5)
-        self.assertEqual(row[37], 15)
+        self.assertEqual(row[2], 11)       # team
+        self.assertEqual(row[3], "11-12")  # line_code
+        self.assertEqual(row[4], "ACME")
+        self.assertEqual(row[5], "ST-001")
+        self.assertEqual(row[33], 4)       # corrido_2
+        self.assertEqual(row[34], 2)       # barre
+        self.assertEqual(row[35], 1)       # otros_3
+        self.assertEqual(row[36], 3)       # degradacion
+        self.assertEqual(row[37], 5)       # bordados
+        self.assertEqual(row[38], 15)      # total_de_tela
 
     def test_container_row_serializes_defects_from_related_table_in_importer_order(self):
         container = Container.objects.create(
