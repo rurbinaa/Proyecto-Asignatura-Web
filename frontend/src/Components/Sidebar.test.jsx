@@ -11,7 +11,7 @@ describe('Sidebar', () => {
     userRole: 'manager',
     activeView: 'dashboard',
     setActiveView: vi.fn(),
-    setVolatileData: vi.fn(),
+    setVolatileFile: vi.fn(),
     onLogout: vi.fn(),
   };
 
@@ -38,23 +38,6 @@ describe('Sidebar', () => {
     });
   });
 
-  describe('role-based navigation - operator', () => {
-    it('shows Touch Capture button for operator role', () => {
-      render(<Sidebar {...defaultProps} userRole="operator" />);
-      expect(screen.getByText('Touch Capture')).toBeInTheDocument();
-    });
-
-    it('does NOT show Import Batches for operator role', () => {
-      render(<Sidebar {...defaultProps} userRole="operator" />);
-      expect(screen.queryByText('Import Batches')).not.toBeInTheDocument();
-    });
-
-    it('does NOT show Dashboard for operator role', () => {
-      render(<Sidebar {...defaultProps} userRole="operator" />);
-      expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
-    });
-  });
-
   describe('role-based navigation - manager', () => {
     it('shows Import Batches button for manager role', () => {
       render(<Sidebar {...defaultProps} userRole="manager" />);
@@ -66,7 +49,12 @@ describe('Sidebar', () => {
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
     });
 
-    it('does NOT show Touch Capture for manager role', () => {
+    it('shows Quality Reports button for manager role', () => {
+      render(<Sidebar {...defaultProps} userRole="manager" />);
+      expect(screen.getByText('Quality Reports')).toBeInTheDocument();
+    });
+
+    it('does NOT show Touch Capture action anymore', () => {
       render(<Sidebar {...defaultProps} userRole="manager" />);
       expect(screen.queryByText('Touch Capture')).not.toBeInTheDocument();
     });
@@ -83,6 +71,12 @@ describe('Sidebar', () => {
       render(<Sidebar {...defaultProps} userRole="manager" activeView="excel" />);
       const excelBtn = screen.getByText('Import Batches').closest('button');
       expect(excelBtn.classList.contains('active')).toBe(true);
+    });
+
+    it('adds active class to the activeView button (reports)', () => {
+      render(<Sidebar {...defaultProps} userRole="manager" activeView="reports" />);
+      const reportsBtn = screen.getByText('Quality Reports').closest('button');
+      expect(reportsBtn.classList.contains('active')).toBe(true);
     });
 
     it('removes active class from other buttons', () => {
@@ -106,45 +100,33 @@ describe('Sidebar', () => {
       expect(setActiveView).toHaveBeenCalledWith('excel');
     });
 
-    it('calls setActiveView with "capture" when Touch Capture is clicked', () => {
+    it('calls setActiveView with "dashboard" and clears fast mode when Dashboard is clicked', () => {
       const setActiveView = vi.fn();
-      render(
-        <Sidebar
-          {...defaultProps}
-          userRole="operator"
-          setActiveView={setActiveView}
-        />,
-      );
-      fireEvent.click(screen.getByText('Touch Capture'));
-      expect(setActiveView).toHaveBeenCalledWith('capture');
-    });
-
-    it('calls setActiveView with "dashboard" when Dashboard is clicked', () => {
-      const setActiveView = vi.fn();
-      const setVolatileData = vi.fn();
+      const setVolatileFile = vi.fn();
       render(
         <Sidebar
           {...defaultProps}
           userRole="manager"
           setActiveView={setActiveView}
-          setVolatileData={setVolatileData}
+          setVolatileFile={setVolatileFile}
         />,
       );
       fireEvent.click(screen.getByText('Dashboard'));
       expect(setActiveView).toHaveBeenCalledWith('dashboard');
+      expect(setVolatileFile).toHaveBeenCalledWith(null);
     });
 
-    it('calls setVolatileData with null when Dashboard is clicked', () => {
-      const setVolatileData = vi.fn();
+    it('calls setActiveView with "reports" when Quality Reports is clicked', () => {
+      const setActiveView = vi.fn();
       render(
         <Sidebar
           {...defaultProps}
           userRole="manager"
-          setVolatileData={setVolatileData}
+          setActiveView={setActiveView}
         />,
       );
-      fireEvent.click(screen.getByText('Dashboard'));
-      expect(setVolatileData).toHaveBeenCalledWith(null);
+      fireEvent.click(screen.getByText('Quality Reports'));
+      expect(setActiveView).toHaveBeenCalledWith('reports');
     });
   });
 
@@ -211,21 +193,25 @@ describe('Sidebar', () => {
       const collapseBtn = container.querySelector('.top-toggle');
       fireEvent.click(collapseBtn);
       const navButtons = container.querySelectorAll('.sidebar-nav-item');
-      // Find the Dashboard button (second nav item for manager)
+      expect(navButtons.length).toBeGreaterThanOrEqual(3);
+      // Dashboard button
       const dashboardBtn = navButtons[1];
       expect(dashboardBtn).toHaveAttribute('title', 'Dashboard');
+      // Quality Reports button
+      const reportsBtn = navButtons[2];
+      expect(reportsBtn).toHaveAttribute('title', 'Quality Reports');
     });
   });
 
-  describe('setVolatileData optional', () => {
-    it('handles undefined setVolatileData without crashing', () => {
+  describe('setVolatileFile optional', () => {
+    it('handles undefined setVolatileFile without crashing', () => {
       render(
         <Sidebar
           userRole="manager"
           activeView="excel"
           setActiveView={vi.fn()}
           onLogout={vi.fn()}
-        // setVolatileData not provided
+        // setVolatileFile not provided
         />,
       );
       fireEvent.click(screen.getByText('Dashboard'));

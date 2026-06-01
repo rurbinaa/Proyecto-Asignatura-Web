@@ -205,3 +205,65 @@ def _normalize_date_bound_value(value):
         return datetime.date.fromisoformat(normalized)
 
     return None
+
+
+def canonicalize_qc_fa_date(value):
+    """
+    Return a canonical ISO date string for QC FA use, or None when unparseable.
+
+    This is the single point of date normalization for QualityQcFa.date_1.
+    It delegates to :func:`parse_date` to handle ISO strings, locale-formatted
+    strings, datetime objects, pandas Timestamps, and Excel serial numbers.
+
+    Args:
+        value: A date-like value from an Excel row (str, datetime, Timestamp,
+               int, float, or None).
+
+    Returns:
+        str: Normalized 'YYYY-MM-DD' string, or None if the input cannot be
+             interpreted as a valid calendar date.
+    """
+    return parse_date(value)
+
+
+def build_qc_fa_key(row, table_type=None):
+    """
+    Build a shared QC FA natural key from a row dict.
+
+    The key tuple is ``(canonical_date, po, style, team, color_name, table_type, line_code)``
+    and is used for parent-child matching between QualityQcFa rows and
+    InspectionDefect rows in both the handler and sync layers.
+
+    Args:
+        row: A dict with keys ``date_1``, ``po``, ``style``, ``team``, ``color``,
+             ``line_code`` (optional), and optionally ``table_type``.
+        table_type: 'QFA' or 'QFC'. When None (default), falls back to
+                    ``row['table_type']``, and then to ``'QFA'`` as the final
+                    fallback.
+
+    Returns:
+        tuple: ``(canonical_date, po_int, style_str, team_int, color_name, table_type, line_code)``
+    """
+    canonical_date = canonicalize_qc_fa_date(row.get("date_1", ""))
+    po = int(row.get("po", 0)) if row.get("po") else 0
+    style = str(row.get("style", "")).strip()
+    team = int(row.get("team", 0)) if row.get("team") else 0
+    color_name = str(row.get("color", "")).strip().lower().replace(" ", "_")
+    if not color_name:
+        color_name = "unknown"
+
+    raw = row.get("line_code", None)
+    if raw is not None:
+        if isinstance(raw, (int, float)) and pd.isna(raw):
+            line_code = None
+        elif isinstance(raw, str) and (not raw.strip() or raw.strip().lower() == "nan"):
+            line_code = None
+        else:
+            line_code = raw
+    else:
+        line_code = None
+
+    if table_type is None:
+        table_type = row.get("table_type", "QFA")
+
+    return (canonical_date, po, style, team, color_name, table_type, line_code)

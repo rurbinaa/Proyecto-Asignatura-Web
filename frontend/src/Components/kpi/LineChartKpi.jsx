@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { buildMergedLineData } from './lineChartUtils';
 
@@ -5,10 +6,11 @@ const SERIES_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#
 
 const identity = (value) => value;
 
-export default function LineChartKpi({
+function LineChartKpi({
   series = [],
   title,
   showDots = true,
+  forceCategoricalXAxis = false,
   xAxisLabel,
   showXAxisLabel = false,
   yAxisLabel,
@@ -19,11 +21,13 @@ export default function LineChartKpi({
   tooltipLabelFormatter,
   legendVerticalAlign = 'top',
   legendAlign = 'right',
+  lineColors,
 }) {
   // Unified chart margin for consistent spacing (same as BarChartKpi)
   const chartMargin = { top: 12, right: 20, left: 24, bottom: 36 };
 
   const { mergedData, allXValues, useNumericXAxis } = buildMergedLineData(series);
+  const resolvedNumericXAxis = useNumericXAxis && !forceCategoricalXAxis;
 
   const defaultTooltipFormatter = (value, seriesName) => [valueFormatter(value), seriesName];
 
@@ -35,12 +39,10 @@ export default function LineChartKpi({
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis
             dataKey="x"
-            type={useNumericXAxis ? 'number' : 'category'}
-            domain={useNumericXAxis ? ['dataMin', 'dataMax'] : undefined}
-            tickCount={useNumericXAxis ? Math.min(8, Math.max(3, allXValues.length)) : undefined}
+            type={resolvedNumericXAxis ? 'number' : 'category'}
+            domain={resolvedNumericXAxis ? ['dataMin', 'dataMax'] : undefined}
+            tickCount={resolvedNumericXAxis ? Math.min(8, Math.max(3, allXValues.length)) : undefined}
             allowDecimals={false}
-            interval="preserveStartEnd"
-            minTickGap={24}
             tickFormatter={xTickFormatter}
             label={showXAxisLabel && xAxisLabel ? { value: xAxisLabel, position: 'bottom', offset: 8 } : undefined}
           />
@@ -65,9 +67,8 @@ export default function LineChartKpi({
             <Line
               key={s.name}
               name={s.name}
-              data={mergedData}
               dataKey={s.name}
-              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+              stroke={(lineColors || SERIES_COLORS)[index % (lineColors || SERIES_COLORS).length]}
               dot={showDots}
               connectNulls
             />
@@ -77,3 +78,5 @@ export default function LineChartKpi({
     </div>
   );
 }
+
+export default memo(LineChartKpi);

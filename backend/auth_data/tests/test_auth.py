@@ -203,7 +203,7 @@ class LogoutTest(APITestCase):
 
 
 class OperatorRoleTest(APITestCase):
-    """Scenario: Operator role is correctly identified in tokens."""
+    """Scenario: Operator role is explicitly rejected."""
     
     def setUp(self):
         self.client = APIClient()
@@ -214,42 +214,20 @@ class OperatorRoleTest(APITestCase):
         )
         UserProfile.objects.create(user=self.user, role='operator')
     
-    def test_operator_login_returns_operator_role(self):
-        """Login as operator returns role='operator'."""
+    def test_operator_login_returns_403(self):
+        """Login as operator returns 403 (role obsolete)."""
         response = self.client.post('/api/auth/login/', {
             'email': 'operator1@uniwell.com',
             'password': 'password123'
         })
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['role'], 'operator')
-        
-        # Verify role claim is embedded in the token payload
-        decoded = jwt.decode(
-            response.data['access'],
-            settings.SECRET_KEY,
-            algorithms=['HS256'],
-            options={'verify_exp': False},
-        )
-        self.assertEqual(decoded['role'], 'operator')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
     
-    def test_operator_me_endpoint_shows_operator_role(self):
-        """GET /me/ as operator shows is_operator=True."""
-        # Get token
-        response = self.client.post('/api/auth/login/', {
-            'email': 'operator1@uniwell.com',
-            'password': 'password123'
-        })
-        token = response.data['access']
-        
-        # Get me
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+    def test_operator_me_endpoint_returns_403(self):
+        """GET /me/ as operator is forbidden."""
+        self.client.force_authenticate(user=self.user)
         response = self.client.get('/api/auth/me/')
         
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['role'], 'operator')
-        self.assertFalse(response.data['is_manager'])
-        self.assertTrue(response.data['is_operator'])
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class InvalidTokenTest(APITestCase):
@@ -428,7 +406,7 @@ class TokenRoleImmutabilityTest(APITestCase):
             email='test@uniwell.com',
             password='password123'
         )
-        UserProfile.objects.create(user=user, role='operator')
+        UserProfile.objects.create(user=user, role='manager')
         
         # Login and get token
         response = self.client.post('/api/auth/login/', {
@@ -438,28 +416,25 @@ class TokenRoleImmutabilityTest(APITestCase):
         token = response.data['access']
         original_role = response.data['role']
         
-        self.assertEqual(original_role, 'operator')
+        self.assertEqual(original_role, 'manager')
         
         # Change user's role
-        user.profile.role = 'manager'
+        user.profile.role = 'operator'
         user.profile.save()
         
-        # Token should still have old role (operator)
+        # Token should still have old role (manager)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         response = self.client.get('/api/auth/me/')
         
-        # The role in token/response should still be operator
-        # (tokens are immutable until re-login)
-        self.assertEqual(response.data['role'], 'manager')  # Note: /me/ fetches from DB, not token
-        
-        # But if we decode the token itself, it should have old role
-        # This is tested by checking that a NEW login gives new role
+        # /me uses current DB role, now rejected explicitly
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # NEW login with operator role is rejected too
         response = self.client.post('/api/auth/login/', {
             'email': 'test@uniwell.com',
             'password': 'password123'
         })
-        
-        self.assertEqual(response.data['role'], 'manager')  # New login has new role
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class ConcurrentLoginTest(APITestCase):
@@ -498,7 +473,7 @@ class SeedCommandTest(APITestCase):
     """Scenario: Seed command creates users correctly."""
     
     def test_seed_command_creates_all_users(self):
-        """Seed command creates all 6 hardcoded users."""
+        """Seed command creates all 5 hardcoded manager users."""
         from django.core.management import call_command
         
         # Run seed command
@@ -510,7 +485,6 @@ class SeedCommandTest(APITestCase):
             ('gerencia@uniwell.com', 'manager'),
             ('manager@uniwell.com', 'manager'),
             ('admin@uniwell.com', 'manager'),
-            ('operator@uniwell.com', 'operator'),
             ('GERENCIA@uniwell.com', 'manager'),
         ]
         
@@ -551,7 +525,7 @@ class SeedCommandTest(APITestCase):
         call_command('seed_auth_users', verbosity=0)
         
         # Try to login with each user
-        for email in ['gerente@uniwell.com', 'operator@uniwell.com']:
+        for email in ['gerente@uniwell.com', 'manager@uniwell.com']:
             response = self.client.post('/api/auth/login/', {
                 'email': email,
                 'password': 'password123'
@@ -578,10 +552,149 @@ class SeedCommandTest(APITestCase):
         out = io.StringIO()
         call_command('seed_auth_users', stdout=out, verbosity=1)
         
-        # Should have created remaining 5 users
+        # Should have created remaining 4 users
         final_count = User.objects.count()
-        self.assertEqual(final_count, initial_count + 5)
+        self.assertEqual(final_count, initial_count + 4)
         
         # Original user should still have manual password
         user = User.objects.get(username='gerente@uniwell.com')
         self.assertTrue(user.check_password('manual123'))
+
+
+class LegacyCaptureRoutesRemovalTest(APITestCase):
+    """Scenario: legacy media_data routes are fully removed."""
+
+    def test_legacy_inspection_route_returns_404(self):
+        response = self.client.post('/api/v1/inspections/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_legacy_defects_route_returns_404(self):
+        response = self.client.post('/api/v1/defects/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class BootstrapAuthUsersCommandTest(APITestCase):
+    """Tests for bootstrap_auth_users management command legacy user cleanup."""
+
+    LEGACY_USERNAMES = ['admin', 'inspector1', 'inspector2', 'supervisor']
+
+    def _create_legacy_user(self, username):
+        """Helper to create a legacy bootstrap user."""
+        return User.objects.create_user(
+            username=username,
+            email=f'{username}@legacy.com',
+            password='legacy123'
+        )
+
+    def _run_bootstrap(self, verbosity=1):
+        """Run bootstrap_auth_users command and return stdout."""
+        import io
+        from django.core.management import call_command
+        out = io.StringIO()
+        call_command('bootstrap_auth_users', stdout=out, verbosity=verbosity)
+        return out.getvalue()
+
+    def test_bootstrap_deletes_safe_legacy_users(self):
+        """Normal delete path removes legacy users and reports removals."""
+        for username in self.LEGACY_USERNAMES:
+            self._create_legacy_user(username)
+
+        output = self._run_bootstrap(verbosity=1)
+
+        # All legacy users should be deleted
+        for username in self.LEGACY_USERNAMES:
+            self.assertFalse(
+                User.objects.filter(username=username).exists(),
+                f'Legacy user {username} should have been deleted'
+            )
+
+        # Output should list each removed user
+        for username in self.LEGACY_USERNAMES:
+            self.assertIn(f'Deleted legacy user: {username}', output)
+
+    def test_bootstrap_skips_blocked_legacy_user_and_continues(self):
+        """Blocked delete skips user and continues without crashing."""
+        from unittest.mock import patch
+        from django.db.models.deletion import ProtectedError
+        from django.db.models.base import Model
+
+        self._create_legacy_user('admin')
+
+        def blocking_delete(self_delete, *args, **kwargs):
+            raise ProtectedError(f"Cannot delete {self_delete.username}", [self_delete])
+
+        with patch.object(User, 'delete', blocking_delete):
+            output = self._run_bootstrap(verbosity=1)
+
+        # Blocked user should still exist
+        self.assertTrue(User.objects.filter(username='admin').exists())
+
+        # Output should show skip and command completion
+        self.assertIn('Skipped legacy user: admin', output)
+        self.assertIn('Bootstrap complete', output)
+
+    def test_bootstrap_reports_mixed_deleted_and_skipped_users(self):
+        """Mixed outcomes report correct counts and usernames."""
+        from unittest.mock import patch
+        from django.db.models.deletion import ProtectedError
+        from django.db.models.base import Model
+
+        for username in self.LEGACY_USERNAMES:
+            self._create_legacy_user(username)
+
+        def partial_block(self_delete, *args, **kwargs):
+            if self_delete.username == 'inspector1':
+                raise ProtectedError(
+                    f"Cannot delete {self_delete.username}", [self_delete]
+                )
+            return Model.delete(self_delete, *args, **kwargs)
+
+        with patch.object(User, 'delete', partial_block):
+            output = self._run_bootstrap(verbosity=1)
+
+        # Blocked user should remain
+        self.assertTrue(User.objects.filter(username='inspector1').exists())
+        # Other users should be deleted
+        for username in ['admin', 'inspector2', 'supervisor']:
+            self.assertFalse(
+                User.objects.filter(username=username).exists(),
+                f'User {username} should have been deleted'
+            )
+
+        # Summary should contain deleted/skipped counts
+        self.assertIn('deleted: 3', output)
+        self.assertIn('skipped: 1', output)
+
+    def test_bootstrap_reports_all_skipped_users(self):
+        """All users skipped reports correctly without crashing."""
+        from unittest.mock import patch
+        from django.db.models.deletion import ProtectedError
+
+        for username in self.LEGACY_USERNAMES:
+            self._create_legacy_user(username)
+
+        with patch.object(
+            User, 'delete', side_effect=ProtectedError("blocked", [])
+        ):
+            output = self._run_bootstrap(verbosity=1)
+
+        # All users should still exist
+        for username in self.LEGACY_USERNAMES:
+            self.assertTrue(
+                User.objects.filter(username=username).exists(),
+                f'User {username} should not have been deleted'
+            )
+
+        # Summary should report all skipped
+        self.assertIn('deleted: 0', output)
+        self.assertIn('skipped: 4', output)
+
+    def test_legacy_username_set_regression(self):
+        """LEGACY_BOOTSTRAP_USERNAMES constant contains expected usernames."""
+        from auth_data.management.commands.bootstrap_auth_users import Command
+
+        expected_usernames = {'admin', 'inspector1', 'inspector2', 'supervisor'}
+        self.assertEqual(
+            set(Command.LEGACY_BOOTSTRAP_USERNAMES),
+            expected_usernames
+        )

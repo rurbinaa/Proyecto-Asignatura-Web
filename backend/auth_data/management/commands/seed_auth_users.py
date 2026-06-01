@@ -11,7 +11,6 @@ class Command(BaseCommand):
         ('gerencia@uniwell.com', 'manager'),
         ('manager@uniwell.com', 'manager'),
         ('admin@uniwell.com', 'manager'),
-        ('operator@uniwell.com', 'operator'),
         ('GERENCIA@uniwell.com', 'manager'),
     ]
     

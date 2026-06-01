@@ -76,13 +76,16 @@ h1, h2, h3, h4, h5, h6 {
   margin-left: 250px;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
 }
 
 .content-area {
   flex: 1;
   padding: 32px;
   background-color: var(--bg-light);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .card {

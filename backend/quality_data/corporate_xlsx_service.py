@@ -112,7 +112,8 @@ class CorporateXlsxReportService:
             reverse_map = {v: k for k, v in SECONDS_A4_REMAP.items()}
         elif sheet_name == "Seconds General":
             reverse_map = {
-                'date': 'Date', 'week': 'Week', 'line': 'Line',
+                'date': 'Date', 'week': 'Week', 'team': 'Line',
+                'line_code': 'Line Code',
                 'customer': 'Customer', 'style': 'Style', 'artcode': 'ArtCode',
                 'color': 'Color', 'po': 'PO ', 'size': 'Size',
                 'produced': 'Produced', 'fixed': 'Fixed', 'definitive': 'Definitive',
@@ -242,7 +243,7 @@ class CorporateXlsxReportService:
 
     @staticmethod
     def _build_seconds_general_rows(*, queryset, columns):
-        metadata_fields = {"date", "week", "line", "customer", "style", "artcode",
+        metadata_fields = {"date", "week", "team", "line_code", "customer", "style", "artcode",
                            "color", "po", "size", "produced", "fixed", "definitive"}
         defect_set = set(SECONDS_GENERAL_DEFECT_COLUMNS)
 

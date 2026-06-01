@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import Sidebar from './Components/Sidebar.jsx';
 import Navbar from './Components/Navbar.jsx';
-import CaptureView from './views/CaptureView.jsx';
 import LoginView from './views/LoginView.jsx';
 import ExcelUploader from './Components/ExcelUploader.jsx';
-import DashboardView from './views/DashboardView.jsx';
+import DashboardShell from './views/DashboardShell.jsx';
+import QualityReportsView from './views/QualityReportsView.jsx';
 import faviconUrl from './assets/RA-ICON_embed.svg?url';
 
 import { AuthProvider } from './contexts/AuthContext.jsx'; 
@@ -17,15 +17,14 @@ function AppContent() {
   const [activeView, setActiveView] = useState(() => {
     try {
       const stored = localStorage.getItem('rift-activeView');
-      return stored || '';
+      return stored === 'excel' || stored === 'dashboard' || stored === 'reports' ? stored : '';
     } catch {
       return '';
     }
   });
   
-  const [volatileData, setVolatileData] = useState(null);
   const [volatileFile, setVolatileFile] = useState(null);
-  const defaultView = user?.role === 'manager' ? 'excel' : 'capture';
+  const defaultView = 'excel';
   const resolvedActiveView = activeView || (isAuthenticated && user ? defaultView : '');
 
   useEffect(() => {
@@ -66,7 +65,7 @@ function AppContent() {
             setActiveView(view);
             localStorage.setItem('rift-activeView', view);
           }} 
-        setVolatileData={setVolatileData}
+        setVolatileFile={setVolatileFile}
         onLogout={handleLogout} 
       />
 
@@ -75,9 +74,7 @@ function AppContent() {
 
         <main className="content-area">
           
-          {resolvedActiveView === 'capture' && user.role === 'operator' && <CaptureView />}
-
-          {resolvedActiveView === 'excel' && user.role === 'manager' && (
+          {resolvedActiveView === 'excel' && (
             <div className="card excel-view-card">
               <h2 className="section-title title-tight">Importation of batches (Excel)</h2>
               <p className="excel-subtitle">
@@ -88,7 +85,11 @@ function AppContent() {
           )}
 
           {resolvedActiveView === 'dashboard' && (
-            <DashboardView volatileData={volatileData} volatileFile={volatileFile} />
+            <DashboardShell volatileFile={volatileFile} />
+          )}
+
+          {resolvedActiveView === 'reports' && (
+            <QualityReportsView />
           )}
 
         </main>

@@ -49,7 +49,7 @@ describe('withRoleProtection', () => {
     it('should return null while auth is loading', () => {
       useAuth.mockReturnValue(mockedAuth({ loading: true }));
 
-      const Protected = withRoleProtection(DummyComponent, ['operator']);
+      const Protected = withRoleProtection(DummyComponent, ['manager']);
       const { container } = render(<Protected label="test" />);
 
       // Nothing rendered
@@ -60,7 +60,7 @@ describe('withRoleProtection', () => {
     it('should not redirect while loading', () => {
       useAuth.mockReturnValue(mockedAuth({ loading: true }));
 
-      const Protected = withRoleProtection(DummyComponent, ['operator']);
+      const Protected = withRoleProtection(DummyComponent, ['manager']);
       render(<Protected />);
 
       expect(window.location.replace).not.toHaveBeenCalled();
@@ -73,11 +73,11 @@ describe('withRoleProtection', () => {
   describe('authenticated with correct role', () => {
     it('should render the wrapped component when user role is allowed', () => {
       useAuth.mockReturnValue(mockedAuth({
-        user: { id: 1, role: 'operator' },
+        user: { id: 1, role: 'manager' },
         isAuthenticated: true,
       }));
 
-      const Protected = withRoleProtection(DummyComponent, ['operator']);
+      const Protected = withRoleProtection(DummyComponent, ['manager']);
       render(<Protected label="hello" />);
 
       expect(screen.getByTestId('protected-content')).toHaveTextContent('hello');
@@ -114,7 +114,7 @@ describe('withRoleProtection', () => {
   describe('authenticated with wrong role', () => {
     it('should redirect to / when role is not in allowed list', () => {
       useAuth.mockReturnValue(mockedAuth({
-        user: { id: 1, role: 'operator' },
+        user: { id: 1, role: 'analyst' },
         isAuthenticated: true,
       }));
 
@@ -129,7 +129,7 @@ describe('withRoleProtection', () => {
     it('should clear rift-activeView from localStorage on redirect', () => {
       localStorage.setItem('rift-activeView', 'dashboard');
       useAuth.mockReturnValue(mockedAuth({
-        user: { id: 1, role: 'operator' },
+        user: { id: 1, role: 'analyst' },
         isAuthenticated: true,
       }));
 
@@ -147,7 +147,7 @@ describe('withRoleProtection', () => {
     it('should redirect to / when user is null', () => {
       useAuth.mockReturnValue(mockedAuth({ user: null }));
 
-      const Protected = withRoleProtection(DummyComponent, ['operator']);
+      const Protected = withRoleProtection(DummyComponent, ['manager']);
       const { container } = render(<Protected />);
 
       expect(container.innerHTML).toBe('');
@@ -155,10 +155,10 @@ describe('withRoleProtection', () => {
     });
 
     it('should clear rift-activeView when user is null', () => {
-      localStorage.setItem('rift-activeView', 'capture');
+      localStorage.setItem('rift-activeView', 'dashboard');
       useAuth.mockReturnValue(mockedAuth({ user: null }));
 
-      const Protected = withRoleProtection(DummyComponent, ['operator']);
+      const Protected = withRoleProtection(DummyComponent, ['manager']);
       render(<Protected />);
 
       expect(localStorage.getItem('rift-activeView')).toBeNull();
@@ -171,7 +171,7 @@ describe('withRoleProtection', () => {
   describe('empty allowedRoles', () => {
     it('should render when allowedRoles is empty and user is authenticated', () => {
       useAuth.mockReturnValue(mockedAuth({
-        user: { id: 1, role: 'operator' },
+        user: { id: 1, role: 'manager' },
         isAuthenticated: true,
       }));
 

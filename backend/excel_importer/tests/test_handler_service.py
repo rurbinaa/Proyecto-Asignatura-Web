@@ -3,6 +3,7 @@ Tests for handler_service bulk insert functions, specifically the defects-only p
 """
 import io
 import datetime
+import pandas as pd
 from django.test import TestCase
 from quality_data.models import (
     Color,
@@ -15,6 +16,7 @@ from quality_data.models import (
 )
 from excel_importer.handler_service import (
     _bulk_insert_defects_only,
+    _normalize_percentage,
     bulk_insert,
     bulk_insert_container,
     bulk_insert_seconds_a4,
@@ -24,7 +26,11 @@ from excel_importer.handler_service import (
     _normalize_defects_fields,
     _truncate_charfields,
 )
-from excel_importer.sheet_configs import CONTAINER_REMAP, CONTAINER_NOT_NUMERIC_COLUMNS
+from excel_importer.sheet_configs import (
+    CONTAINER_NUMERIC_COLUMNS,
+    CONTAINER_REMAP,
+    CONTAINER_NOT_NUMERIC_COLUMNS,
+)
 from quality_data.models import QualityQcFa as QfaModel
 
 
@@ -281,6 +287,111 @@ class BulkInsertDefectsOnlyTest(TestCase):
 
         _bulk_insert_defects_only(df, ["sew_def"], "QFA")
         self.assertEqual(InspectionDefect.objects.count(), 0)
+
+
+class BulkInsertDefectsOnlyAutoSeedTest(TestCase):
+    """
+    Tests that _bulk_insert_defects_only auto-creates DefectType records
+    that don't exist yet, instead of silently skipping those defects.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="green", is_active=True)
+
+    def test_auto_creates_missing_defect_types(self):
+        """DefectType records are auto-seeded when they don't exist in DB."""
+        # Pre-condition: no DefectType named "auto_def" exists
+        self.assertEqual(DefectType.objects.filter(name="auto_def").count(), 0)
+
+        # Create parent QualityQcFa
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-01",
+            week=10,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=9999,
+            style="AUTO",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=0,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-03-01",
+                "po": 9999,
+                "style": "AUTO",
+                "team": 1,
+                "color": "green",
+                "auto_def": 7,
+            }
+        ])
+
+        # Call with a defect field that has NO pre-existing DefectType
+        _bulk_insert_defects_only(df, ["auto_def"], "QFA")
+
+        # DefectType should now exist
+        self.assertEqual(DefectType.objects.filter(name="auto_def").count(), 1)
+
+        # InspectionDefect should have been created
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.defect_type.name, "auto_def")
+        self.assertEqual(defect.amount, 7)
+
+    def test_auto_seed_idempotent(self):
+        """Calling twice with the same missing defect field is idempotent."""
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-03-02",
+            week=10,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=8888,
+            style="IDEM",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=0,
+            aql=2.0,
+            pass_or_fail="PASS",
+        )
+
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-03-02",
+                "po": 8888,
+                "style": "IDEM",
+                "team": 1,
+                "color": "green",
+                "idem_def": 3,
+            }
+        ])
+
+        # First call — auto-creates DefectType
+        _bulk_insert_defects_only(df, ["idem_def"], "QFA")
+        self.assertEqual(DefectType.objects.filter(name="idem_def").count(), 1)
+        self.assertEqual(InspectionDefect.objects.count(), 1)
+
+        # Second call — should NOT duplicate DefectType, should NOT crash
+        _bulk_insert_defects_only(df, ["idem_def"], "QFA")
+        self.assertEqual(DefectType.objects.filter(name="idem_def").count(), 1)
 
 
 class BulkInsertDefectsOnlyDedupeTest(TestCase):
@@ -697,6 +808,104 @@ class BulkInsertContainerTest(TestCase):
         container = Container.objects.get(container_number=2003)
         self.assertEqual(container.date, datetime.date(2025, 4, 2))
 
+    def test_normalizes_fractional_percentage_pass(self):
+        """percentage_pass of 0.97 (Excel fraction) is stored as 97.0."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2010,
+            "customer": "CUST_NORM",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 97,
+            "total_palette_rejected": 3,
+            "percentage_pass": 0.97,
+            "percentage_reject": 3.0,
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2010)
+        self.assertEqual(container.percentage_pass, 97.0)
+
+    def test_normalizes_fractional_percentage_reject(self):
+        """percentage_reject of 0.05 (Excel fraction) is stored as 5.0."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2011,
+            "customer": "CUST_NORM2",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 95,
+            "total_palette_rejected": 5,
+            "percentage_pass": 95.0,
+            "percentage_reject": 0.05,
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2011)
+        self.assertEqual(container.percentage_reject, 5.0)
+
+    def test_normalizes_mixed_scales(self):
+        """Mixed fractional and whole percentages are both handled correctly."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2012,
+            "customer": "CUST_MIXED",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 98,
+            "total_palette_rejected": 2,
+            "percentage_pass": 0.98,    # fractional → 98.0
+            "percentage_reject": 2.0,   # already 0-100 → stay 2.0
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2012)
+        self.assertEqual(container.percentage_pass, 98.0)
+        self.assertEqual(container.percentage_reject, 2.0)
+
+    def test_whole_percentages_unchanged(self):
+        """Values already on 0-100 scale remain exactly as-is."""
+        import pandas as pd
+        df = pd.DataFrame([{
+            "container_number": 2013,
+            "customer": "CUST_WHOLE",
+            "transfer_of_container": 1,
+            "total_palette": 100,
+            "total_palette_pass": 50,
+            "total_palette_rejected": 50,
+            "percentage_pass": 50.0,
+            "percentage_reject": 50.0,
+            "cont_sew_def": 0,
+        }])
+        bulk_insert_container(
+            df,
+            ["transfer_of_container", "total_palette", "total_palette_pass",
+             "total_palette_rejected", "percentage_pass", "percentage_reject"],
+            ["customer", "container_number"],
+            ["cont_sew_def"],
+        )
+        container = Container.objects.get(container_number=2013)
+        self.assertEqual(container.percentage_pass, 50.0)
+        self.assertEqual(container.percentage_reject, 50.0)
+
 
 class BulkInsertCoverageTest(TestCase):
     def setUp(self):
@@ -822,6 +1031,125 @@ class BulkInsertSecondsCoverageTest(TestCase):
 
         bulk_insert_seconds_general(pd.DataFrame([]), ["week"], ["date"])
         self.assertEqual(SecondsGeneral.objects.count(), 0)
+
+    def test_bulk_insert_normalizes_nan_team_to_none(self):
+        """NaN team value is coerced to None before bulk insert — not stored as 'nan' string."""
+        import pandas as pd
+        import numpy as np
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2", "barre"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": float("nan"),  # NaN team
+                "line_code": None,
+                "corrido_2": 5,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        # team should be None (null in DB), NOT the string "nan"
+        self.assertIsNone(sg.team, f"Expected None for team, got {sg.team!r}")
+
+    def test_bulk_insert_normalizes_nan_line_code_to_none(self):
+        """NaN line_code value is coerced to None — not stored as 'nan' string."""
+        import pandas as pd
+        import numpy as np
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2", "barre"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": 35,
+                "line_code": float("nan"),  # NaN line_code
+                "corrido_2": 5,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        self.assertIsNone(sg.line_code, f"Expected None for line_code, got {sg.line_code!r}")
+
+    def test_bulk_insert_normalizes_blank_line_code_to_none(self):
+        """Blank/empty line_code value is coerced to None."""
+        import pandas as pd
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": 35,
+                "line_code": "",  # empty string
+                "corrido_2": 3,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        self.assertIsNone(sg.line_code, f"Expected None for blank line_code, got {sg.line_code!r}")
+
+    def test_bulk_insert_preserves_valid_line_code(self):
+        """Valid dual-line code is preserved as-is — not coerced to None."""
+        import pandas as pd
+        from quality_data.models import SecondsGeneral, SecondsGeneralDefectType, SecondsGeneralDefect
+
+        for name in ["corrido_2"]:
+            SecondsGeneralDefectType.objects.get_or_create(name=name)
+
+        df = pd.DataFrame([
+            {
+                "date": "2025-03-01",
+                "week": 10,
+                "produced": 100,
+                "team": 35,
+                "line_code": "35-36",  # valid dual-line code
+                "corrido_2": 7,
+            }
+        ])
+
+        bulk_insert_seconds_general(
+            df,
+            ["week", "produced", "team"],
+            ["date", "line_code"],
+        )
+
+        self.assertEqual(SecondsGeneral.objects.count(), 1)
+        sg = SecondsGeneral.objects.first()
+        self.assertEqual(sg.line_code, "35-36")
 
     def test_bulk_insert_seconds_a4_creates_records(self):
         import pandas as pd
@@ -1091,6 +1419,531 @@ class NormalizeDefectsFieldsTest(TestCase):
         self.assertEqual(result, ['sew_def', 'fab_def'])
 
 
+class NormalizeContainerPercentageTest(TestCase):
+    """
+    Tests for _normalize_percentage helper (Task 1.1).
+    RED phase: function does not exist yet → import will fail until implemented.
+    """
+
+    def test_converts_fractional_to_percentage_scale(self):
+        """0.97 (Excel percentage storage) should become 97.0."""
+        result = _normalize_percentage(0.97)
+        self.assertEqual(result, 97.0)
+
+    def test_leaves_whole_percentage_unchanged(self):
+        """95.0 (already on 0-100 scale) should stay 95.0."""
+        result = _normalize_percentage(95.0)
+        self.assertEqual(result, 95.0)
+
+    def test_handles_zero(self):
+        """0 should stay 0 regardless of scale."""
+        result = _normalize_percentage(0)
+        self.assertEqual(result, 0)
+
+    def test_handles_one_as_full_percentage(self):
+        """1.0 on a 0-1 scale = 100%, so it normalizes to 100.0."""
+        result = _normalize_percentage(1.0)
+        self.assertEqual(result, 100.0)
+
+    def test_handles_one_hundred_as_unchanged(self):
+        """100.0 (already on 0-100 scale) should stay 100.0."""
+        result = _normalize_percentage(100.0)
+        self.assertEqual(result, 100.0)
+
+    def test_handles_none(self):
+        """None should return None unchanged."""
+        result = _normalize_percentage(None)
+        self.assertIsNone(result)
+
+    def test_handles_small_fraction(self):
+        """0.01 (1%) should become 1.0."""
+        result = _normalize_percentage(0.01)
+        self.assertEqual(result, 1.0)
+
+    def test_handles_negative_value(self):
+        """Negative values are left unchanged (not a valid percentage either way)."""
+        result = _normalize_percentage(-5.0)
+        self.assertEqual(result, -5.0)
+
+
+class BulkInsertDefectsOnlyStatsTest(TestCase):
+    """
+    Tests for _bulk_insert_defects_only returning defect sync stats (Task 2.4).
+
+    RED phase: these tests reference behavior NOT yet implemented.
+    Currently _bulk_insert_defects_only returns None.
+    After implementation, it returns a dict with keys:
+    created_defects, matched_parents, unmatched_defect_rows,
+    invalid_date_rows, missing_color_rows.
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="navy", is_active=True)
+        self.color2 = Color.objects.create(name="white", is_active=True)
+        self.defect_type = DefectType.objects.create(name="broken_stitch")
+
+    def test_returns_stats_dict(self):
+        """
+        _bulk_insert_defects_only returns a dict with the expected keys.
+        """
+        quality = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-01",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3001,
+            style="VALKYRIE",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-01",
+                "po": 3001,
+                "style": "VALKYRIE",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 8,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertIsInstance(result, dict)
+        for key in ("created_defects", "matched_parents",
+                     "unmatched_defect_rows", "invalid_date_rows",
+                     "missing_color_rows",
+                     "unmatched_row_details"):
+            self.assertIn(key, result, f"Stats must include key '{key}'")
+        self.assertIsInstance(result["unmatched_row_details"], list)
+
+    def test_stats_counts_created_defects(self):
+        """created_defects reflects the number of InspectionDefect rows created."""
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-02",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3002,
+            style="VALKYRIE",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-02",
+                "po": 3002,
+                "style": "VALKYRIE",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 3,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 1)
+
+    def test_stats_counts_matched_parents(self):
+        """matched_parents counts unique parent rows that received defects."""
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-03",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3003,
+            style="VALKYRIE",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-03",
+                "po": 3003,
+                "style": "VALKYRIE",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 5,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["matched_parents"], 1)
+
+    def test_stats_tracks_unmatched_defect_rows(self):
+        """
+        Rows with positive defect amounts but NO matching parent
+        increment unmatched_defect_rows.
+        """
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-04",
+                "po": 9999,
+                "style": "GHOST",
+                "team": 99,
+                "color": "navy",
+                "broken_stitch": 10,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["unmatched_defect_rows"], 1)
+        self.assertEqual(result["created_defects"], 0)
+
+    def test_stats_tracks_invalid_date_rows(self):
+        """
+        Rows where date_1 cannot be canonicalized AND have positive defect
+        amounts increment invalid_date_rows.
+        """
+        df = pd.DataFrame([
+            {
+                "date_1": "NOT_A_REAL_DATE",
+                "po": 4001,
+                "style": "STYLE-X",
+                "team": 1,
+                "color": "navy",
+                "broken_stitch": 7,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["invalid_date_rows"], 1)
+        self.assertEqual(result["created_defects"], 0)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+
+    def test_stats_tracks_missing_color_rows(self):
+        """
+        Rows where the color does not exist in the DB increment missing_color_rows.
+        """
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-05",
+                "po": 5001,
+                "style": "STYLE-Y",
+                "team": 2,
+                "color": "invisible_pink",
+                "broken_stitch": 4,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["missing_color_rows"], 1)
+        self.assertEqual(result["created_defects"], 0)
+
+    def test_unmatched_row_details_populated_when_parent_missing(self):
+        """Unmatched rows are recorded in unmatched_row_details with key."""
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-04",
+                "po": 9999,
+                "style": "GHOST",
+                "team": 99,
+                "color": "navy",
+                "broken_stitch": 10,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["unmatched_defect_rows"], 1)
+        self.assertEqual(len(result["unmatched_row_details"]), 1)
+        detail = result["unmatched_row_details"][0]
+        self.assertIn("key", detail)
+        # The key tuple should contain known values from the unmatched row
+        self.assertIn(9999, detail["key"], "PO 9999 should appear in the unmatched key")
+
+    def test_matched_rows_not_added_to_unmatched_details(self):
+        """Rows that successfully match a parent do NOT appear in unmatched_row_details."""
+        quality = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-06-05",
+            week=22,
+            customer="A4",
+            team=3,
+            coord="TEST",
+            po=3005,
+            style="MATCHED",
+            batch=1,
+            color=self.color,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-05",
+                "po": 3005,
+                "style": "MATCHED",
+                "team": 3,
+                "color": "navy",
+                "broken_stitch": 3,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+        self.assertEqual(result["unmatched_row_details"], [])
+
+    def test_unmatched_row_details_has_no_row_data_by_default(self):
+        """unmatched_row_details entries contain key information."""
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-06-06",
+                "po": 7777,
+                "style": "MYSTERY",
+                "team": 5,
+                "color": "navy",
+                "broken_stitch": 2,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(len(result["unmatched_row_details"]), 1)
+        detail = result["unmatched_row_details"][0]
+        self.assertIsInstance(detail["key"], tuple)
+
+    def test_empty_df_returns_zeroed_stats(self):
+        """Empty DataFrame returns dict with all counters at 0."""
+        df = pd.DataFrame([])
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["created_defects"], 0)
+        self.assertEqual(result["matched_parents"], 0)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+        self.assertEqual(result["invalid_date_rows"], 0)
+        self.assertEqual(result["missing_color_rows"], 0)
+        self.assertEqual(result["unmatched_row_details"], [])
+
+
+class BulkInsertDefectsOnlySharedKeyTest(TestCase):
+    """
+    Tests proving _bulk_insert_defects_only uses build_qc_fa_key for
+    deterministic parent-child matching across equivalent date/color
+    representations (Task 2.3).
+    """
+
+    def setUp(self):
+        self.color = Color.objects.create(name="dark_navy", is_active=True)
+        self.defect_type = DefectType.objects.create(name="broken_stitch")
+
+    def test_equivalent_dates_match_via_shared_key(self):
+        """
+        A parent with ISO date '2025-07-01' is matched by a row with
+        equivalent US date '07/01/2025'.
+        """
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-07-01",
+            week=26,
+            customer="A4",
+            team=2,
+            coord="TEST",
+            po=6001,
+            style="SPECTRE",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "07/01/2025",  # US format — equivalent to 2025-07-01
+                "po": 6001,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark navy",  # mixed case with space
+                "broken_stitch": 6,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+
+    def test_parent_index_includes_table_type(self):
+        """
+        When both QFA and QFC parents exist for the same natural key
+        (except table_type), the defect row matches only the correct
+        table_type parent.
+        """
+        color2 = Color.objects.create(name="red", is_active=True)
+        qfa_parent = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-07-02",
+            week=26,
+            customer="A4",
+            team=2,
+            coord="TEST",
+            po=6002,
+            style="SPECTRE",
+            batch=1,
+            color=color2,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        qfc_parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-07-02",
+            week=26,
+            customer="CUSTOMER_X",
+            team=2,
+            coord="TEST",
+            po=6002,
+            style="SPECTRE",
+            batch=1,
+            color=color2,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-07-02",
+                "po": 6002,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "red",
+                "broken_stitch": 2,
+            }
+        ])
+
+        # When called with table_type='QFA', should match QFA parent only
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, qfa_parent)
+        self.assertNotEqual(defect.inspection, qfc_parent)
+
+    def test_mixed_date_formats_all_match_same_parent(self):
+        """
+        Multiple rows with different date representations of the same
+        calendar day all match the same parent.
+        """
+        _ = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-07-03",
+            week=26,
+            customer="A4",
+            team=2,
+            coord="TEST",
+            po=6003,
+            style="SPECTRE",
+            batch=1,
+            color=self.color,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # Different representations of 2025-07-03
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-07-03",   # ISO
+                "po": 6003,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark_navy",
+                "broken_stitch": 1,
+            },
+            {
+                "date_1": "07/03/2025",   # US
+                "po": 6003,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark_navy",
+                "broken_stitch": 2,
+            },
+            {
+                "date_1": datetime.date(2025, 7, 3),  # Python date
+                "po": 6003,
+                "style": "SPECTRE",
+                "team": 2,
+                "color": "dark_navy",
+                "broken_stitch": 3,
+            },
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA")
+
+        self.assertEqual(result["created_defects"], 3)
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+
+
 class TruncateCharFieldsTest(TestCase):
     """Tests for _truncate_charfields helper."""
 
@@ -1108,3 +1961,1193 @@ class TruncateCharFieldsTest(TestCase):
         result = _truncate_charfields(QfaModel, data)
         # style max_length should truncate the string
         self.assertLessEqual(len(result['style']), 50)  # Approximate max_length for style
+
+
+# ─────────────────────────────────────────────────────────
+# Phase 3: Regression Coverage — Mixed-format QFA/QFC
+# ─────────────────────────────────────────────────────────
+
+class BulkInsertDefectsOnlyQfcRegressionTest(TestCase):
+    """
+    Regression tests proving QFC defect persistence with mixed date
+    formats, color_map, and comprehensive stat tracking (Task 3.1).
+    """
+
+    def setUp(self):
+        self.color_black = Color.objects.create(name="black", is_active=True)
+        self.color_white = Color.objects.create(name="white", is_active=True)
+        self.defect_type = DefectType.objects.create(name="broken_stitch")
+        self.defect_type2 = DefectType.objects.create(name="open_seam")
+
+    def test_qfc_parent_matched_with_iso_date(self):
+        """QFC parent with ISO date is matched by row with same ISO date."""
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-08-01",
+            week=31,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=7001,
+            style="QFC-ISO",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-08-01",
+                "po": 7001,
+                "style": "QFC-ISO",
+                "team": 5,
+                "color": "black",
+                "broken_stitch": 3,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+        self.assertEqual(defect.inspection.table_type, "QFC")
+
+    def test_qfc_parent_matched_with_us_date(self):
+        """QFC parent with ISO date is matched by row with US format date."""
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-08-02",
+            week=31,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=7002,
+            style="QFC-US",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "08/02/2025",  # US format
+                "po": 7002,
+                "style": "QFC-US",
+                "team": 5,
+                "color": "black",
+                "broken_stitch": 4,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+
+    def test_qfc_parent_matched_with_excel_serial_date(self):
+        """QFC parent with ISO date is matched by row with Excel serial date."""
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-08-03",
+            week=31,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=7003,
+            style="QFC-SERIAL",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # Excel serial for 2025-08-03: days from 1899-12-30
+        from datetime import date
+        epoch = date(1899, 12, 30)
+        target = date(2025, 8, 3)
+        serial = (target - epoch).days
+
+        df = pd.DataFrame([
+            {
+                "date_1": serial,  # Excel serial number
+                "po": 7003,
+                "style": "QFC-SERIAL",
+                "team": 5,
+                "color": "black",
+                "broken_stitch": 2,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+
+    def test_qfc_parent_isolation_from_qfa(self):
+        """QFC defect row does NOT match a QFA parent with same natural key."""
+        qfa_parent = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-08-04",
+            week=31,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=7004,
+            style="ISOLATED",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+        qfc_parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-08-04",
+            week=31,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=7004,
+            style="ISOLATED",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-08-04",
+                "po": 7004,
+                "style": "ISOLATED",
+                "team": 5,
+                "color": "black",
+                "broken_stitch": 1,
+            }
+        ])
+
+        # Match QFC only — should link to QFC parent, NOT QFA
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, qfc_parent)
+        self.assertNotEqual(defect.inspection, qfa_parent)
+
+    def test_color_map_parameter_resolves_colors(self):
+        """
+        When color_map is provided, _bulk_insert_defects_only uses it
+        instead of querying Color.objects.filter() per row.
+        """
+        parent = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-08-05",
+            week=31,
+            customer="CUST",
+            team=3,
+            coord="TEST",
+            po=8001,
+            style="COLORMAP",
+            batch=1,
+            color=self.color_white,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        color_map = {"white": self.color_white, "black": self.color_black}
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-08-05",
+                "po": 8001,
+                "style": "COLORMAP",
+                "team": 3,
+                "color": "white",
+                "broken_stitch": 7,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA",
+                                            color_map=color_map)
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["missing_color_rows"], 0)
+
+    def test_color_map_detects_missing_color(self):
+        """Color that is NOT in the color_map increments missing_color_rows."""
+        parent = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-08-06",
+            week=31,
+            customer="CUST",
+            team=3,
+            coord="TEST",
+            po=8002,
+            style="MISSING-MAP",
+            batch=1,
+            color=self.color_black,
+            qty=50,
+            seconds=5,
+            accepted=45,
+            rejected=5,
+            sample=5,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        # color_map only has "white" — black is missing
+        color_map = {"white": self.color_white}
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-08-06",
+                "po": 8002,
+                "style": "MISSING-MAP",
+                "team": 3,
+                "color": "black",  # not in color_map
+                "broken_stitch": 5,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFA",
+                                            color_map=color_map)
+
+        self.assertEqual(result["created_defects"], 0)
+        self.assertEqual(result["missing_color_rows"], 1)
+
+    def test_mixed_scenario_all_stats_accumulate(self):
+        """A single batch with matching, invalid-date, missing-color, and
+        unmatched rows accumulates stats correctly."""
+        parent = QualityQcFa.objects.create(
+            table_type="QFA",
+            date_1="2025-08-10",
+            week=32,
+            customer="CUST",
+            team=1,
+            coord="TEST",
+            po=9001,
+            style="MIXED",
+            batch=1,
+            color=self.color_black,
+            qty=200,
+            seconds=20,
+            accepted=180,
+            rejected=20,
+            sample=20,
+            defects_total=10,
+            aql=2.5,
+            pass_or_fail="PASS",
+        )
+
+        df = pd.DataFrame([
+            {  # ✅ Matches parent
+                "date_1": "2025-08-10",
+                "po": 9001,
+                "style": "MIXED",
+                "team": 1,
+                "color": "black",
+                "broken_stitch": 3,
+                "open_seam": 2,
+            },
+            {  # ❌ Invalid date
+                "date_1": "NOT_A_DATE",
+                "po": 9002,
+                "style": "MIXED",
+                "team": 1,
+                "color": "black",
+                "broken_stitch": 5,
+            },
+            {  # ❌ Missing color
+                "date_1": "2025-08-10",
+                "po": 9001,
+                "style": "MIXED",
+                "team": 1,
+                "color": "invisible_unicorn",
+                "broken_stitch": 4,
+            },
+            {  # ❌ Unmatched parent (different PO)
+                "date_1": "2025-08-10",
+                "po": 9999,
+                "style": "MIXED",
+                "team": 1,
+                "color": "black",
+                "broken_stitch": 6,
+            },
+            {  # ✅ No defects — skipped silently, no stat increment
+                "date_1": "2025-08-10",
+                "po": 9001,
+                "style": "MIXED",
+                "team": 1,
+                "color": "black",
+                "broken_stitch": 0,
+                "open_seam": 0,
+            },
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch", "open_seam"],
+                                            "QFA")
+
+        self.assertEqual(result["created_defects"], 2)  # broken_stitch=3 + open_seam=2
+        self.assertEqual(result["matched_parents"], 1)   # only the first row matched
+        self.assertEqual(result["unmatched_defect_rows"], 1)  # row 4 with PO 9999
+        self.assertEqual(result["invalid_date_rows"], 1)       # row 2 with NOT_A_DATE
+        self.assertEqual(result["missing_color_rows"], 1)      # row 3 with invisible_unicorn
+
+    def test_empty_df_with_qfc_returns_zeroed_stats(self):
+        """Empty DataFrame with QFC table_type returns all-zero stats."""
+        df = pd.DataFrame([])
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["created_defects"], 0)
+        self.assertEqual(result["matched_parents"], 0)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+        self.assertEqual(result["invalid_date_rows"], 0)
+        self.assertEqual(result["missing_color_rows"], 0)
+
+    # ── QFC Dual-Line Defect KPIs Consistency ──
+
+    def test_qfc_simple_line_defect_matches_parent_with_none_line_code(self):
+        """
+        Integration test: A QFC parent with line_code=None (simple line)
+        is matched by a defect row with NaN line_code from Excel import.
+        This proves the fix for the KPI consistency bug.
+        """
+        # Create a parent with NULL line_code (simple line, Dual Lines OFF)
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-09-01",
+            week=35,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=9001,
+            style="SIMPLE-LINE",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+            line_code=None,  # Simple line — Dual Lines OFF
+        )
+
+        # Defect row with NaN line_code (simulates empty Excel cell)
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-09-01",
+                "po": 9001,
+                "style": "SIMPLE-LINE",
+                "team": 5,
+                "color": "black",
+                "line_code": float("nan"),  # Excel empty cell → NaN
+                "broken_stitch": 7,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(
+            result["created_defects"], 1,
+            "NaN line_code defect should attach to parent with None line_code"
+        )
+        self.assertEqual(result["matched_parents"], 1)
+        self.assertEqual(result["unmatched_defect_rows"], 0)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+
+    def test_qfc_simple_line_defect_matches_parent_with_nan_from_pandas(self):
+        """
+        Integration test: Pandas NaN (np.nan) as line_code in the row dict
+        matches a parent with line_code=None.
+        """
+        import numpy as np
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-09-02",
+            week=35,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=9002,
+            style="SIMPLE-LINE-PD",
+            batch=1,
+            color=self.color_white,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+            line_code=None,
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-09-02",
+                "po": 9002,
+                "style": "SIMPLE-LINE-PD",
+                "team": 5,
+                "color": "white",
+                "line_code": np.nan,
+                "broken_stitch": 3,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+
+    def test_qfc_simple_line_defect_matches_parent_with_empty_string_line_code(self):
+        """
+        Integration test: Empty string line_code also normalizes to None
+        and matches the parent.
+        """
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-09-03",
+            week=35,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=9003,
+            style="EMPTY-STR",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+            line_code=None,
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-09-03",
+                "po": 9003,
+                "style": "EMPTY-STR",
+                "team": 5,
+                "color": "black",
+                "line_code": "",
+                "broken_stitch": 5,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+
+    def test_qfc_dual_line_defect_matches_dual_line_parent(self):
+        """
+        Integration test: A defect with a real dual-line code still matches
+        correctly — verifying we didn't break dual-line matching.
+        """
+        parent = QualityQcFa.objects.create(
+            table_type="QFC",
+            date_1="2025-09-04",
+            week=35,
+            customer="CUST",
+            team=5,
+            coord="TEST",
+            po=9004,
+            style="DUAL-LINE",
+            batch=1,
+            color=self.color_black,
+            qty=100,
+            seconds=10,
+            accepted=90,
+            rejected=10,
+            sample=10,
+            defects_total=5,
+            aql=2.5,
+            pass_or_fail="PASS",
+            line_code="35-36",  # Dual line code
+        )
+
+        df = pd.DataFrame([
+            {
+                "date_1": "2025-09-04",
+                "po": 9004,
+                "style": "DUAL-LINE",
+                "team": 5,
+                "color": "black",
+                "line_code": "35-36",  # Same dual line
+                "broken_stitch": 4,
+            }
+        ])
+
+        result = _bulk_insert_defects_only(df, ["broken_stitch"], "QFC")
+
+        self.assertEqual(result["created_defects"], 1)
+        self.assertEqual(result["matched_parents"], 1)
+        defect = InspectionDefect.objects.first()
+        self.assertEqual(defect.inspection, parent)
+
+
+# ─────────────────────────────────────────────────────────
+# Phase 4: QFC Customer Row Normalization
+# ─────────────────────────────────────────────────────────
+
+class NormalizeQfcCustomerRowsTest(TestCase):
+    """Tests for normalize_qc_fa_customer_rows — pure function."""
+
+    def test_normalize_60_to_6(self):
+        """Team 60 is corrected to 6, counted as corrected."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 60, "po": 100, "style": "STYLE-A"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 6)
+        self.assertEqual(warnings["corrected"], 1)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertIn("corrected", warnings["message"])
+        self.assertNotIn("rejected", warnings["message"])
+
+    def test_reject_0(self):
+        """Team 0 is rejected (removed from output), counted as rejected."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 0, "po": 101, "style": "STYLE-B"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 1)
+        self.assertIn("rejected", warnings["message"])
+
+    def test_reject_blank(self):
+        """Blank/missing team is rejected, counted as rejected."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": None, "po": 102, "style": "STYLE-C"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_non_numeric(self):
+        """Non-numeric team string is rejected."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": "INVALID", "po": 103, "style": "STYLE-D"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_valid_unchanged(self):
+        """Team in 1..36 passes through unchanged, no warnings."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 5, "po": 104, "style": "STYLE-E"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 5)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    def test_reject_out_of_range_above_36(self):
+        """Team > 36 (and not 60) is rejected."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 99, "po": 105, "style": "STYLE-F"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_out_of_range_below_1(self):
+        """Team < 0 (and not 60) is rejected."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": -5, "po": 106, "style": "STYLE-G"}]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_valid_edge_cases(self):
+        """Team values at the boundary (1 and 36) pass through."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [
+            {"team": 1, "po": 110, "style": "STYLE-H"},
+            {"team": 36, "po": 111, "style": "STYLE-I"},
+        ]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 2)
+        self.assertEqual(normalized[0]["team"], 1)
+        self.assertEqual(normalized[1]["team"], 36)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+
+    def test_mixed_scenario(self):
+        """Mix of 60→6, rejected 0, rejected out-of-range, and valid rows."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [
+            {"team": 60, "po": 201, "style": "MIXED-A"},   # corrected
+            {"team": 0, "po": 202, "style": "MIXED-B"},     # rejected
+            {"team": 12, "po": 203, "style": "MIXED-C"},   # valid
+            {"team": 99, "po": 204, "style": "MIXED-D"},   # rejected
+            {"team": 6, "po": 205, "style": "MIXED-E"},    # valid (already 6)
+        ]
+        normalized, warnings = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 3)  # 60→6, 12, 6
+        self.assertEqual(normalized[0]["team"], 6)  # was 60
+        self.assertEqual(normalized[1]["team"], 12)  # unchanged
+        self.assertEqual(normalized[2]["team"], 6)  # unchanged
+        self.assertEqual(warnings["corrected"], 1)
+        self.assertEqual(warnings["rejected"], 2)
+        self.assertIn("corrected 1", warnings["message"])
+        self.assertIn("rejected 2", warnings["message"])
+
+    def test_corrected_and_rejected_message_format(self):
+        """Warning message format matches design spec."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [
+            {"team": 60, "po": 301},
+            {"team": 0, "po": 302},
+        ]
+        _, warnings = normalize_qc_fa_customer_rows(rows)
+
+        expected = "QC FA Customer: corrected 1 line value (60→6) and rejected 1 invalid row (0/out of range/invalid composite)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_corrected_only_message(self):
+        """Only corrections: message mentions only corrections."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 60, "po": 401}]
+        _, warnings = normalize_qc_fa_customer_rows(rows)
+
+        expected = "QC FA Customer: corrected 1 line value (60→6)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_rejected_only_message(self):
+        """Only rejections: message mentions only rejections."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 0, "po": 501}]
+        _, warnings = normalize_qc_fa_customer_rows(rows)
+
+        expected = "QC FA Customer: rejected 1 invalid row (0/out of range/invalid composite)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_empty_rows(self):
+        """Empty input returns empty output with zero warnings."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        normalized, warnings = normalize_qc_fa_customer_rows([])
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    def test_preserves_other_fields(self):
+        """Non-team fields are preserved in the normalized rows."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        rows = [{"team": 60, "po": 601, "style": "STYLE-X", "color": "red", "date_1": "2025-01-01"}]
+        normalized, _ = normalize_qc_fa_customer_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["po"], 601)
+        self.assertEqual(normalized[0]["style"], "STYLE-X")
+        self.assertEqual(normalized[0]["color"], "red")
+        self.assertEqual(normalized[0]["date_1"], "2025-01-01")
+
+    def test_rows_not_mutated_in_place(self):
+        """Original input rows are not mutated — function creates copies."""
+        from excel_importer.handler_service import normalize_qc_fa_customer_rows
+
+        original = [{"team": 60, "po": 701}]
+        original_copy = [dict(r) for r in original]
+
+        normalize_qc_fa_customer_rows(original)
+
+        # Original should still have team=60
+        self.assertEqual(original[0]["team"], 60)
+        self.assertEqual(original, original_copy)
+
+
+class NormalizeSecondsGeneralRowsTest(TestCase):
+    """Tests for normalize_seconds_general_rows — pure function."""
+
+    def test_simple_numeric_team(self):
+        """Simple numeric team (e.g. 35) passes through, line_code=None."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 35, "po": 100, "style": "STYLE-A"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 35)
+        self.assertIsNone(normalized[0].get("line_code"))
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    def test_dual_label_parsed(self):
+        """Dual label '35-36' sets team=35 and line_code='35-36'."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": "35-36", "po": 200, "style": "STYLE-B"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 35)
+        self.assertEqual(normalized[0]["line_code"], "35-36")
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+
+    def test_corrects_60_to_6(self):
+        """Team 60 is corrected to 6, counted as corrected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 60, "po": 300, "style": "STYLE-C"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["team"], 6)
+        self.assertEqual(warnings["corrected"], 1)
+        self.assertEqual(warnings["rejected"], 0)
+
+    def test_reject_zero(self):
+        """Team 0 is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 0, "po": 400, "style": "STYLE-D"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_non_numeric(self):
+        """Non-numeric team is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": "INVALID", "po": 500, "style": "STYLE-E"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_blank(self):
+        """Blank/missing team is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": None, "po": 600, "style": "STYLE-F"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_reject_out_of_range_above_36(self):
+        """Team > 36 (and not 60) is rejected."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 99, "po": 700, "style": "STYLE-G"}]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["rejected"], 1)
+
+    def test_mixed_scenario(self):
+        """Mix of valid, corrected, and rejected rows."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [
+            {"team": 60, "po": 801},    # corrected
+            {"team": 0, "po": 802},     # rejected
+            {"team": 12, "po": 803},    # valid
+            {"team": 99, "po": 804},    # rejected
+            {"team": 6, "po": 805},     # valid
+            {"team": "35-36", "po": 806},  # valid dual label
+        ]
+        normalized, warnings = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 4)  # 60→6, 12, 6, 35-36
+        self.assertEqual(normalized[0]["team"], 6)   # was 60
+        self.assertEqual(normalized[1]["team"], 12)
+        self.assertEqual(normalized[2]["team"], 6)
+        self.assertEqual(normalized[3]["team"], 35)
+        self.assertEqual(normalized[3]["line_code"], "35-36")
+        self.assertEqual(warnings["corrected"], 1)
+        self.assertEqual(warnings["rejected"], 2)
+
+    def test_message_format_corrected_and_rejected(self):
+        """Warning message mentions both corrections and rejections."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [
+            {"team": 60, "po": 901},
+            {"team": 0, "po": 902},
+        ]
+        _, warnings = normalize_seconds_general_rows(rows)
+
+        expected = "Seconds General: corrected 1 line value (60→6) and rejected 1 invalid row (0/out of range/invalid composite)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_message_format_corrected_only(self):
+        """Only corrections in message."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 60, "po": 1001}]
+        _, warnings = normalize_seconds_general_rows(rows)
+
+        expected = "Seconds General: corrected 1 line value (60→6)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_message_format_rejected_only(self):
+        """Only rejections in message."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 0, "po": 1101}]
+        _, warnings = normalize_seconds_general_rows(rows)
+
+        expected = "Seconds General: rejected 1 invalid row (0/out of range/invalid composite)."
+        self.assertEqual(warnings["message"], expected)
+
+    def test_empty_rows(self):
+        """Empty input returns empty output with zero warnings."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        normalized, warnings = normalize_seconds_general_rows([])
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    def test_preserves_other_fields(self):
+        """Non-team fields are preserved in normalized rows."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        rows = [{"team": 60, "po": 1201, "date": "2025-01-01", "style": "STYLE-X", "color": "red"}]
+        normalized, _ = normalize_seconds_general_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["po"], 1201)
+        self.assertEqual(normalized[0]["date"], "2025-01-01")
+        self.assertEqual(normalized[0]["style"], "STYLE-X")
+        self.assertEqual(normalized[0]["color"], "red")
+
+    def test_rows_not_mutated_in_place(self):
+        """Original input rows are not mutated."""
+        from excel_importer.handler_service import normalize_seconds_general_rows
+
+        original = [{"team": 60, "po": 1301}]
+        original_copy = [dict(r) for r in original]
+
+        normalize_seconds_general_rows(original)
+
+        self.assertEqual(original[0]["team"], 60)
+        self.assertEqual(original, original_copy)
+
+
+# ─────────────────────────────────────────────────────────
+# Slice 3: Container Row Normalization (RED phase)
+# ─────────────────────────────────────────────────────────
+
+
+class NormalizeContainerRowsTest(TestCase):
+    """
+    Tests for normalize_container_rows — pure function at import boundary.
+
+    RED phase: function does not exist yet → import will fail until implemented.
+    """
+
+    # ── Happy path ───────────────────────────────────────
+
+    def test_clean_rows_pass_through_unchanged(self):
+        """Fully-populated clean rows are returned without modification."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [
+            {
+                "container_number": 1001,
+                "customer": "AlphaCorp",
+                "date": "2025-01-10",
+                "total_palette": 20,
+                "total_palette_pass": 18,
+                "total_palette_rejected": 2,
+                "percentage_pass": 90.0,
+                "percentage_reject": 10.0,
+                "transfer_of_container": 1,
+                "dirt_label": 5,
+                "total_defects": 5,
+            }
+        ]
+        normalized, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["container_number"], 1001)
+        self.assertEqual(normalized[0]["customer"], "AlphaCorp")
+        self.assertEqual(normalized[0]["percentage_pass"], 90.0)
+        self.assertEqual(warnings["rejected"], 0)
+
+    # ── NaN / None hardening ─────────────────────────────
+
+    def test_nan_percentage_pass_becomes_none(self):
+        """NaN in percentage_pass is coerced to None."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [{"container_number": 1002, "percentage_pass": float("nan"), "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertIsNone(normalized[0]["percentage_pass"])
+
+    def test_nan_total_palette_becomes_zero(self):
+        """NaN in total_palette (numeric count field) is coerced to 0."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [{"container_number": 1003, "total_palette": float("nan"), "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["total_palette"], 0)
+
+    def test_nan_defect_field_becomes_zero(self):
+        """NaN in a defect field is coerced to 0."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [{"container_number": 1004, "dirt_label": float("nan"), "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0].get("dirt_label", 0), 0)
+
+    def test_blank_customer_becomes_empty_string(self):
+        """Blank customer field is preserved as empty string (not None)."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1005, "customer": "", "percentage_pass": 85.0}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["customer"], "")
+
+    def test_none_customer_becomes_empty_string(self):
+        """None customer becomes empty string."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1006, "customer": None, "percentage_pass": 85.0}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["customer"], "")
+
+    # ── Date normalization ───────────────────────────────
+
+    def test_invalid_date_becomes_none(self):
+        """Invalid date string is coerced to None."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1007, "date": "NOT_A_DATE", "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertIsNone(normalized[0].get("date"))
+
+    def test_valid_date_string_unchanged(self):
+        """Valid ISO date string is preserved."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 1008, "date": "2025-01-15", "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["date"], "2025-01-15")
+
+    # ── container_number validation ──────────────────────
+
+    def test_nan_container_number_drops_row_with_warning(self):
+        """Row with NaN container_number is dropped and counted in warnings."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [
+            {"container_number": float("nan"), "customer": "Dropped", "percentage_pass": 50.0},
+            {"container_number": 2001, "customer": "Kept", "percentage_pass": 90.0},
+        ]
+        normalized, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(normalized[0]["container_number"], 2001)
+        self.assertEqual(warnings["rejected"], 1)
+        self.assertIn("rejected", warnings["message"])
+
+    def test_none_container_number_drops_row(self):
+        """Row with None container_number is dropped."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [
+            {"container_number": None, "customer": "Dropped", "percentage_pass": 50.0},
+            {"container_number": 2002, "customer": "Kept", "percentage_pass": 90.0},
+        ]
+        normalized, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 1)
+        self.assertEqual(warnings["rejected"], 1)
+
+    # ── Mixed type handling ──────────────────────────────
+
+    def test_mixed_types_in_numeric_field_normalized(self):
+        """Strings and numbers in percentage_pass are normalized to numbers or None."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [
+            {"container_number": 3001, "percentage_pass": 95.0, "customer": "A"},
+            {"container_number": 3002, "percentage_pass": "85", "customer": "B"},
+            {"container_number": 3003, "percentage_pass": "not_a_number", "customer": "C"},
+            {"container_number": 3004, "percentage_pass": None, "customer": "D"},
+        ]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(len(normalized), 4)
+        # Numeric stays numeric
+        self.assertEqual(normalized[0]["percentage_pass"], 95.0)
+        # Numeric string gets converted
+        self.assertEqual(normalized[1]["percentage_pass"], 85.0)
+        # Non-numeric string falls to None
+        self.assertIsNone(normalized[2]["percentage_pass"])
+        # None stays None
+        self.assertIsNone(normalized[3]["percentage_pass"])
+
+    def test_fractional_percentage_normalized(self):
+        """Fractional percentage (0-1 scale) is normalized to 0-100 scale."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 4001, "percentage_pass": 0.97, "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(normalized[0]["percentage_pass"], 97.0)
+
+    # ── Empty input ──────────────────────────────────────
+
+    def test_empty_rows_returns_empty(self):
+        """Empty input returns empty normalized rows with zero warnings."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        normalized, warnings = normalize_container_rows([])
+
+        self.assertEqual(len(normalized), 0)
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")
+
+    # ── Fractional percentage_reject ─────────────────────
+
+    def test_fractional_percentage_reject_normalized(self):
+        """Fractional percentage_reject (0.05) is normalized to 5.0."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 5001, "percentage_reject": 0.05, "customer": "C"}]
+        normalized, _ = normalize_container_rows(rows)
+
+        self.assertEqual(normalized[0]["percentage_reject"], 5.0)
+
+    # ── Warnings message format ──────────────────────────
+
+    def test_warning_message_format(self):
+        """Warning message format matches normalizer pattern."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        import math
+        rows = [
+            {"container_number": float("nan"), "customer": "Dropped"},
+            {"container_number": 6001, "customer": "Kept"},
+        ]
+        _, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(warnings["rejected"], 1)
+        self.assertIn("rejected", warnings["message"])
+
+    def test_no_warnings_message_empty(self):
+        """When no rejects/corrections, warning message is empty."""
+        from excel_importer.handler_service import normalize_container_rows
+
+        rows = [{"container_number": 7001, "customer": "C", "percentage_pass": 95.0}]
+        _, warnings = normalize_container_rows(rows)
+
+        self.assertEqual(warnings["corrected"], 0)
+        self.assertEqual(warnings["rejected"], 0)
+        self.assertEqual(warnings["message"], "")

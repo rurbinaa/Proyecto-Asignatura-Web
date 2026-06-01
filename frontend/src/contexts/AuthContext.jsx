@@ -20,6 +20,7 @@ export const AuthProvider = ({ children }) => {
       const userDto = await getCurrentUserRequest();
       setUser(userDto);
     } catch {
+      tokenStorage.clear();
       setUser(null);
     } finally {
       setLoading(false);

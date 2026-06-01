@@ -1,4 +1,6 @@
-export default function KpiCard({ title, loading = false, error = null, children, className = '' }) {
+import { memo } from 'react';
+
+function KpiCard({ title, loading = false, error = null, children, className = '', bodyMinHeight, loadingLabel }) {
   const cardStyle = {
     background: '#fff',
     borderRadius: '8px',
@@ -17,15 +19,16 @@ export default function KpiCard({ title, loading = false, error = null, children
 
   const bodyStyle = {
     padding: '0', // Charts handle their own padding for visual consistency
-    minHeight: '120px',
+    minHeight: bodyMinHeight ?? '120px',
     position: 'relative',
     overflowX: 'visible',
     overflowY: 'visible',
+    display: 'flex',
+    flexDirection: 'column',
   };
 
-  const centerContentStyle = {
-    minHeight: '168px',
-    display: 'flex',
+  const loadingBodyStyle = {
+    ...bodyStyle,
     alignItems: 'center',
     justifyContent: 'center',
   };
@@ -35,13 +38,10 @@ export default function KpiCard({ title, loading = false, error = null, children
     minWidth: 0,
   };
 
-  const spinnerStyle = {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #e5e7eb',
-    borderTopColor: '#3b82f6',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
+  const loadingLabelStyle = {
+    marginLeft: '12px',
+    fontSize: '14px',
+    color: '#6b7280',
   };
 
   const errorStyle = {
@@ -59,25 +59,27 @@ export default function KpiCard({ title, loading = false, error = null, children
   return (
     <div className={`kpi-card ${className}`} style={cardStyle}>
       {title && <div style={headerStyle}>{title}</div>}
-      <div style={bodyStyle}>
+      <div style={loading ? loadingBodyStyle : bodyStyle}>
         {loading && (
-          <div style={centerContentStyle}>
-            <div style={spinnerStyle}></div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="kpi-loader"></div>
+            {loadingLabel && <span style={loadingLabelStyle}>{loadingLabel}</span>}
           </div>
         )}
         {error && (
-          <div style={centerContentStyle}>
+          <div style={{ minHeight: '168px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={errorStyle}>Error: {typeof error === 'string' ? error : error?.message || 'Unknown error'}</div>
           </div>
         )}
         {!loading && !error && !children && (
-          <div style={centerContentStyle}>
+          <div style={{ minHeight: '168px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={emptyStyle}>No data</div>
           </div>
         )}
         {!loading && !error && children && <div style={chartContainerStyle}>{children}</div>}
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
+
+export default memo(KpiCard);

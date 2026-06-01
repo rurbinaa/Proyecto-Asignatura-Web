@@ -17,12 +17,18 @@ from quality_data.models import (
     Color,
     ExcelSyncSession,
 )
-from excel_importer.date_utils import normalize_container_date, parse_date
+from excel_importer.date_utils import (
+    normalize_container_date,
+    parse_date,
+    canonicalize_qc_fa_date,
+)
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────
-# Color Resolution (batched — avoids N+1 get_or_create per row)
-# ─────────────────────────────────────────────────────────
+
 
 def _resolve_colors_batch(color_names):
     """
@@ -68,9 +74,7 @@ def _collect_sheet_colors(rows, color_field="color"):
     return colors
 
 
-# ─────────────────────────────────────────────────────────
-# Natural Key Builders
-# ─────────────────────────────────────────────────────────
+
 
 def build_seconds_a4_key(row):
     """
@@ -113,13 +117,17 @@ def build_qc_fa_customer_key(row):
     """
     Build composite key for QC FA Customer (not a true PK, used for diff matching).
 
-    Uses: date_1 + po + style + color
+    Uses: date_1 + po + style + color + team + line_code
+    This helps identify "likely same inspection" for preview purposes.
+    Dual-line rows with the same team but different line_code are distinct.
     """
     date = parse_date(row.get("date_1", ""))
     po = row.get("po", 0)
     style = str(row.get("style", "")).strip()
     color = str(row.get("color", "")).strip().lower().replace(" ", "_")
-    return (date, int(po) if po else 0, style, color)
+    team = int(row.get("team", 0)) if row.get("team") else 0
+    line_code = row.get("line_code", None) or None
+    return (date, int(po) if po else 0, style, color, team, line_code)
 
 
 def build_seconds_general_key(row):
@@ -135,9 +143,7 @@ def build_seconds_general_key(row):
     return (date, int(week) if week else 0, style, color)
 
 
-# ─────────────────────────────────────────────────────────
-# Extract Unique Dates from DataFrame rows
-# ─────────────────────────────────────────────────────────
+
 
 def extract_dates(rows, date_field):
     """Extract unique normalized dates from a list of row dicts."""
@@ -149,9 +155,7 @@ def extract_dates(rows, date_field):
     return dates
 
 
-# ─────────────────────────────────────────────────────────
-# Preview Computation
-# ─────────────────────────────────────────────────────────
+
 
 def compute_preview_upsert(excel_rows, db_queryset, key_builder, date_field):
     """
@@ -163,7 +167,6 @@ def compute_preview_upsert(excel_rows, db_queryset, key_builder, date_field):
     Returns:
         dict with keys: new_count, modified_count, unchanged_count, total, dates
     """
-    # Build DB index by natural key
     db_index = {}
     for obj in db_queryset:
         row_dict = _model_to_dict(obj)
@@ -224,7 +227,6 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
         if d:
             excel_date_counts[d] = excel_date_counts.get(d, 0) + 1
 
-    # Build comparison and warnings
     date_comparison = {}
     warnings = []
 
@@ -281,9 +283,7 @@ def compute_preview_timewindow(excel_rows, db_queryset, date_field):
     }
 
 
-# ─────────────────────────────────────────────────────────
-# Apply Logic
-# ─────────────────────────────────────────────────────────
+
 
 def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
                  numeric_columns, defect_fields=None, color_map=None):
@@ -341,7 +341,6 @@ def apply_upsert(excel_rows, model_class, key_builder, not_numeric_columns,
         ]
         model_class.objects.bulk_update(update_instances, update_fields, batch_size=1000)
 
-    # Handle defects if applicable
     if defect_fields:
         _sync_defects(deduped_rows, model_class, defect_fields, color_map=color_map)
 
@@ -364,13 +363,23 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
     if not excel_dates:
         return
 
-    # Delete existing records for these dates
+    # ── Delete existing records by canonical-date matching ──
+    # Instead of exact `date_1__in` (which misses legacy non-ISO strings),
+    # we load existing rows, canonicalize their dates in memory, and compare
+    # against the already-ISO Excel date set. Matching rows are deleted by PK.
     date_column = "date_1" if hasattr(model_class, "date_1") else "date"
-    delete_filter = {f"{date_column}__in": list(excel_dates)}
+    qs = model_class.objects.all()
     if table_type:
-        delete_filter["table_type"] = table_type
-
-    model_class.objects.filter(**delete_filter).delete()
+        qs = qs.filter(table_type=table_type)
+    existing = qs.only("id", date_column)
+    canonical_excel_set = set(excel_dates)
+    ids_to_delete = []
+    for obj in existing:
+        canonical = canonicalize_qc_fa_date(getattr(obj, date_column))
+        if canonical in canonical_excel_set:
+            ids_to_delete.append(obj.id)
+    if ids_to_delete:
+        model_class.objects.filter(id__in=ids_to_delete).delete()
 
     # Insert new records
     instances = []
@@ -385,11 +394,24 @@ def apply_timewindow(excel_rows, model_class, date_field, table_type=None,
     if instances:
         model_class.objects.bulk_create(instances, batch_size=1000)
 
-    # Handle defects if applicable
     if defect_fields and table_type:
-        _sync_defects_timewindow(excel_rows, model_class, table_type,
-                                  defect_fields, excel_dates,
-                                  color_map=color_map)
+        stats = _sync_defects_timewindow(excel_rows, model_class, table_type,
+                                          defect_fields, excel_dates,
+                                          color_map=color_map)
+        if stats and stats.get('unmatched_defect_rows', 0) > 0:
+            logger.warning(
+                "Defect sync for table_type=%s: %d unmatched rows, "
+                "created=%d, matched_parents=%d, invalid_date=%d, missing_color=%d",
+                table_type,
+                stats.get('unmatched_defect_rows', 0),
+                stats.get('created_defects', 0),
+                stats.get('matched_parents', 0),
+                stats.get('invalid_date_rows', 0),
+                stats.get('missing_color_rows', 0),
+            )
+        return stats
+
+    return None
 
 
 def apply_session(session):
@@ -492,9 +514,6 @@ def apply_session(session):
         delete_preview_data(session.pk)
 
 
-# ─────────────────────────────────────────────────────────
-# Session Management
-# ─────────────────────────────────────────────────────────
 
 def create_session_from_dataframes(dataframes):
     """
@@ -518,7 +537,6 @@ def create_session_from_dataframes(dataframes):
 
     session = ExcelSyncSession()
 
-    # Prepare parsed data
     raw_container_rows = dataframes.get("container", [])
     container_rows, container_warnings = _normalize_container_rows(raw_container_rows)
 
@@ -529,6 +547,23 @@ def create_session_from_dataframes(dataframes):
         "seconds_general": dataframes.get("seconds_general", []),
         "container": container_rows,
     }
+
+    # ── Sanitize QC FA Customer team values at the import boundary ──
+    # This normalizes 60→6 and rejects 0/invalid rows BEFORE preview
+    # diffing and BEFORE persistence, ensuring preview/apply parity.
+    from excel_importer.handler_service import (
+        normalize_qc_fa_customer_rows,
+        normalize_seconds_general_rows,
+    )
+
+    qfc_raw_rows = sheet_data_map.get("qc_fa_customer", [])
+    qfc_normalized, qfc_import_warnings = normalize_qc_fa_customer_rows(qfc_raw_rows)
+    sheet_data_map["qc_fa_customer"] = qfc_normalized
+
+    # ── Sanitize Seconds General team/line_code values at the import boundary ──
+    sg_raw_rows = sheet_data_map.get("seconds_general", [])
+    sg_normalized, sg_import_warnings = normalize_seconds_general_rows(sg_raw_rows)
+    sheet_data_map["seconds_general"] = sg_normalized
 
     # Store parsed data — prefer Redis for auto-TTL cleanup, fall back to JSONField
     session.redis_stored = False
@@ -610,6 +645,11 @@ def create_session_from_dataframes(dataframes):
         preview = getattr(session, preview_field)
         all_warnings.extend(preview.get("warnings", []))
     all_warnings.extend(container_warnings)
+    # Append import sanitization warnings
+    if qfc_import_warnings["message"]:
+        all_warnings.append(qfc_import_warnings["message"])
+    if sg_import_warnings["message"]:
+        all_warnings.append(sg_import_warnings["message"])
     session.warnings = all_warnings
 
     session.save()
@@ -654,9 +694,6 @@ def _hydrate_session_from_redis(session):
         setattr(session, field_name, rows)
 
 
-# ─────────────────────────────────────────────────────────
-# Private Helpers
-# ─────────────────────────────────────────────────────────
 
 def _get_key_field_names(key_builder):
     """
@@ -742,11 +779,17 @@ def _build_instance(model_class, row, numeric_columns, not_numeric_columns,
         data[field] = row.get(field, 0)
     for field in (not_numeric_columns or []):
         if field not in fk_fields:
-            data[field] = row.get(field, "UNKNOWN")
+            value = row.get(field, "")
+            # Canonicalize QC FA date_1 at write time so parent rows always
+            # carry an ISO date — this keeps defect matching deterministic.
+            if model_class == QualityQcFa and field == "date_1":
+                canonical = canonicalize_qc_fa_date(value)
+                if canonical is not None:
+                    value = canonical
+            data[field] = value
     if table_type:
         data["table_type"] = table_type
 
-    # Handle FK fields
     if "color" in [f.name for f in model_class._meta.fields]:
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
@@ -780,7 +823,6 @@ def _update_instance(instance, row, numeric_columns, not_numeric_columns, color_
                 continue
             setattr(instance, field, row[field])
 
-    # Handle FK fields
     if hasattr(instance, "color") and "color" in row:
         color_name = str(row.get("color", "unknown")).strip().lower().replace(" ", "_")
         if color_map is not None:
@@ -821,7 +863,6 @@ def _rows_differ(row_a, row_b):
         val_b = row_b.get(key)
         if val_a is None or val_b is None:
             continue
-        # Normalize for comparison
         if str(val_a).strip() != str(val_b).strip():
             return True
     return False
@@ -834,9 +875,9 @@ def _sync_defects(excel_rows, model_class, defect_fields, color_map=None):
     Delegates to handler_service for defect creation logic.
     """
     if not excel_rows or not defect_fields:
-        return
+        return None
     
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
+    return _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
 
 
 def _sync_defects_timewindow(excel_rows, model_class, table_type,
@@ -845,25 +886,43 @@ def _sync_defects_timewindow(excel_rows, model_class, table_type,
     Sync defects for time-window strategy (already deleted, just create).
     
     Delegates to handler_service for defect creation logic.
+
+    Returns:
+        dict: defect sync stats from _bulk_insert_defects_only,
+              or None if no rows/defect_fields.
     """
     if not excel_rows or not defect_fields:
-        return
+        return None
     
     # For time-window, the parent records were already deleted (CASCADE deletes defects)
-    # So we just need to create new defect records for the new parent records
-    _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=color_map)
+    # So we just need to create new defect records for the new parent records.
+    # Forward table_type so the downstream handler queries the correct parent subset
+    # (QFA vs QFC) and picks the right defect field list for each sheet.
+    return _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                                     table_type=table_type, color_map=color_map)
 
 
-def _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=None):
+def _sync_defects_via_handler(excel_rows, model_class, defect_fields,
+                              table_type=None, color_map=None):
     """
     Helper that delegates defect creation to handler_service.
-    
+
     The handler_service.bulk_insert functions already handle creating
     InspectionDefect/ContainerInspectionDefect records. We reuse that logic
     by passing the Excel rows through it.
 
     For QualityQcFa (time-window strategy): parent records are ALREADY created
     by apply_timewindow, so we use defects_only=True to only create defects.
+
+    Returns:
+        dict: defect sync stats from _bulk_insert_defects_only,
+              or None if no rows/defect_fields.
+
+    Args:
+        table_type: 'QFA' for QC FA Plant, 'QFC' for QC FA Customer.
+            When provided, it overrides DataFrame-based detection and also
+            determines which defect field list to use. This is critical for
+            the time-window path where Excel rows lack a table_type column.
     """
     import pandas as pd
     from excel_importer.handler_service import (
@@ -871,32 +930,39 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=
         bulk_insert_container,
     )
     from quality_data.models import QualityQcFa, Container
-    
+
     if not excel_rows or not defect_fields:
-        return
-    
+        return None
+
     # Convert list of dicts to DataFrame (handler_service expects DataFrame)
     df = pd.DataFrame(excel_rows)
-    
+
     # Get column lists from sheet_configs
     numeric_cols = _get_numeric_columns_for_model(model_class)
     not_numeric_cols = _get_not_numeric_columns_for_model(model_class)
-    
-    # Determine table_type for QualityQcFa
-    table_type = None
-    if model_class == QualityQcFa:
-        # Check if this is QFA or QFC based on data
+
+    # Determine table_type for QualityQcFa.
+    # Prefer the caller-supplied value; fall back to DataFrame detection
+    # (which only works when the row dicts already carry the column).
+    if table_type is None and model_class == QualityQcFa:
         table_types = df['table_type'].unique() if 'table_type' in df.columns else []
         table_type = table_types[0] if len(table_types) == 1 else 'QFA'
-    
+
     # Call the appropriate handler based on model
     if model_class == QualityQcFa:
-        # Get QC defect field names
-        qc_defect_fields = _get_defect_fields('qc_fa_plant') or defect_fields
-        
+        # Use caller-provided defect_fields when available; fall back to the
+        # sheet-specific list. This preserves testability and lets callers
+        # scope defect processing without pulling in the full sheet list.
+        if defect_fields:
+            qc_defect_fields = defect_fields
+        elif table_type == 'QFC':
+            qc_defect_fields = _get_defect_fields('qc_fa_customer')
+        else:
+            qc_defect_fields = _get_defect_fields('qc_fa_plant')
+
         # For QC FA time-window: parent records are already created by apply_timewindow.
         # Use defects_only=True to only create InspectionDefect records.
-        handler_bulk_insert_qcfa(
+        return handler_bulk_insert_qcfa(
             df,
             numeric_cols,
             not_numeric_cols,
@@ -913,6 +979,7 @@ def _sync_defects_via_handler(excel_rows, model_class, defect_fields, color_map=
             not_numeric_cols,
             container_defect_fields or defect_fields
         )
+    return None
 
 
 def _get_numeric_columns_for_model(model_class):

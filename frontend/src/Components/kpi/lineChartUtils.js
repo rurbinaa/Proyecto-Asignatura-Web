@@ -4,6 +4,31 @@ const isNumericLike = (value) => {
   return false;
 };
 
+const WEEK_LABEL_REGEX = /^(\d{1,4})-W(\d{1,2})$/;
+
+const parseWeekLabel = (value) => {
+  if (typeof value !== 'string') return null;
+  const match = value.trim().match(WEEK_LABEL_REGEX);
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    week: Number(match[2]),
+  };
+};
+
+const compareCategoricalX = (a, b) => {
+  const parsedA = parseWeekLabel(a);
+  const parsedB = parseWeekLabel(b);
+
+  if (parsedA && parsedB) {
+    if (parsedA.year !== parsedB.year) return parsedA.year - parsedB.year;
+    return parsedA.week - parsedB.week;
+  }
+
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+};
+
 export function buildMergedLineData(series = []) {
   const rawXValues = series.flatMap((s) => s.data?.map((p) => p.x) || []);
   const useNumericXAxis = rawXValues.length > 0 && rawXValues.every(isNumericLike);
@@ -11,7 +36,7 @@ export function buildMergedLineData(series = []) {
   const normalizedX = (value) => (useNumericXAxis ? Number(value) : value);
 
   const allXValues = [...new Set(rawXValues.map(normalizedX))].sort(
-    useNumericXAxis ? (a, b) => a - b : undefined
+    useNumericXAxis ? (a, b) => a - b : compareCategoricalX
   );
 
   const seriesValueMaps = series.map((s) => {

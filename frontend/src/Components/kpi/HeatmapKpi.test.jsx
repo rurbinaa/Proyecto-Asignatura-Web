@@ -189,4 +189,28 @@ describe('HeatmapKpi', () => {
       expect(screen.getByText('99.0')).toBeInTheDocument();
     });
   });
+
+  describe('external empty/unavailable state', () => {
+    it('RED - shows custom emptyMessage instead of default "No data" when provided', () => {
+      render(<HeatmapKpi data={[]} emptyMessage="Defect data not available for this context" />);
+      expect(screen.getByText('Defect data not available for this context')).toBeInTheDocument();
+      expect(screen.queryByText('No data')).not.toBeInTheDocument();
+    });
+
+    it('RED - shows custom emptyMessage for null data', () => {
+      render(<HeatmapKpi data={null} emptyMessage="Heatmap unavailable" />);
+      expect(screen.getByText('Heatmap unavailable')).toBeInTheDocument();
+    });
+
+    it('RED - shows default "No data" when emptyMessage is not provided', () => {
+      render(<HeatmapKpi data={[]} />);
+      expect(screen.getByText('No data')).toBeInTheDocument();
+    });
+
+    it('RED - still renders title when emptyMessage is shown', () => {
+      render(<HeatmapKpi title="Defects Heatmap" data={[]} emptyMessage="Not found" />);
+      expect(screen.getByText('Defects Heatmap')).toBeInTheDocument();
+      expect(screen.getByText('Not found')).toBeInTheDocument();
+    });
+  });
 });

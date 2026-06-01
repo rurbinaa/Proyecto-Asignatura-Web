@@ -29,12 +29,6 @@ vi.mock('./Components/Sidebar.jsx', () => ({
       <span data-testid="sidebar-view">{activeView}</span>
 
       <button
-        data-testid="btn-view-capture"
-        onClick={() => setActiveView('capture')}
-      >
-        Capture
-      </button>
-      <button
         data-testid="btn-view-excel"
         onClick={() => setActiveView('excel')}
       >
@@ -45,6 +39,12 @@ vi.mock('./Components/Sidebar.jsx', () => ({
         onClick={() => setActiveView('dashboard')}
       >
         Dashboard
+      </button>
+      <button
+        data-testid="btn-view-reports"
+        onClick={() => setActiveView('reports')}
+      >
+        Reports
       </button>
       <button data-testid="btn-logout" onClick={onLogout}>
         Logout
@@ -59,10 +59,6 @@ vi.mock('./Components/Navbar.jsx', () => ({
       <span data-testid="navbar-email">{user?.email || 'none'}</span>
     </div>
   ),
-}));
-
-vi.mock('./views/CaptureView.jsx', () => ({
-  default: () => <div data-testid="capture-view">CaptureView</div>,
 }));
 
 vi.mock('./views/LoginView.jsx', () => ({
@@ -82,9 +78,14 @@ vi.mock('./Components/ExcelUploader.jsx', () => ({
   ),
 }));
 
-vi.mock('./views/DashboardView.jsx', () => ({
-  default: () => <div data-testid="dashboard-view">DashboardView</div>,
+vi.mock('./views/QualityReportsView.jsx', () => ({
+  default: () => <div data-testid="quality-reports-view">QualityReportsView</div>,
 }));
+
+vi.mock('./views/DashboardShell.jsx', () => ({
+  default: () => <div data-testid="dashboard-shell">DashboardShell</div>,
+}));
+
 
 vi.mock('./assets/RA-ICON_embed.svg?url', () => ({
   default: '/mock-favicon.svg',
@@ -156,83 +157,8 @@ describe('App', () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Authenticated as operator
-  // -----------------------------------------------------------------------
-  describe('authenticated as operator', () => {
-    beforeEach(() => {
-      mockAuthState({
-        user: { id: 1, email: 'op@test.com', role: 'operator' },
-        isAuthenticated: true,
-      });
-    });
-
-    it('should render the app shell (sidebar + navbar)', () => {
-      render(<App />);
-
-      expect(screen.getByTestId('sidebar')).toBeInTheDocument();
-      expect(screen.getByTestId('navbar')).toBeInTheDocument();
-    });
-
-    it('should show CaptureView as the default view for operator', () => {
-      render(<App />);
-
-      expect(screen.getByTestId('capture-view')).toBeInTheDocument();
-    });
-
-    it('should pass the correct role to Sidebar', () => {
-      render(<App />);
-
-      expect(screen.getByTestId('sidebar-role')).toHaveTextContent('operator');
-    });
-
-    it('should pass the resolved active view to Sidebar', () => {
-      render(<App />);
-
-      expect(screen.getByTestId('sidebar-view')).toHaveTextContent('capture');
-    });
-
-    it('should display the user email in Navbar', () => {
-      render(<App />);
-
-      expect(screen.getByTestId('navbar-email')).toHaveTextContent('op@test.com');
-    });
-
-    it('should store the default view in localStorage on mount', async () => {
-      render(<App />);
-
-      await waitFor(() => {
-        expect(localStorage.getItem('rift-activeView')).toBe('capture');
-      });
-    });
-
-    it('should switch from CaptureView to DashboardView when view changes', () => {
-      render(<App />);
-
-      expect(screen.getByTestId('capture-view')).toBeInTheDocument();
-
-      act(() => {
-        screen.getByTestId('btn-view-dashboard').click();
-      });
-
-      expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
-      expect(screen.queryByTestId('capture-view')).not.toBeInTheDocument();
-    });
-
-    it('should update localStorage when sidebar triggers view change', () => {
-      render(<App />);
-
-      act(() => {
-        screen.getByTestId('btn-view-dashboard').click();
-      });
-
-      expect(localStorage.getItem('rift-activeView')).toBe('dashboard');
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Authenticated as manager
-  // -----------------------------------------------------------------------
+// Authenticated as manager
+// -----------------------------------------------------------------------
   describe('authenticated as manager', () => {
     beforeEach(() => {
       mockAuthState({
@@ -254,11 +180,10 @@ describe('App', () => {
       expect(screen.getByTestId('excel-uploader')).toBeInTheDocument();
     });
 
-    it('should not show CaptureView for manager', () => {
-      render(<App />);
-
-      expect(screen.queryByTestId('capture-view')).not.toBeInTheDocument();
-    });
+  it('should not render capture view path anymore', () => {
+    render(<App />);
+    expect(screen.queryByTestId('capture-view')).not.toBeInTheDocument();
+  });
 
     it('should pass the correct role to Sidebar', () => {
       render(<App />);
@@ -279,6 +204,41 @@ describe('App', () => {
         expect(localStorage.getItem('rift-activeView')).toBe('excel');
       });
     });
+
+    it('should switch to QualityReportsView when "reports" view is set', () => {
+      mockAuthState({
+        user: { id: 2, email: 'mgr@test.com', role: 'manager' },
+        isAuthenticated: true,
+      });
+
+      render(<App />);
+
+      expect(screen.queryByTestId('quality-reports-view')).not.toBeInTheDocument();
+
+      act(() => {
+        screen.getByTestId('btn-view-reports').click();
+      });
+
+      expect(screen.getByTestId('quality-reports-view')).toBeInTheDocument();
+    });
+
+    it('should hide ExcelUploader and DashboardShell when switching to reports view', () => {
+      mockAuthState({
+        user: { id: 2, email: 'mgr@test.com', role: 'manager' },
+        isAuthenticated: true,
+      });
+
+      render(<App />);
+
+      expect(screen.getByTestId('excel-uploader')).toBeInTheDocument();
+
+      act(() => {
+        screen.getByTestId('btn-view-reports').click();
+      });
+
+      expect(screen.getByTestId('quality-reports-view')).toBeInTheDocument();
+      expect(screen.queryByTestId('excel-uploader')).not.toBeInTheDocument();
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -289,7 +249,7 @@ describe('App', () => {
       const mockLogout = vi.fn().mockResolvedValue(undefined);
 
       mockAuthState({
-        user: { id: 1, email: 'op@test.com', role: 'operator' },
+        user: { id: 1, email: 'mgr@test.com', role: 'manager' },
         isAuthenticated: true,
         logout: mockLogout,
       });
@@ -304,10 +264,10 @@ describe('App', () => {
     });
 
     it('should remove the stored view from localStorage on logout', async () => {
-      localStorage.setItem('rift-activeView', 'capture');
+      localStorage.setItem('rift-activeView', 'dashboard');
 
       mockAuthState({
-        user: { id: 1, email: 'op@test.com', role: 'operator' },
+        user: { id: 1, email: 'mgr@test.com', role: 'manager' },
         isAuthenticated: true,
         logout: vi.fn().mockResolvedValue(undefined),
       });
@@ -329,7 +289,7 @@ describe('App', () => {
   // Volatile (fast-mode) dashboard
   // -----------------------------------------------------------------------
   describe('volatile dashboard flow', () => {
-    it('should switch from ExcelUploader to DashboardView when fast-mode is triggered', () => {
+    it('should switch from ExcelUploader to DashboardShell when fast-mode is triggered', () => {
       mockAuthState({
         user: { id: 2, email: 'mgr@test.com', role: 'manager' },
         isAuthenticated: true,
@@ -343,7 +303,7 @@ describe('App', () => {
         screen.getByTestId('btn-dashboard-fast').click();
       });
 
-      expect(screen.getByTestId('dashboard-view')).toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-shell')).toBeInTheDocument();
       expect(screen.queryByTestId('excel-uploader')).not.toBeInTheDocument();
     });
   });

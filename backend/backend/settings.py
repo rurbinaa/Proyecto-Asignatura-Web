@@ -25,7 +25,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'quality_data',
-    'media_data',
     'auth_data',
     'django.contrib.admin',
     'django.contrib.auth',
